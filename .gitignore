@@ -1,0 +1,39 @@
+# 本地開發與專案草稿
+.scratch/
+dev/
+docs/
+AGENTS.md
+
+# 依賴模組與套件快取
+node_modules/
+.pnpm-store/
+npm-debug.log*
+pnpm-debug.log*
+
+# 系統隱藏檔與編輯器產物
+.DS_Store
+.Trash/
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# 暫存快取、離線下載與資料庫
+*.tmp
+*.temp
+*.part
+*.log
+offline/
+cache/
+cookies/
+*.db
+*.sqlite
+
+# 金鑰與環境變數
+.env
+.env.local
+.env.*.local
+*.key
+*.pem

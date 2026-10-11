@@ -1,0 +1,47 @@
+// 简体中文。**LLM 產出、未經母語者校對**。
+
+export default {
+  singleChapter: "单章",
+  author: "作者：{name}",
+  chapterCount: { one: "{n} 个章节", other: "{n} 个章节" },
+  updatedAt: "更新于 {time}",
+  uploadedAt: "发布于 {time}",
+  likesCount: { one: "{n} 人喜爱", other: "{n} 人喜爱" },
+
+  resumeReading: "继续阅读",
+  startReading: "开始阅读",
+  chapterAtPage: "{chapter} · 第 {n} 页",
+  firstChapter: "首话阅读",
+
+  favorite: "收藏",
+  unfavorite: "取消收藏",
+  favorited: "已收藏",
+
+  summary: "简介",
+  expand: "展开",
+  collapse: "收起",
+
+  chaptersTitle: "章节列表",
+  select: "选择",
+  sortAscending: "章节改为正序",
+  sortDescending: "章节改为倒序",
+  downloadSelected: "下载 ({n})",
+  downloadAll: "全部下载",
+
+  downloadQueued: "等待下载",
+  downloadRunning: "下载中 {done}/{total}",
+  downloaded: "已下载",
+  incomplete: "未完成",
+  incompleteProgress: "未完成 {done}/{total}",
+  download: "下载",
+  resumeDownload: "继续下载",
+
+  lastRead: "上次读到",
+  lastReadAtPage: "上次读到 · 第 {n} 页",
+
+  coverFailed: "无法载入封面",
+
+  /** 更多操作与相关推荐。 */
+  openInBrowser: "在浏览器中打开",
+  recommendTitle: "相关推荐",
+}
