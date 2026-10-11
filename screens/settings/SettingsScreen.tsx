@@ -30,6 +30,7 @@ import { ImageCacheSettingsScreen } from "./ImageCacheSettingsScreen"
 import { LogScreen } from "./LogScreen"
 import { SourceListScreen } from "./SourceListScreen"
 import { ThemeSettingsScreen } from "./ThemeSettingsScreen"
+import scriptJson from "../../script.json"
 
 export function SettingsScreen() {
   // 源清單（匯入／刪除／啟用）與下載狀態變動都要重繪這一頁。
@@ -128,7 +129,7 @@ export function SettingsScreen() {
           <IconRow icon="doc.text" title={t("settings.root.logs")} chevron />
         </NavigationLink>
         <Divider padding={{ leading: rowSeparatorInset }} />
-        <IconRow icon="info.circle" title="Vesper" detail="v1.0.0" />
+        <IconRow icon="info.circle" title="Vesper" detail={`v${scriptJson.version}`} />
         <Divider padding={{ leading: rowSeparatorInset }} />
         <IconRow icon="cube.box" title={t("settings.root.sourceSpec")} detail={t("settings.root.sourceSpecDetail")} />
         <Divider padding={{ leading: rowSeparatorInset }} />

@@ -15,6 +15,7 @@ import {
   uninstallSource,
   type InstalledSource,
 } from "../../sources/registry"
+import { getRepository, repositoryNameFor } from "../../sources/repository"
 import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
 
@@ -40,6 +41,8 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
   }
 
   const meta = source.meta
+  const originUrl = source.stored.origin
+  const originRepoName = originUrl ? (getRepository(originUrl)?.name ?? repositoryNameFor(originUrl)) : null
 
   return (
     <PageScroll title={meta?.name ?? source.stored.name}>
@@ -106,7 +109,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
         <Divider padding={{ leading: 16 }} />
         <InfoRow
           label={t("settings.sourceDetail.origin")}
-          value={source.stored.origin ?? t("settings.sourceDetail.manualInstall")}
+          value={originRepoName ?? t("settings.sourceDetail.manualInstall")}
         />
       </CardGroup>
 
