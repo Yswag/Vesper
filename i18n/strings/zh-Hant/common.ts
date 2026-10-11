@@ -65,4 +65,8 @@ export default {
   /** `design/status` 兩個元件的預設文案（呼叫端沒給字時顯示的）。 */
   loading: "載入中…",
   loadingMore: "載入更多中…",
+
+  /** 初次啟動準備環境與安裝核心依賴。 */
+  preparingEnv: "正在準備閱讀器環境…",
+  installingCoreDeps: "初次啟動正在安裝必要核心依賴 (cheerio, crypto-js)，請稍候數秒…",
 }

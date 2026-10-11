@@ -40,4 +40,7 @@ export default {
 
   loading: "Loading…",
   loadingMore: "Loading more…",
+
+  preparingEnv: "Preparing reader environment…",
+  installingCoreDeps: "Installing required core dependencies (cheerio, crypto-js) on first launch, please wait…",
 }

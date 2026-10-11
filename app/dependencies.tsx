@@ -1,5 +1,6 @@
 import { ProgressView, Text, VStack } from "scripting"
 import { neutral } from "../design/tokens"
+import { t } from "../i18n"
 
 declare const require: (id: string) => any
 declare const Shell: { run(cmd: string, options?: any): Promise<any> }
@@ -25,10 +26,10 @@ export function PreparingView() {
     <VStack alignment="center" spacing={16} padding={32} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <ProgressView />
       <Text font="headline" fontWeight="bold">
-        正在準備閱讀器環境…
+        {t("common.preparingEnv")}
       </Text>
       <Text font="subheadline" foregroundStyle={neutral.secondary} multilineTextAlignment="center">
-        初次啟動正在安裝必要核心依賴 (cheerio, crypto-js)，請稍候數秒…
+        {t("common.installingCoreDeps")}
       </Text>
     </VStack>
   )
@@ -43,7 +44,7 @@ export async function installMissingDependencies(): Promise<boolean> {
     verified = true
     return true
   } catch (error) {
-    console.error("安裝依賴失敗:", error)
+    console.error("Failed to install dependencies:", error)
     return false
   }
 }

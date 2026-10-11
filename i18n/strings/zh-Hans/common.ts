@@ -39,4 +39,7 @@ export default {
 
   loading: "加载中…",
   loadingMore: "正在加载更多…",
+
+  preparingEnv: "正在准备阅读器环境…",
+  installingCoreDeps: "初次启动正在安装必要核心依赖 (cheerio, crypto-js)，请稍候数秒…",
 }
