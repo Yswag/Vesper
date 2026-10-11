@@ -5,6 +5,7 @@
 import { fetch, type AbortSignal } from "scripting"
 
 import { absorbResponseCookies, cookieHeader } from "./cookies"
+import { isCloudflareChallenge, solveCloudflare } from "./cloudflare"
 import { log } from "./log"
 
 // 對齊 Venera 的 webUA（lib/foundation/consts.dart）：
@@ -225,6 +226,36 @@ async function perform(
       body: asBytes ? await response.arrayBuffer() : await response.text(),
     }
     log("debug", "http", `${method} ${shortUrl(url)} → ${result.status} (${Date.now() - started}ms)`)
+
+    // 只有來自源的非二進位請求（API / HTML 等文字請求）才觸發自動過盾，圖片下載不彈窗
+    if (fromSource && !asBytes && isCloudflareChallenge(result.status, result.headers, result.body)) {
+      log("info", "http", `偵測到 Cloudflare 挑戰 (${result.status}): ${shortUrl(url)}，嘗試自動過盾`)
+      // 撤銷被攔截的那次計數，避免重試算入 runaway guard 觸發限制
+      undo?.()
+      const targetUa = headers["user-agent"] || WEB_UA
+      await solveCloudflare(sourceKey, url, targetUa)
+
+      // 過盾成功，重新構建 headers 並重新發送原始請求
+      log("info", "http", `過盾成功，重新發送請求: ${shortUrl(url)}`)
+      const freshCookie = cookieHeader(sourceKey, url)
+      const retryHeaders = { ...headers }
+      if (freshCookie) retryHeaders["cookie"] = freshCookie
+      const retryResponse = await fetch(url, {
+        method,
+        headers: retryHeaders,
+        body,
+        timeout: typeof extra.timeout === "number" ? extra.timeout : 30,
+        allowInsecureRequest: true,
+        signal,
+      })
+      absorbResponseCookies(sourceKey, url, retryResponse as any)
+      return {
+        status: retryResponse.status,
+        headers: lowerCaseKeys(headersToObject(retryResponse.headers)),
+        body: await retryResponse.text(),
+      }
+    }
+
     return result
   } catch (error) {
     if (isAbortError(error)) {
