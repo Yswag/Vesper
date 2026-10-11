@@ -1,35 +1,47 @@
 {
-  "contributors" : [
-
-  ],
-  "localizedNames" : {
-    "en" : "Vesper",
-    "zh" : "Vesper",
-    "ja" : "Vesper"
-  },
-  "icon" : "book.pages.fill",
-  "remoteResource" : null,
-  "localizedDescriptions" : {
-    "zh" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
-    "en" : "Manga reader for Scripting powered by Venera sources",
-    "ja" : "Venera ソースに基づく Scripting 漫画リーダー"
-  },
-  "description" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
   "iconImage" : null,
-  "color" : "rgba(0, 198, 165,1)",
-  "runInApp" : false,
-  "name" : "Vesper",
-  "author" : {
-    "homepage" : "https:\/\/github.com\/Yswag\/Vesper",
-    "name" : "Yswag",
-    "email" : "91155348+Yswag@users.noreply.github.com"
-  },
   "permissions" : [
     "fileSystem"
   ],
-  "version" : "1.1.0",
+  "version" : "1.1.1",
+  "name" : "Vesper",
+  "localizedNames" : {
+    "ja" : "Vesper",
+    "en" : "Vesper",
+    "it" : "",
+    "zh" : "Vesper",
+    "fr" : "",
+    "es" : "",
+    "ru" : "",
+    "de" : "",
+    "pt" : ""
+  },
+  "localizedDescriptions" : {
+    "fr" : "",
+    "ja" : "Venera ソースに基づく Scripting 漫画リーダー",
+    "it" : "",
+    "es" : "",
+    "en" : "Manga reader for Scripting powered by Venera sources",
+    "de" : "",
+    "pt" : "",
+    "zh" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
+    "ru" : ""
+  },
+  "icon" : "book.pages.fill",
+  "entry" : "index.tsx",
+  "description" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
   "intentInputTypes" : [
 
   ],
-  "entry" : "index.tsx"
+  "author" : {
+    "email" : "91155348+Yswag@users.noreply.github.com",
+    "name" : "Yswag",
+    "homepage" : "https:\/\/github.com\/Yswag\/Vesper"
+  },
+  "remoteResource" : null,
+  "contributors" : [
+
+  ],
+  "color" : "rgba(0, 198, 165,1)",
+  "runInApp" : false
 }

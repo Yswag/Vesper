@@ -87,9 +87,7 @@ export function HomeScreen() {
     if (heroItems.length <= 1) return
 
     const timer = setTimeout(() => {
-      void withAnimation(Animation.smooth({ duration: 0.45 }), () => {
-        setHeroIndex(prev => (prev + 1) % heroItems.length)
-      })
+      setHeroIndex(prev => (prev + 1) % heroItems.length)
     }, 4000)
 
     return () => {

@@ -8,15 +8,16 @@
 // 這一頁本身就是 Scripting 的一條 tab，所以 App 用 hideTabBar：不要 tab bar，
 // 五個分類改由導覽列左上角的選單切換。
 
-import { Device, Script, useEffect, useState } from "scripting"
+import { Device, ProgressView, Script, ZStack, useEffect, useState } from "scripting"
 
 import { App } from "./app/App"
 import { createComicLibrary } from "./app/comic"
 import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
 import { installComicLibrary } from "./app/services"
+import { PageBackground } from "./app/theme"
 import { composeImage } from "./components/ModifyImageRenderer"
-import { ensureFileAccess } from "./engine/fs"
+import { ensureFileAccess, fileAccess } from "./engine/fs"
 import { setImageCompositor } from "./engine/imagecache"
 import { flushLibrary, reloadLibraryFromDisk } from "./library/bookshelf"
 import { reloadRegistry } from "./sources/registry"
@@ -64,12 +65,15 @@ export default function HomeScreenDefaultUI() {
   // 「ComicLibrary 還沒建立」。index.tsx 也是同一個順序（先 install 再 present）。
   initVesperForHomeScreen()
 
+  const [dataReady, setDataReady] = useState(() => fileAccess() !== null)
   const [, setEventTick] = useState(0)
 
   useEffect(() => {
-    // 授權結算後才載得到源與書架。載完強制重繪一次：畫面訂閱（ComicLibrary 的 onChange）
-    // 與「重繪時重讀」兩條路都蓋到，不會漏掉時間差。
-    void loadVesperData().then(() => setEventTick(tick => tick + 1))
+    // 授權結算後才載得到源與書架。在載入完成前不渲染 App，
+    // 避免首頁（HomeScreen）在源尚未進入記憶體時就建構卡片，導致繼續閱讀等區塊誤判「源失效」。
+    void loadVesperData().finally(() => {
+      setDataReady(true)
+    })
 
     // 監聽 Scripting 首頁分頁事件
     const unsubscribeTab = Script.onHomeTabEvent(event => {
@@ -94,6 +98,15 @@ export default function HomeScreenDefaultUI() {
       void flushLibrary()
     }
   }, [])
+
+  if (!dataReady) {
+    return (
+      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <PageBackground />
+        <ProgressView />
+      </ZStack>
+    )
+  }
 
   return <App hideTabBar />
 }
