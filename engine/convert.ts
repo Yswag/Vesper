@@ -14,7 +14,17 @@ declare const require: (id: string) => any
 
 import { log } from "./log"
 
-const CryptoJS = require("crypto-js")
+let _CryptoJS: any = null
+function getCryptoJS(): any {
+  if (!_CryptoJS) {
+    try {
+      _CryptoJS = require("crypto-js")
+    } catch {
+      throw new Error("crypto-js 尚未安裝，請等待依賴準備完成。")
+    }
+  }
+  return _CryptoJS
+}
 
 export type Bytes = Uint8Array
 
@@ -151,7 +161,7 @@ function fromHex(hex: string): Bytes {
 
 /** Uint8Array → CryptoJS WordArray（直接建立，不走 hex，省一次膨脹）。 */
 function toWordArray(bytes: Bytes): any {
-  return CryptoJS.lib.WordArray.create(bytes)
+  return getCryptoJS().lib.WordArray.create(bytes)
 }
 
 function fromWordArray(wordArray: any): Bytes {
@@ -167,17 +177,19 @@ function fromWordArray(wordArray: any): Bytes {
 type HashName = "md5" | "sha1" | "sha256" | "sha512"
 
 function hashOf(name: HashName): (message: any) => any {
-  if (name === "md5") return CryptoJS.MD5
-  if (name === "sha1") return CryptoJS.SHA1
-  if (name === "sha256") return CryptoJS.SHA256
-  return CryptoJS.SHA512
+  const C = getCryptoJS()
+  if (name === "md5") return C.MD5
+  if (name === "sha1") return C.SHA1
+  if (name === "sha256") return C.SHA256
+  return C.SHA512
 }
 
 function hmacOf(name: HashName): (message: any, key: any) => any {
-  if (name === "md5") return CryptoJS.HmacMD5
-  if (name === "sha1") return CryptoJS.HmacSHA1
-  if (name === "sha256") return CryptoJS.HmacSHA256
-  return CryptoJS.HmacSHA512
+  const C = getCryptoJS()
+  if (name === "md5") return C.HmacMD5
+  if (name === "sha1") return C.HmacSHA1
+  if (name === "sha256") return C.HmacSHA256
+  return C.HmacSHA512
 }
 
 function hash(name: HashName, value: any): Bytes {
@@ -191,10 +203,11 @@ function hmac(name: HashName, key: any, value: any): Bytes {
 type CipherMode = "ecb" | "cbc" | "cfb" | "ofb"
 
 function modeOf(mode: CipherMode): any {
-  if (mode === "ecb") return CryptoJS.mode.ECB
-  if (mode === "cbc") return CryptoJS.mode.CBC
-  if (mode === "cfb") return CryptoJS.mode.CFB
-  return CryptoJS.mode.OFB
+  const C = getCryptoJS()
+  if (mode === "ecb") return C.mode.ECB
+  if (mode === "cbc") return C.mode.CBC
+  if (mode === "cfb") return C.mode.CFB
+  return C.mode.OFB
 }
 
 /**
@@ -208,9 +221,10 @@ function modeOf(mode: CipherMode): any {
  * （jm 自己掃 `{`…`}` 找 JSON，兩種都吃，所以只有 ccc 會被影響。）
  */
 function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: any): Bytes {
+  const C = getCryptoJS()
   const options: any = {
     mode: modeOf(mode),
-    padding: CryptoJS.pad.NoPadding,
+    padding: C.pad.NoPadding,
   }
   if (mode !== "ecb" && iv == null) {
     throw new Error(`Convert: AES-${mode.toUpperCase()} 需要 iv`)
@@ -221,10 +235,10 @@ function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: a
   const dataWordArray = toWordArray(toBytes(value))
 
   if (encrypt) {
-    return fromWordArray(CryptoJS.AES.encrypt(dataWordArray, keyWordArray, options).ciphertext)
+    return fromWordArray(C.AES.encrypt(dataWordArray, keyWordArray, options).ciphertext)
   }
-  const params = CryptoJS.lib.CipherParams.create({ ciphertext: dataWordArray })
-  return fromWordArray(CryptoJS.AES.decrypt(params, keyWordArray, options))
+  const params = C.lib.CipherParams.create({ ciphertext: dataWordArray })
+  return fromWordArray(C.AES.decrypt(params, keyWordArray, options))
 }
 
 function normalizeHash(name: string): HashName {
@@ -243,7 +257,7 @@ export const Convert = {
   decodeGbk: (_value: any): string => {
     throw new Error("Convert.decodeGbk: 本環境不支援（請回報是哪個源需要）")
   },
-  encodeBase64: (value: any) => CryptoJS.enc.Base64.stringify(toWordArray(toBytes(value))),
+  encodeBase64: (value: any) => getCryptoJS().enc.Base64.stringify(toWordArray(toBytes(value))),
   // 用自己寫的解碼：容許 URL-safe（-_）與空白/換行，而不是讓 crypto-js 對非正規輸入算出垃圾。
   decodeBase64: (value: string) => base64Decode(value),
   md5: (value: any) => hash("md5", value),

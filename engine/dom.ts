@@ -7,7 +7,17 @@
 
 declare const require: (id: string) => any
 
-const cheerio = require("cheerio")
+let _cheerio: any = null
+function getCheerio(): any {
+  if (!_cheerio) {
+    try {
+      _cheerio = require("cheerio")
+    } catch {
+      throw new Error("cheerio 尚未安裝，請等待依賴準備完成。")
+    }
+  }
+  return _cheerio
+}
 
 interface Doc {
   $: any
@@ -32,7 +42,7 @@ function isDocument(node: any): boolean {
 }
 
 export function parseDocument(html: string): number {
-  const $ = cheerio.load(html ?? "")
+  const $ = getCheerio().load(html ?? "")
   const key = nextDocKey++
   const doc: Doc = { $, nodes: new Map() }
   doc.nodes.set(0, $.root()[0])

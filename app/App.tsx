@@ -16,6 +16,7 @@
 
 import { NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
+import { areDependenciesInstalled, installMissingDependencies, PreparingView } from "./dependencies"
 import { PageBackground } from "./theme"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
@@ -47,10 +48,19 @@ function sectionScreen(index: number): VirtualNode {
 }
 
 export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
+  const [depsReady, setDepsReady] = useState(() => areDependenciesInstalled())
   const selection = useObservable<number>(0)
   const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
+
+  useEffect(() => {
+    if (!depsReady) {
+      void installMissingDependencies().then(() => {
+        setDepsReady(true)
+      })
+    }
+  }, [depsReady])
 
   // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
   // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。
@@ -90,6 +100,15 @@ export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
         <CustomDialogOverlay />
       </>
     ),
+  }
+
+  if (!depsReady) {
+    return (
+      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <PageBackground />
+        <PreparingView />
+      </ZStack>
+    )
   }
 
   if (hideTabBar) {
