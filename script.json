@@ -4,7 +4,7 @@
   ],
   "iconImage" : null,
   "version" : "1.0.0",
-  "name" : "Vesper-dev",
+  "name" : "Vesper",
   "entry" : "index.tsx",
   "description" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
   "localizedNames" : {
@@ -21,7 +21,10 @@
   "contributors" : [
 
   ],
-  "remoteResource" : null,
+  "remoteResource" : {
+    "url" : "https://github.com/Yswag/Vesper.git",
+    "autoUpdateInterval" : 86400
+  },
   "permissions" : [
     "fileSystem"
   ],
