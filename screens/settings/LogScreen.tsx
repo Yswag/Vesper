@@ -11,20 +11,18 @@ import { EmptyState, StatusLine } from "../../design/status"
 import { Caption, Footnote } from "../../design/text"
 import { cardBackground, cardShape, denseRowPadding, palette } from "../../design/tokens"
 import { clearLog, logEntries, subscribeLog, type LogEntry, type LogLevel } from "../../engine/log"
-import { t, type MessageKey } from "../../i18n"
+import { t } from "../../i18n"
 
-// 層級是資料（值的 id 就是 log 自己的 level），標籤是文案：只放 key，
-// 篩選列在 render 時才 `t()`——模組層常數不能在 import 時就把語言算死。
-const LEVELS: Array<{ id: LogLevel | "all"; labelKey: MessageKey }> = [
-  { id: "all", labelKey: "settings.log.levels.all" },
-  { id: "error", labelKey: "settings.log.levels.error" },
-  { id: "warning", labelKey: "settings.log.levels.warning" },
-  { id: "info", labelKey: "settings.log.levels.info" },
-  { id: "debug", labelKey: "settings.log.levels.debug" },
+const LEVELS: Array<{ id: LogLevel | "all"; label: string }> = [
+  { id: "all", label: "ALL" },
+  { id: "error", label: "ERROR" },
+  { id: "warning", label: "WARN" },
+  { id: "info", label: "INFO" },
+  { id: "debug", label: "DEBUG" },
 ]
 
 export function LogScreen() {
-  const [level, setLevel] = useState<LogLevel | "all">("all")
+  const [level, setLevel] = useState<LogLevel | "all">("info")
 
   useSubscription(subscribeLog)
 
@@ -39,7 +37,7 @@ export function LogScreen() {
           iconColor={palette.indigo}
           title={t("settings.log.level")}
           value={level}
-          options={LEVELS.map(item => ({ value: item.id, text: t(item.labelKey) }))}
+          options={LEVELS.map(item => ({ value: item.id, text: item.label }))}
           onChanged={next => {
             const match = LEVELS.find(item => item.id === next)
             if (match) setLevel(match.id)
@@ -74,12 +72,17 @@ export function LogScreen() {
   )
 }
 
+function levelText(level: LogLevel): string {
+  if (level === "warning") return "WARN"
+  return level.toUpperCase()
+}
+
 function LogRow({ entry }: { entry: LogEntry }) {
   return (
     <VStack alignment="leading" spacing={2} padding={denseRowPadding} frame={{ maxWidth: "infinity" }}>
       <HStack spacing={6} frame={{ maxWidth: "infinity" }}>
         <Text font="caption2" foregroundStyle={colorOf(entry.level)}>
-          {entry.level.toUpperCase()}
+          {levelText(entry.level)}
         </Text>
         <Footnote>{entry.scope}</Footnote>
         <Spacer />
