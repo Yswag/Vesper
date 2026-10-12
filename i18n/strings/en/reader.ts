@@ -26,9 +26,8 @@ export default {
   atLastChapter: "Last",
   chapterLinkLabel: "{label}: {title}",
 
-  endOfChapter: "— End of chapter —",
   endOfBook: "— This is the last chapter —",
-  nextChapterAction: "Next: {title}",
+  nextChapterShort: "Next",
 
   noImages: "This chapter has no images",
 

@@ -40,10 +40,9 @@ export default {
   /** 換話鈕的無障礙標籤。`{label}` 是動作（「上一話」…），`{title}` 是章節名（源的資料）。 */
   chapterLinkLabel: "{label}：{title}",
 
-  /** 章末卡片。`{title}` 是下一話的章節名。 */
-  endOfChapter: "— 本話結束 —",
+  /** 章末提示。 */
   endOfBook: "— 已是全書最後一話 —",
-  nextChapterAction: "進入下一話：{title}",
+  nextChapterShort: "下一話",
 
   /** 開章時蓋在畫布上的遮罩。載入中那句話沿用 `common.loading`。 */
   noImages: "這一章沒有圖片",

@@ -26,9 +26,8 @@ export default {
   atLastChapter: "最后话",
   chapterLinkLabel: "{label}：{title}",
 
-  endOfChapter: "— 本话结束 —",
   endOfBook: "— 已是全书最后一话 —",
-  nextChapterAction: "进入下一话：{title}",
+  nextChapterShort: "下一话",
 
   noImages: "这一章没有图片",
 

@@ -244,6 +244,13 @@ function ReaderContent({
   const scrubTimer = useRef<number | null>(null)
   const turnTimer = useRef<number | null>(null)
 
+  // 末頁拉動進入下一話的 overscroll 進度與門檻（支援畫廊與連續模式）
+  const [pullProgress, setPullProgress] = useState(0) // 0 ~ 1
+  const [overscrollPx, setOverscrollPx] = useState(0)
+  const overscrollRef = useRef(0)
+  const isInteractingRef = useRef(false)
+  const PULL_THRESHOLD = 65
+
   /** 清掉一個閘門計時器（排程前與 effect cleanup 共用）；一律比 `null`。 */
   function clearGate(timer: { current: number | null }) {
     if (timer.current === null) return
@@ -513,25 +520,8 @@ function ReaderContent({
     [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height],
   )
 
-  // 章末提示（畫廊與橫向連續時也佔一頁）
-  const endContent = next ? (
-    <VStack alignment="center" spacing={14} padding={{ top: 40, bottom: 100, horizontal: 20 }}>
-      <Text font="caption" foregroundStyle="tertiaryLabel">
-        {t("reader.endOfChapter")}
-      </Text>
-      <ChapterLink chapter={next} label={t("reader.nextChapterAction", { title: next.title })} isButton={true} onSelect={selectChapter} />
-    </VStack>
-  ) : (
-    <HStack spacing={0} padding={{ top: 40, bottom: 100 }}>
-      <Spacer />
-      <Text font="caption" foregroundStyle="tertiaryLabel">
-        {t("reader.endOfBook")}
-      </Text>
-      <Spacer />
-    </HStack>
-  )
-
-  const endCard =
+  // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
+  const endCard = !next ? (
     paginated || !vertical ? (
       <ZStack
         key="end"
@@ -542,11 +532,24 @@ function ReaderContent({
             : { height: pageSize.height }
         }
       >
-        {endContent}
+        <HStack spacing={0} padding={{ top: 40, bottom: 100 }}>
+          <Spacer />
+          <Text font="caption" foregroundStyle="tertiaryLabel">
+            {t("reader.endOfBook")}
+          </Text>
+          <Spacer />
+        </HStack>
       </ZStack>
     ) : (
-      endContent
+      <HStack spacing={0} padding={{ top: 40, bottom: 100 }}>
+        <Spacer />
+        <Text font="caption" foregroundStyle="tertiaryLabel">
+          {t("reader.endOfBook")}
+        </Text>
+        <Spacer />
+      </HStack>
     )
+  ) : null
 
   // 頁碼：所有模式都看 onScrollTargetVisibilityChange 回報的領先可見頁。
   const currentPage =
@@ -808,6 +811,54 @@ function ReaderContent({
           }}
           environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
           onTapGesture={{ count: 1, coordinateSpace: "local", perform: handleCanvasTap }}
+          onScrollGeometryChange={{
+            of: "geometry",
+            onChanged: (_, geo) => {
+              if (!next) return
+              let overscroll = 0
+              if (vertical) {
+                const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)
+                overscroll = geo.contentOffset.y - maxScrollY
+              } else if (rtl) {
+                // 在 rightToLeft layoutDirection 下，SwiftUI contentOffset.x 為負數或反向
+                // 當滑到最後一張向左滑動時，取超出量
+                const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                overscroll = geo.contentOffset.x < 0
+                  ? -geo.contentOffset.x
+                  : geo.contentOffset.x - maxScrollX
+              } else {
+                const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                overscroll = geo.contentOffset.x - maxScrollX
+              }
+              overscrollRef.current = overscroll
+
+              if (overscroll > 2) {
+                const p = Math.min(1, Math.max(0, (overscroll - 2) / PULL_THRESHOLD))
+                setPullProgress(p)
+                setOverscrollPx(overscroll)
+              } else if (overscrollRef.current <= 0) {
+                setPullProgress(0)
+                setOverscrollPx(0)
+              }
+            },
+          }}
+          onScrollPhaseChange={(oldPhase, newPhase) => {
+            if (newPhase === "interacting" || newPhase === "tracking") {
+              isInteractingRef.current = true
+            }
+            if (
+              isInteractingRef.current &&
+              (newPhase === "decelerating" || newPhase === "idle")
+            ) {
+              isInteractingRef.current = false
+              if (overscrollRef.current >= PULL_THRESHOLD && next) {
+                selectChapter(next.id)
+              }
+              setPullProgress(0)
+              setOverscrollPx(0)
+              overscrollRef.current = 0
+            }
+          }}
         >
           {status !== null ? (
             <VStack
@@ -840,6 +891,106 @@ function ReaderContent({
             </LazyHStack>
           )}
         </ScrollView>
+
+        {/* 1.1 邊緣拉籤（Pull Tab：位於 overScroll 空隙中，支援畫廊與連續模式） */}
+        {pullProgress > 0 && next ? (
+          vertical ? (
+            // 縱向（畫廊 / 連續）：底部向上拉出的橫向膠囊
+            <VStack
+              frame={{
+                maxWidth: "infinity",
+                maxHeight: "infinity",
+                alignment: "bottom",
+              }}
+              allowsHitTesting={false}
+              zIndex={50}
+            >
+              <HStack
+                spacing={8}
+                padding={{ top: 10, bottom: 10, leading: 16, trailing: 16 }}
+                background={{
+                  style: pullProgress >= 1 ? "thinMaterial" : "ultraThinMaterial",
+                  shape: {
+                    type: "capsule",
+                    style: "continuous",
+                  },
+                }}
+                opacity={Math.max(0.15, pullProgress)}
+                offset={{
+                  x: 0,
+                  // 膠囊高度約 38pt，平常藏在螢幕底部邊緣外，隨 overscrollPx 往上推入
+                  y: 45 - Math.min(overscrollPx, PULL_THRESHOLD),
+                }}
+              >
+                <Image
+                  systemName="chevron.up"
+                  font="caption"
+                  fontWeight={pullProgress >= 1 ? "bold" : "regular"}
+                  foregroundStyle={pullProgress >= 1 ? "label" : neutral.secondary}
+                />
+                <Text
+                  font="caption2"
+                  fontWeight={pullProgress >= 1 ? "bold" : "medium"}
+                  foregroundStyle={pullProgress >= 1 ? "label" : neutral.secondary}
+                >
+                  {t("reader.nextChapterShort")}
+                </Text>
+              </HStack>
+            </VStack>
+          ) : (
+            // 橫向畫廊：依閱讀方向（LTR 在右側、RTL 在左側）從邊緣探出的直立拉籤
+            <HStack
+              frame={{
+                maxWidth: "infinity",
+                maxHeight: "infinity",
+                alignment: rtl ? "leading" : "trailing",
+              }}
+              allowsHitTesting={false}
+              zIndex={50}
+            >
+              <VStack
+                alignment="center"
+                spacing={8}
+                padding={{ top: 18, bottom: 18, leading: 8, trailing: 8 }}
+                background={{
+                  style: pullProgress >= 1 ? "thinMaterial" : "ultraThinMaterial",
+                  shape: {
+                    type: "capsule",
+                    style: "continuous",
+                  },
+                }}
+                opacity={Math.max(0.15, pullProgress)}
+                offset={{
+                  // 寬度約 34pt，平常貼在螢幕邊界外（38），隨 overscrollPx 逐步拉進畫面
+                  x: rtl
+                    ? -38 + Math.min(overscrollPx, PULL_THRESHOLD)
+                    : 38 - Math.min(overscrollPx, PULL_THRESHOLD),
+                  y: 0,
+                }}
+              >
+                <Image
+                  systemName={rtl ? "chevron.left" : "chevron.right"}
+                  font="caption"
+                  fontWeight={pullProgress >= 1 ? "bold" : "regular"}
+                  foregroundStyle={pullProgress >= 1 ? "label" : neutral.secondary}
+                />
+                {/* 直向文字：固定為下一話，拉滿時由次要灰字變為高亮白字 */}
+                {t("reader.nextChapterShort")
+                  .split("")
+                  .map((char, i) => (
+                    <Text
+                      key={String(i)}
+                      font="caption2"
+                      fontWeight={pullProgress >= 1 ? "bold" : "medium"}
+                      foregroundStyle={pullProgress >= 1 ? "label" : neutral.secondary}
+                    >
+                      {char}
+                    </Text>
+                  ))}
+              </VStack>
+            </HStack>
+          )
+        ) : null}
 
         {/* 2. 全螢幕 HUD Overlay
               外框恆在：遮罩與上下工具列用 offset/opacity 收放，
