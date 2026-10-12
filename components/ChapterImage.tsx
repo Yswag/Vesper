@@ -15,6 +15,8 @@ import type { ChapterSession } from "../app/comic"
 import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
+import { sharpenImage } from "../engine/upscale"
+import { getReaderSettings } from "../library/readerSettings"
 
 export interface ChapterImageProps {
   session: ChapterSession
@@ -55,6 +57,21 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         log("debug", "reader", `第 ${index + 1} 頁 mount→圖 ${Date.now() - started}ms`)
         setAspect(decoded.width / decoded.height)
         setImage(decoded)
+
+        // 漸進式增強：若使用者開啟硬體加速超分，原圖先見，背後執行 ACNet ONNX 超分後原地替換
+        // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
+        const settings = getReaderSettings()
+        if (settings.hardwareSharpen && data) {
+          const pageKey = `ep_${index}`
+          const t0 = Date.now()
+          void sharpenImage(pageKey, data).then(sharpened => {
+            if (alive && sharpened) {
+              const costMs = Date.now() - t0
+              setImage(sharpened)
+              log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+            }
+          })
+        }
       } catch (error) {
         // 換話／離開閱讀器造成的取消是正常結束，不要顯示成「載入失敗：AbortError」。
         if (isAbortError(error)) return
@@ -80,8 +97,13 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     )
   }
 
+  // 未載入時的佔位高度：
+  // 如果給了 size（畫廊/橫向）吃指定高度；沒給（縱向條漫）預設給 560pt（約螢幕 70% 高），
+  // 避免 160pt 導致 LazyVStack 開場一口氣塞進 5~6 個載入中並同時並行發起大圖網路與超分請求。
+  const placeholderHeight = size?.height ?? 560
+
   return (
-    <VStack alignment="center" spacing={6} frame={{ height: 160 }}>
+    <VStack alignment="center" spacing={6} frame={{ height: placeholderHeight }}>
       {error ? (
         <Text foregroundStyle="systemRed" font="caption">
           {t("common.loadFailed", { message: error })}

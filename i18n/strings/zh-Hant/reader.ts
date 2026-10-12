@@ -58,6 +58,7 @@ export default {
   directionTtb: "縱向",
   gestureHint: "（縱向僅滑動）",
   tapZones: "三分區翻頁",
+  hardwareSharpen: "AI 超解析度 (ACNet ONNX)",
 
   /** 續讀入口（`ResumeReaderScreen`）：不經詳情頁直開閱讀器，失敗只跳 toast。 */
   noChapters: "這部作品目前沒有章節",

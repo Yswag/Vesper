@@ -41,6 +41,7 @@ export default {
   directionTtb: "Vertical",
   gestureHint: "(vertical scrolls only)",
   tapZones: "Tap zones",
+  hardwareSharpen: "AI Super Resolution (ACNet ONNX)",
 
   noChapters: "This title has no chapters yet",
   chapterUnavailable: "Couldn't open this chapter",

@@ -41,6 +41,7 @@ export default {
   directionTtb: "纵向",
   gestureHint: "（纵向仅滑动）",
   tapZones: "三分区翻页",
+  hardwareSharpen: "AI 超分辨率 (ACNet ONNX)",
 
   noChapters: "这部作品目前没有章节",
   chapterUnavailable: "读不到这一话",

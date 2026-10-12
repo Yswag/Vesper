@@ -16,10 +16,12 @@ export interface ReaderSettings {
    * 只在橫向閱讀方向（ltr / rtl）生效——rtl 時左右鏡像；由上到下（ttb）一律整頁點擊＝HUD。
    */
   tapZones: boolean
+  /** 啟用 WebGL 硬體加速影像銳化（網點保護）。 */
+  hardwareSharpen: boolean
 }
 
-/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁。 */
-const DEFAULT: ReaderSettings = { mode: "continuous", direction: "ttb", tapZones: true }
+/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁 ＋ 銳化開啟。 */
+const DEFAULT: ReaderSettings = { mode: "continuous", direction: "ttb", tapZones: true, hardwareSharpen: false }
 const KEY = "venera:readerSettings"
 
 export function getReaderSettings(): ReaderSettings {
@@ -34,6 +36,7 @@ export function getReaderSettings(): ReaderSettings {
         : DEFAULT.direction,
     // 舊資料沒有這個欄位 → 用預設（開）。
     tapZones: typeof tapZones === "boolean" ? tapZones : DEFAULT.tapZones,
+    hardwareSharpen: typeof (raw as any).hardwareSharpen === "boolean" ? (raw as any).hardwareSharpen : DEFAULT.hardwareSharpen,
   }
 }
 

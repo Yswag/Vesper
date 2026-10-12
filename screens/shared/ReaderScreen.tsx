@@ -75,6 +75,7 @@ import {
 } from "../../library/readerSettings"
 import { createOfflineSession, isOfflineReadable } from "./offlineSession"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
+import { disposeUpscaleEngine } from "../../engine/upscale"
 
 /** 控制列滑入／滑出的彈性動畫 */
 const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
@@ -330,7 +331,12 @@ function ReaderContent({
     session.warm(Math.min(Math.max(leadingPage ?? 0, 0), pageCount - 1))
   }, [session, leadingPage, pageCount])
 
-  // 頁碼落盤：以「領先可見頁」為準，其他欄位一併帶上（寫入本身 500ms 去抖）。
+  // 離開閱讀器時釋放 WebGL 銳化引擎資源與臨時 session 快取
+  useEffect(() => {
+    return () => {
+      disposeUpscaleEngine()
+    }
+  }, [])
   // leadingPage 還沒回報時當成第 1 頁：新開一話若內容不需捲動（例如單張圖），
   // 可見集合永遠不會回呼，不補這一下就會整話都沒有頁碼可用。
   useEffect(() => {
@@ -939,6 +945,13 @@ function ReaderContent({
                       onChanged={value => {
                         if (settings.direction !== "ttb") updateSettings({ tapZones: value })
                       }}
+                    />
+
+                    <Toggle
+                      title={t("reader.hardwareSharpen")}
+                      systemImage="sparkles"
+                      value={settings.hardwareSharpen}
+                      onChanged={value => updateSettings({ hardwareSharpen: value })}
                     />
                   </Menu>
                 </HStack>
