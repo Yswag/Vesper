@@ -6,7 +6,7 @@
 // 3. 具備防重入與 session 快取，關閉閱讀器自動 dispose。
 
 import { Script } from "scripting"
-import { exists, join, readBytes } from "./fs"
+import { join, readBytes } from "./fs"
 import { log } from "./log"
 
 let serverInstance: HttpServer | null = null

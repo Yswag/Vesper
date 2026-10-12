@@ -414,11 +414,23 @@ function ReaderContent({
 
   /** 畫布點擊：三區翻頁（左／中／右）；沒開分區、或閱讀方向是上到下時，整頁點擊＝切 HUD。 */
   function handleCanvasTap(location: Point) {
-    // 由上到下（ttb）不做點擊翻頁——那個方向靠滑動。
+    // 縱向畫廊模式：支援上 1/4 上一頁、下 1/4 下一頁、中 1/2 切 HUD
+    if (vertical && paginated && settings.tapZones) {
+      const vQuarter = viewport.height / 4
+      if (location.y > vQuarter && location.y < vQuarter * 3) {
+        toggleHUD()
+        return
+      }
+      turnPage(location.y >= vQuarter * 3 ? 1 : -1)
+      return
+    }
+
+    // 由上到下（ttb）連續條漫模式不做點擊翻頁——那個方向靠滑動。
     if (!settings.tapZones || settings.direction === "ttb") {
       toggleHUD()
       return
     }
+
     // 分區＝左右各 1/4 翻頁、中間 1/2 切 HUD。
     // （2026-10-10 從三等分改的：三等分的翻頁區佔 2/3 寬，實機覺得可翻頁的區域太大。）
     const quarter = viewport.width / 4
@@ -434,6 +446,7 @@ function ReaderContent({
   const vertical = settings.direction === "ttb"
   const rtl = settings.direction === "rtl"
   const paginated = settings.mode === "gallery"
+
   const axes = readerAxis(settings.direction)
   // Paging and tap zones share the actual full-bleed viewport.
   const pageSize = viewport
@@ -463,7 +476,7 @@ function ReaderContent({
             const id = String(i)
             if (paginated) {
               return (
-                <ZStack key={id} frame={{ width: pageSize.width, height: pageSize.height }}>
+                <ZStack key={id} tag={i} frame={{ width: pageSize.width, height: pageSize.height }}>
                   <ZoomableView
                     contentSize={pageSize}
                     box={pageSize}
@@ -509,6 +522,7 @@ function ReaderContent({
     paginated || !vertical ? (
       <ZStack
         key="end"
+        tag={pageCount}
         frame={
           paginated
             ? { width: pageSize.width, height: pageSize.height }
@@ -747,7 +761,13 @@ function ReaderContent({
           key={`${currentEpId}-${settings.mode}-${settings.direction}`}
           axes={axes}
           scrollIndicator="never"
-          scrollTargetBehavior={paginated ? "paging" : undefined}
+          scrollTargetBehavior={
+            paginated
+              ? vertical
+                ? "viewAlignedLimitAlwaysByOne" // 縱向畫廊：iOS 原生嚴格單頁吸附，一次手勢只翻一頁，絕不停在半中間！
+                : "paging"                      // 橫向畫廊：標準 paging
+              : undefined                       // 連續模式：自由平滑流動
+          }
           scrollPosition={{ value: scrollPos, anchor: "topLeading" }}
           onScrollTargetVisibilityChange={{
             idType: "string",
