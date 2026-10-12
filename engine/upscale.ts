@@ -14,8 +14,8 @@ let controllerInstance: WebViewController | null = null
 let currentPort = 0
 let initPromise: Promise<void> | null = null
 
-// Session 記憶體快取（LRU 控制，最大保留 10 張超分圖像，單張解碼點陣圖約 25~35MB）
-const MAX_UPSCALE_CACHE_SIZE = 10
+// Session 記憶體快取（LRU 控制，最多保留 6 張超分圖像，單張解碼點陣圖約 25~35MB）
+const MAX_UPSCALE_CACHE_SIZE = 6
 const sessionCache = new Map<string, UIImage>()
 
 function getCachedUpscaleImage(key: string): UIImage | undefined {
@@ -42,12 +42,20 @@ function setCachedUpscaleImage(key: string, image: UIImage): void {
   sessionCache.set(key, image)
 }
 
+let processedCount = 0
+
 /** 清理當前話／會話的所有超分圖片記憶體快取（換話時呼叫） */
 export function clearUpscaleCache(): void {
   const size = sessionCache.size
   if (size > 0) {
     sessionCache.clear()
     log("debug", "upscale", `已清空超分圖片記憶體快取，釋放 ${size} 張高解析度圖像`)
+  }
+  // 換話時主動釋放 WebViewController 實例，重置 WebKit WebProcess 與 WebAssembly 累積顯存
+  if (controllerInstance) {
+    controllerInstance.dispose()
+    controllerInstance = null
+    log("debug", "upscale", "已重置 WebViewController 消除 WebKit 顯存累積")
   }
 }
 
@@ -174,10 +182,20 @@ window.runACNet = async function(imageUrl) {
   }
 
   ctx.putImageData(outImgData, 0, 0);
+
+  // 主動釋放大型 Float32Array 與輸入資源，減輕 JS 堆積
+  img.src = "";
+  if (outputTensor && typeof outputTensor.dispose === "function") {
+    outputTensor.dispose();
+  }
 };
 
 window.exportJpegBlob = async function(uploadUrl) {
   const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.90));
+  // 關鍵修復：立即清空 Canvas 寬高以釋放 WebKit GPU Process 的大型像素緩衝區（Backing Store）
+  canvas.width = 0;
+  canvas.height = 0;
+
   await fetch(uploadUrl, {
     method: "POST",
     headers: { "Content-Type": "image/jpeg" },
@@ -305,6 +323,16 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<{ ima
       if (sharpenedImage) {
         setCachedUpscaleImage(key, sharpenedImage)
         log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
+
+        // 每累計處理 25 張超分圖片，重置一次 WebViewController，強制 WebKit 釋放所有內部顯存碎片
+        processedCount++
+        if (processedCount >= 25 && controllerInstance) {
+          processedCount = 0
+          controllerInstance.dispose()
+          controllerInstance = null
+          log("debug", "upscale", "超分累積達到 25 張，自動重置 WebViewController")
+        }
+
         return { image: sharpenedImage, fromCache: false }
       }
     } catch (error) {

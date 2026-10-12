@@ -64,19 +64,24 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
         // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
         const settings = getReaderSettings()
         if (settings.hardwareSharpen && data) {
-          const pageKey = `${chapterId}_p${index}`
-          const t0 = Date.now()
-          void sharpenImage(pageKey, data).then(result => {
-            if (alive && result) {
-              const costMs = Date.now() - t0
-              setImage(result.image)
-              if (result.fromCache) {
-                log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
-              } else {
-                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+          // 若原始圖片已經很大（寬度或高度大於 1920），再 2x 放大將產出超過 4K 的巨型紋理，
+          // 會迅速耗盡 iOS GPU 顯存配額導致黑圖崩潰；此時保持原圖高清輸出即可
+          const isTooLargeForUpscale = decoded.width >= 1920 || decoded.height >= 2560
+          if (!isTooLargeForUpscale) {
+            const pageKey = `${chapterId}_p${index}`
+            const t0 = Date.now()
+            void sharpenImage(pageKey, data).then(result => {
+              if (alive && result) {
+                const costMs = Date.now() - t0
+                setImage(result.image)
+                if (result.fromCache) {
+                  log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+                } else {
+                  log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+                }
               }
-            }
-          })
+            })
+          }
         }
       } catch (error) {
         // 換話／離開閱讀器造成的取消是正常結束，不要顯示成「載入失敗：AbortError」。
