@@ -14,8 +14,42 @@ let controllerInstance: WebViewController | null = null
 let currentPort = 0
 let initPromise: Promise<void> | null = null
 
-// Session 記憶體快取
+// Session 記憶體快取（LRU 控制，最大保留 10 張超分圖像，單張解碼點陣圖約 25~35MB）
+const MAX_UPSCALE_CACHE_SIZE = 10
 const sessionCache = new Map<string, UIImage>()
+
+function getCachedUpscaleImage(key: string): UIImage | undefined {
+  const item = sessionCache.get(key)
+  if (item) {
+    // LRU: 重新放入尾端標記為最近使用
+    sessionCache.delete(key)
+    sessionCache.set(key, item)
+  }
+  return item
+}
+
+function setCachedUpscaleImage(key: string, image: UIImage): void {
+  if (sessionCache.has(key)) {
+    sessionCache.delete(key)
+  } else if (sessionCache.size >= MAX_UPSCALE_CACHE_SIZE) {
+    // 淘汰最久未存取項目
+    const oldestKey = sessionCache.keys().next().value
+    if (oldestKey) {
+      sessionCache.delete(oldestKey)
+      log("debug", "upscale", `超分快取觸發 LRU 淘汰: ${oldestKey}`)
+    }
+  }
+  sessionCache.set(key, image)
+}
+
+/** 清理當前話／會話的所有超分圖片記憶體快取（換話時呼叫） */
+export function clearUpscaleCache(): void {
+  const size = sessionCache.size
+  if (size > 0) {
+    sessionCache.clear()
+    log("debug", "upscale", `已清空超分圖片記憶體快取，釋放 ${size} 張高解析度圖像`)
+  }
+}
 
 function buildACNetHTML(port: number): string {
   return `<!DOCTYPE html>
@@ -239,13 +273,13 @@ export function disposeUpscaleEngine(): void {
 let queuePromise = Promise.resolve<any>(null)
 
 export async function sharpenImage(key: string, sourceData: Data): Promise<{ image: UIImage; fromCache: boolean } | null> {
-  const cached = sessionCache.get(key)
+  const cached = getCachedUpscaleImage(key)
   if (cached) return { image: cached, fromCache: true }
 
   // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
   const runTask = async (): Promise<{ image: UIImage; fromCache: boolean } | null> => {
     // 二次檢查快取
-    const doubleCheck = sessionCache.get(key)
+    const doubleCheck = getCachedUpscaleImage(key)
     if (doubleCheck) return { image: doubleCheck, fromCache: true }
 
     try {
@@ -269,7 +303,7 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<{ ima
 
       const sharpenedImage = UIImage.fromData(outData)
       if (sharpenedImage) {
-        sessionCache.set(key, sharpenedImage)
+        setCachedUpscaleImage(key, sharpenedImage)
         log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
         return { image: sharpenedImage, fromCache: false }
       }

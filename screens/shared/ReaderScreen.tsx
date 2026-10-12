@@ -75,7 +75,7 @@ import {
 } from "../../library/readerSettings"
 import { createOfflineSession, isOfflineReadable } from "./offlineSession"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
-import { disposeUpscaleEngine } from "../../engine/upscale"
+import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
 /** 控制列滑入／滑出的彈性動畫 */
 const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
@@ -400,6 +400,7 @@ function ReaderContent({
     turnTarget.current = null
 
     // 換話立即歸零，避免上一話的頁碼狀態短暫帶到新的一話
+    clearUpscaleCache()
     setLeadingPage(0)
     scrubValue.setValue(0)
     scrollPos.setValue("0")
