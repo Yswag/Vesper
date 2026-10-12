@@ -20,6 +20,8 @@ import { getReaderSettings } from "../library/readerSettings"
 
 export interface ChapterImageProps {
   session: ChapterSession
+  /** 章節識別碼（避免跨章節換話時快取或狀態串音）。 */
+  chapterId?: string
   /** 這一張在章節裡的頁索引（＝閱讀器的頁碼）。 */
   index: number
   /**
@@ -29,7 +31,7 @@ export interface ChapterImageProps {
   size?: { width?: number; height?: number }
 }
 
-export function ChapterImage({ session, index, size }: ChapterImageProps) {
+export function ChapterImage({ session, chapterId = "default", index, size }: ChapterImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [aspect, setAspect] = useState<number | null>(null)
   const [error, setError] = useState("")
@@ -62,7 +64,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
         const settings = getReaderSettings()
         if (settings.hardwareSharpen && data) {
-          const pageKey = `ep_${index}`
+          const pageKey = `${chapterId}_p${index}`
           const t0 = Date.now()
           void sharpenImage(pageKey, data).then(result => {
             if (alive && result) {
@@ -88,7 +90,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     return () => {
       alive = false
     }
-  }, [session, index])
+  }, [session, chapterId, index])
 
   if (image && aspect) {
     return (

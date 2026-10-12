@@ -371,7 +371,7 @@ function ReaderContent({
     if (target === clampPage(leadingPage ?? 0)) return
     scrubTarget.current = target
     setLeadingPage(target)
-    scrollPos.setValue(String(target))
+    void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
     // 兜底：單張圖那種不必捲動的情形不會有回報，別讓閘門永遠關著。
     // 先清上一次的兜底（連續拖放會各排一個，舊的不該留著），再排這次的。
     clearGate(scrubTimer)
@@ -385,7 +385,16 @@ function ReaderContent({
   function selectChapter(id: string) {
     setShowChapterSheet(false)
     if (id === currentEpId) return
-    // 先歸零：ScrollView 的 key 帶了 currentEpId，會整棵重建成新的一話（從頭讀）。
+    // 立即清空過期目標與計時器
+    clearGate(restoreTimer)
+    clearGate(scrubTimer)
+    clearGate(turnTimer)
+    scrubTarget.current = null
+    turnTarget.current = null
+
+    // 換話立即歸零，避免上一話的頁碼狀態短暫帶到新的一話
+    setLeadingPage(0)
+    scrubValue.setValue(0)
     scrollPos.setValue("0")
     setCurrentEpId(id)
   }
@@ -482,19 +491,23 @@ function ReaderContent({
                     box={pageSize}
                     resetToken={currentEpId}
                   >
-                    <ChapterImage session={session} index={i} size={pageSize} />
+                    <ChapterImage session={session} chapterId={currentEpId} index={i} size={pageSize} />
                   </ZoomableView>
                 </ZStack>
               )
             }
             if (!vertical) {
               return (
-                <HStack key={id} frame={{ height: pageSize.height }} alignment="center">
-                  <ChapterImage session={session} index={i} size={{ height: pageSize.height }} />
+                <HStack key={id} tag={i} frame={{ height: pageSize.height }} alignment="center">
+                  <ChapterImage session={session} chapterId={currentEpId} index={i} size={{ height: pageSize.height }} />
                 </HStack>
               )
             }
-            return <ChapterImage key={id} session={session} index={i} />
+            return (
+              <VStack key={id} tag={i} frame={{ maxWidth: "infinity" }}>
+                <ChapterImage session={session} chapterId={currentEpId} index={i} />
+              </VStack>
+            )
           })
         : [],
     [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height],
