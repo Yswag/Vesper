@@ -210,57 +210,68 @@ window.exportJpegBlob = async function(uploadUrl) {
 let activeSourceData: Data | null = null
 let uploadedBuffer: ArrayBuffer | null = null
 
+async function ensureServer(): Promise<number> {
+  if (serverInstance && currentPort) return currentPort
+
+  const server = new HttpServer()
+
+  const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
+  const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
+  const wasmPath = join(Script.directory, "assets/acnet/ort-wasm.wasm")
+  const wasmSimdPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
+
+  const acnetBytes = readBytes(acnetPath)
+  const ortJsBytes = readBytes(ortJsPath)
+  const wasmBytes = readBytes(wasmPath)
+  const wasmSimdBytes = readBytes(wasmSimdPath) || wasmBytes
+
+  if (!acnetBytes || !ortJsBytes || !wasmBytes) {
+    throw new Error("ACNet 資源檔案丟失 (請確認 assets/acnet 目錄完整)")
+  }
+
+  server.registerHandler("/feed.jpg", () => {
+    if (!activeSourceData) return HttpResponse.notFound()
+    return HttpResponse.ok(HttpResponseBody.data(activeSourceData))
+  })
+  server.registerHandler("/anime4k_acnet.onnx", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(acnetBytes.buffer as ArrayBuffer)!)))
+  server.registerHandler("/ort.min.js", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(ortJsBytes.buffer as ArrayBuffer)!)))
+  server.registerHandler("/ort-wasm.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmBytes.buffer as ArrayBuffer)!)))
+  server.registerHandler("/ort-wasm-simd.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmSimdBytes!.buffer as ArrayBuffer)!)))
+  server.registerHandler("/upload", req => {
+    if (req.body) uploadedBuffer = req.body.toArrayBuffer()
+    return HttpResponse.ok(HttpResponseBody.text("ok"))
+  })
+
+  const err = server.start({ port: 0 })
+  if (err) throw new Error(`HttpServer start failed: ${err}`)
+  currentPort = server.port ?? 0
+  serverInstance = server
+  log("info", "upscale", `ACNet 本地靜態伺服器啟動於埠號 ${currentPort}`)
+  return currentPort
+}
+
 async function ensureEngine(): Promise<void> {
-  if (controllerInstance && serverInstance) return
+  if (controllerInstance) return
   if (initPromise) return initPromise
 
   initPromise = (async () => {
     try {
-      const server = new HttpServer()
-
-      const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
-      const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
-      const wasmPath = join(Script.directory, "assets/acnet/ort-wasm.wasm")
-      const wasmSimdPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
-
-      const acnetBytes = readBytes(acnetPath)
-      const ortJsBytes = readBytes(ortJsPath)
-      const wasmBytes = readBytes(wasmPath)
-      const wasmSimdBytes = readBytes(wasmSimdPath) || wasmBytes
-
-      if (!acnetBytes || !ortJsBytes || !wasmBytes) {
-        throw new Error("ACNet 資源檔案丟失 (請確認 assets/acnet 目錄完整)")
-      }
-
-      server.registerHandler("/feed.jpg", () => {
-        if (!activeSourceData) return HttpResponse.notFound()
-        return HttpResponse.ok(HttpResponseBody.data(activeSourceData))
-      })
-      server.registerHandler("/anime4k_acnet.onnx", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(acnetBytes.buffer as ArrayBuffer)!)))
-      server.registerHandler("/ort.min.js", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(ortJsBytes.buffer as ArrayBuffer)!)))
-      server.registerHandler("/ort-wasm.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmBytes.buffer as ArrayBuffer)!)))
-      server.registerHandler("/ort-wasm-simd.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmSimdBytes!.buffer as ArrayBuffer)!)))
-      server.registerHandler("/upload", req => {
-        if (req.body) uploadedBuffer = req.body.toArrayBuffer()
-        return HttpResponse.ok(HttpResponseBody.text("ok"))
-      })
-
-      const err = server.start({ port: 0 })
-      if (err) throw new Error(`HttpServer start failed: ${err}`)
-      currentPort = server.port ?? 0
-      serverInstance = server
+      const port = await ensureServer()
 
       const controller = new WebViewController({ ephemeral: true })
-      await controller.loadHTML(buildACNetHTML(currentPort), `http://127.0.0.1:${currentPort}/`)
+      await controller.loadHTML(buildACNetHTML(port), `http://127.0.0.1:${port}/`)
       await controller.waitForLoad()
       
       // 初始化 ONNX 會話
       await controller.evaluateJavaScript(`return window.initSession();`)
       controllerInstance = controller
-      log("info", "upscale", `ONNX ACNet 神經網絡引擎初始化完成，監聽於埠號 ${currentPort}`)
+      log("info", "upscale", `ONNX ACNet 神經網絡引擎就緒 (連接埠號 ${port})`)
     } catch (e) {
       log("warning", "upscale", "ONNX ACNet 引擎初始化失敗", e)
-      disposeUpscaleEngine()
+      if (controllerInstance) {
+        controllerInstance.dispose()
+        controllerInstance = null
+      }
       throw e
     } finally {
       initPromise = null
@@ -278,6 +289,7 @@ export function disposeUpscaleEngine(): void {
   if (serverInstance) {
     serverInstance.stop()
     serverInstance = null
+    currentPort = 0
   }
   activeSourceData = null
   uploadedBuffer = null
