@@ -238,15 +238,15 @@ export function disposeUpscaleEngine(): void {
 // 任務串行互斥隊列（避免並發請求覆蓋圖片發生串音）
 let queuePromise = Promise.resolve<any>(null)
 
-export async function sharpenImage(key: string, sourceData: Data): Promise<UIImage | null> {
+export async function sharpenImage(key: string, sourceData: Data): Promise<{ image: UIImage; fromCache: boolean } | null> {
   const cached = sessionCache.get(key)
-  if (cached) return cached
+  if (cached) return { image: cached, fromCache: true }
 
   // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
-  const runTask = async () => {
+  const runTask = async (): Promise<{ image: UIImage; fromCache: boolean } | null> => {
     // 二次檢查快取
     const doubleCheck = sessionCache.get(key)
-    if (doubleCheck) return doubleCheck
+    if (doubleCheck) return { image: doubleCheck, fromCache: true }
 
     try {
       await ensureEngine()
@@ -271,7 +271,7 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<UIIma
       if (sharpenedImage) {
         sessionCache.set(key, sharpenedImage)
         log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
-        return sharpenedImage
+        return { image: sharpenedImage, fromCache: false }
       }
     } catch (error) {
       log("warning", "upscale", `頁面 ${key} ACNet 超分失敗，降級原圖`, error)
@@ -282,7 +282,6 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<UIIma
     return null
   }
 
-  // 將當前任務排入互斥隊列
   const nextPromise = queuePromise.then(runTask, runTask)
   queuePromise = nextPromise
   return nextPromise

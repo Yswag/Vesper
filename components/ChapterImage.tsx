@@ -64,11 +64,15 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         if (settings.hardwareSharpen && data) {
           const pageKey = `ep_${index}`
           const t0 = Date.now()
-          void sharpenImage(pageKey, data).then(sharpened => {
-            if (alive && sharpened) {
+          void sharpenImage(pageKey, data).then(result => {
+            if (alive && result) {
               const costMs = Date.now() - t0
-              setImage(sharpened)
-              log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+              setImage(result.image)
+              if (result.fromCache) {
+                log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+              } else {
+                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+              }
             }
           })
         }

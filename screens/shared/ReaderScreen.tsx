@@ -867,15 +867,9 @@ function ReaderContent({
                 }}
                 frame={{ maxWidth: "infinity" }}
               >
-                <HStack spacing={12} alignment="center">
-                  {/* 返回上一頁 */}
-                  <Button action={dismiss} buttonStyle="plain" accessibilityLabel={t("reader.backToDetails")}>
-                    <Image systemName="chevron.left" font={18} frame={{ width: 44, height: 44 }} foregroundStyle="white" />
-                  </Button>
-
-                  {/* 漫畫名與話數。整個區塊靠 `frame(maxWidth: infinity)` 置中（不帶 alignment 就是置中），
-                      所以兩行也要一起置中，否則短的那行會只靠左、右邊缺一角。 */}
-                  <VStack alignment="center" spacing={2} frame={{ maxWidth: "infinity" }}>
+                <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
+                  {/* 標題居中層：以螢幕物理中心為準嚴格置中，兩側夾 padding 避開按鈕 */}
+                  <VStack alignment="center" spacing={2} padding={{ horizontal: 96 }}>
                     <Text font="headline" fontWeight="bold" foregroundStyle="white" lineLimit={1}>
                       {comicTitle}
                     </Text>
@@ -884,78 +878,83 @@ function ReaderContent({
                     </Text>
                   </VStack>
 
-                  {/* 這裡刻意**不放 Spacer**：標題那個 VStack 已經貪婪（maxWidth infinity），
-                      Spacer 只會拿到 0 寬、卻多賺一組 12pt 間距，把標題區塊推離螢幕中心 6pt。 */}
-
-                  {/* 右側按鈕：目錄抽屜 ＋ 閱讀設定 */}
-                  <HStack spacing={4} alignment="center">
-                    <Button
-                      buttonStyle="plain"
-                      accessibilityLabel={t("reader.chaptersTitle")}
-                      action={() => setShowChapterSheet(true)}
-                    >
-                      <Image
-                        frame={{ width: 44, height: 44 }}
-                        systemName="list.bullet"
-                        font={15}
-                        fontWeight="medium"
-                        foregroundStyle="white"
-                      />
+                  {/* 兩側按鈕層：左返回、右選單 */}
+                  <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
+                    <Button action={dismiss} buttonStyle="plain" accessibilityLabel={t("reader.backToDetails")}>
+                      <Image systemName="chevron.left" font={18} frame={{ width: 44, height: 44 }} foregroundStyle="white" />
                     </Button>
 
-                    <Menu
-                      accessibilityLabel={t("reader.readingSettings")}
-                      label={
+                    <Spacer />
+
+                    <HStack spacing={4} alignment="center">
+                      <Button
+                        buttonStyle="plain"
+                        accessibilityLabel={t("reader.chaptersTitle")}
+                        action={() => setShowChapterSheet(true)}
+                      >
                         <Image
                           frame={{ width: 44, height: 44 }}
-                          systemName="gearshape"
+                          systemName="list.bullet"
                           font={15}
                           fontWeight="medium"
                           foregroundStyle="white"
                         />
-                      }
-                    >
-                    <Picker
-                      title={t("reader.mode")}
-                      value={settings.mode}
-                      pickerStyle="segmented"
-                      onChanged={(mode: string | number) => updateSettings({ mode: mode === "gallery" ? "gallery" : "continuous" })}
-                    >
-                      <Text tag="gallery">{t("reader.modeGallery")}</Text>
-                      <Text tag="continuous">{t("reader.modeContinuous")}</Text>
-                    </Picker>
+                      </Button>
 
-                    <Picker
-                      title={t("reader.direction")}
-                      value={settings.direction}
-                      pickerStyle="menu"
-                      onChanged={(direction: string | number) => updateSettings({ direction: direction === "ltr" || direction === "rtl" ? direction : "ttb" })}
-                    >
-                      <Text tag="ltr">{t("reader.directionLtr")}</Text>
-                      <Text tag="rtl">{t("reader.directionRtl")}</Text>
-                      <Text tag="ttb">{t("reader.directionTtb")}</Text>
-                    </Picker>
+                      <Menu
+                        accessibilityLabel={t("reader.readingSettings")}
+                        label={
+                          <Image
+                            frame={{ width: 44, height: 44 }}
+                            systemName="gearshape"
+                            font={15}
+                            fontWeight="medium"
+                            foregroundStyle="white"
+                          />
+                        }
+                      >
+                      <Picker
+                        title={t("reader.mode")}
+                        value={settings.mode}
+                        pickerStyle="segmented"
+                        onChanged={(mode: string | number) => updateSettings({ mode: mode === "gallery" ? "gallery" : "continuous" })}
+                      >
+                        <Text tag="gallery">{t("reader.modeGallery")}</Text>
+                        <Text tag="continuous">{t("reader.modeContinuous")}</Text>
+                      </Picker>
 
-                    {/* 縱向閱讀沒有三分區翻頁；選單列沒有第二行放提示，就接在標題後面。 */}
-                    <Toggle
-                      title={settings.direction === "ttb" ? `${t("reader.tapZones")}${t("reader.gestureHint")}` : t("reader.tapZones")}
-                      systemImage="hand.tap"
-                      disabled={settings.direction === "ttb"}
-                      value={settings.tapZones && settings.direction !== "ttb"}
-                      onChanged={value => {
-                        if (settings.direction !== "ttb") updateSettings({ tapZones: value })
-                      }}
-                    />
+                      <Picker
+                        title={t("reader.direction")}
+                        value={settings.direction}
+                        pickerStyle="menu"
+                        onChanged={(direction: string | number) => updateSettings({ direction: direction === "ltr" || direction === "rtl" ? direction : "ttb" })}
+                      >
+                        <Text tag="ltr">{t("reader.directionLtr")}</Text>
+                        <Text tag="rtl">{t("reader.directionRtl")}</Text>
+                        <Text tag="ttb">{t("reader.directionTtb")}</Text>
+                      </Picker>
 
-                    <Toggle
-                      title={t("reader.hardwareSharpen")}
-                      systemImage="sparkles"
-                      value={settings.hardwareSharpen}
-                      onChanged={value => updateSettings({ hardwareSharpen: value })}
-                    />
-                  </Menu>
+                      {/* 縱向閱讀沒有三分區翻頁；選單列沒有第二行放提示，就接在標題後面。 */}
+                      <Toggle
+                        title={settings.direction === "ttb" ? `${t("reader.tapZones")}${t("reader.gestureHint")}` : t("reader.tapZones")}
+                        systemImage="hand.tap"
+                        disabled={settings.direction === "ttb"}
+                        value={settings.tapZones && settings.direction !== "ttb"}
+                        onChanged={value => {
+                          if (settings.direction !== "ttb") updateSettings({ tapZones: value })
+                        }}
+                      />
+
+                      <Toggle
+                        title={t("reader.hardwareSharpen")}
+                        systemImage="sparkles"
+                        value={settings.hardwareSharpen}
+                        onChanged={value => updateSettings({ hardwareSharpen: value })}
+                      />
+                    </Menu>
+                  </HStack>
                 </HStack>
-              </HStack>
+              </ZStack>
               </VStack>
             </VStack>
           </VStack>
