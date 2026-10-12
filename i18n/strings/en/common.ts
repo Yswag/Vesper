@@ -15,6 +15,7 @@ export default {
   exitAnyway: "Quit anyway",
   allShown: "— End of list —",
   loadFailed: "Couldn't load: {message}",
+  retry: "Retry",
   imageFailed: "(image failed to load)",
 
   pageMissing: "Page {n} does not exist ({total} pages in all)",

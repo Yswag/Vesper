@@ -14,6 +14,7 @@ export default {
   exitAnyway: "仍要退出",
   allShown: "— 已显示全部内容 —",
   loadFailed: "加载失败：{message}",
+  retry: "重试",
   imageFailed: "（图片加载失败）",
 
   pageMissing: "第 {n} 页不存在（共 {total} 页）",

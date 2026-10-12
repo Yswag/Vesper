@@ -26,6 +26,8 @@ export default {
   allShown: "— 已顯示全部內容 —",
   /** 載入失敗：`{message}` 是原因。 */
   loadFailed: "載入失敗：{message}",
+  /** 重試。 */
+  retry: "重試",
   /** 留言裡的圖片載不出來。 */
   imageFailed: "（圖片載入失敗）",
 

@@ -9,7 +9,7 @@
 // 長條型的跨頁圖才不會被壓扁，也不會用原始像素爆版。
 // 給了 `size`（閱讀器的畫廊／橫向模式）就以 `fit` 置中塞進那個框。
 
-import { Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
+import { Button, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 
 import type { ChapterSession } from "../app/comic"
 import { t } from "../i18n"
@@ -35,6 +35,7 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
   const [image, setImage] = useState<UIImage | null>(null)
   const [aspect, setAspect] = useState<number | null>(null)
   const [error, setError] = useState("")
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     let alive = true
@@ -95,7 +96,7 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
     return () => {
       alive = false
     }
-  }, [session, chapterId, index])
+  }, [session, chapterId, index, retryKey])
 
   if (image && aspect) {
     return (
@@ -114,11 +115,24 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
   const placeholderHeight = size?.height ?? 560
 
   return (
-    <VStack alignment="center" spacing={6} frame={{ height: placeholderHeight }}>
+    <VStack alignment="center" spacing={12} frame={{ height: placeholderHeight }}>
       {error ? (
-        <Text foregroundStyle="systemRed" font="caption">
-          {t("common.loadFailed", { message: error })}
-        </Text>
+        <VStack alignment="center" spacing={10}>
+          <Text foregroundStyle="systemRed" font="caption">
+            {t("common.loadFailed", { message: error })}
+          </Text>
+          <Button
+            action={() => setRetryKey(k => k + 1)}
+            buttonStyle="bordered"
+          >
+            <HStack spacing={6}>
+              <Image systemName="arrow.clockwise" font="caption2" />
+              <Text font="caption2" fontWeight="medium">
+                {t("common.retry")}
+              </Text>
+            </HStack>
+          </Button>
+        </VStack>
       ) : (
         <ProgressView />
       )}
