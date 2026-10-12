@@ -588,8 +588,10 @@ function ReaderContent({
             spacing={0}
             frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
             environments={{ colorScheme: "dark" }}
+            preferredColorScheme="dark"
             presentationBackground="clear"
             glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.sheet) }}
+            ignoresSafeArea={{ edges: "bottom" }}
             presentationDetents={["medium", "large"]}
             presentationDragIndicator="visible"
             presentationCornerRadius={24}
