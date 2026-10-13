@@ -17,6 +17,7 @@ export default {
   loadFailed: "Couldn't load: {message}",
   retry: "Retry",
   imageFailed: "(image failed to load)",
+  offlineTag: "Offline",
 
   pageMissing: "Page {n} does not exist ({total} pages in all)",
   pages: { one: "{n} page", other: "{n} pages" },

@@ -4,13 +4,18 @@
 // 而且在卡片點下去的當下就在背景把章節清單抓好，好了直接彈出、退出就回原位，
 // 不會先閃一個「過渡頁」再跳第二次。
 //
-// 章節清單與續讀頁都問 ComicLibrary（它自己會處理離線／快取／源的差異）。
+// 兩條路：
+// - **離線**（這一筆上次是在離線模式讀的、而且那一話還在下載裡，見 `canResumeOffline`）：
+//   章節清單與頁面都只讀離線 manifest，**完全不碰源**——所以在飛航模式下、甚至源被移除都開得起來。
+// - **線上**：章節清單與續讀頁都問 ComicLibrary（它自己會處理離線／快取／源的差異）。
 
 import { Navigation } from "scripting"
 
 import { comicLibrary } from "../../app/services"
 import { showToast } from "../../app/toast"
+import { chaptersForReader } from "../../engine/offline"
 import { t } from "../../i18n"
+import { canResumeOffline } from "./offlineSession"
 import { ReaderScreen, type ChapterRef } from "./ReaderScreen"
 
 export interface LaunchResumeReaderParams {
@@ -33,6 +38,31 @@ export async function launchResumeReader({
 }: LaunchResumeReaderParams) {
   try {
     const library = comicLibrary()
+    const resumed = library.resume({ sourceKey, comicId })
+    const wantedEpId = resumed?.chapter.epId ?? epId
+
+    // 離線優先：上次是在離線模式讀的、那一話也還在下載裡，就直接開離線閱讀器。
+    // 這是「下載了卻被續讀拉回線上（飛航模式下甚至拉不起來）」的那個修正；
+    // 下載被刪掉時 `canResumeOffline` 回 false，很自然地往下走線上那條。
+    if (wantedEpId !== undefined && canResumeOffline({ sourceKey, comicId, epId: wantedEpId }, resumed?.offline)) {
+      await Navigation.present({
+        element: (
+          <ReaderScreen
+            sourceKey={sourceKey}
+            comicId={comicId}
+            epId={wantedEpId}
+            chapters={chaptersForReader(sourceKey, comicId)}
+            comicTitle={title}
+            comicCover={cover}
+            initialPage={resumed?.page ?? page}
+            offlineMode={true}
+          />
+        ),
+        modalPresentationStyle: "fullScreen",
+      })
+      return
+    }
+
     const comicPage = await library.comic({ sourceKey, comicId })
     const chapters: ChapterRef[] = comicPage.chapters.map(chapter => ({
       id: chapter.ref.epId,
@@ -46,8 +76,6 @@ export async function launchResumeReader({
       return
     }
 
-    const resumed = library.resume({ sourceKey, comicId })
-    const wantedEpId = resumed?.chapter.epId ?? epId
     const targetEpId = chapters.some(ch => ch.id === wantedEpId) ? wantedEpId : chapters[0]?.id
 
     if (!targetEpId) {

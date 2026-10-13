@@ -21,6 +21,7 @@
 //
 // 離線模式（`offlineMode`）：整條路只讀離線 manifest（`createOfflineSession`），不碰源也不發請求；
 // 目錄只列「下載完」的章。離線書架與下載頁的閱讀入口走這條。
+// 閱讀進度會一併記下 `offline` 旗標，續讀（歷史卡／首頁續讀卡）才知道要走離線（見 ResumeReaderScreen）。
 //
 // 翻頁手勢（閱讀設定可關，**只作用在橫向閱讀方向**）：畫布分三區——左右各 1/4＝上一頁／下一頁、中間 1/2＝HUD；
 // 翻頁是滑過去的（`withAnimation` + `scrollPos`，見 TURN_ANIM）。
@@ -308,6 +309,7 @@ function ReaderContent({
           epId: currentEpId,
           epTitle: title,
           pageCount: result.pageCount,
+          offline: offlineMode ? true : undefined,
         })
       } catch (error) {
         if (alive) {
@@ -353,6 +355,7 @@ function ReaderContent({
       epTitle: title,
       page,
       pageCount,
+      offline: offlineMode ? true : undefined,
     })
   }, [leadingPage, pageCount, currentEpId, sourceKey, comicId])
 

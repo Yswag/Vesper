@@ -3,6 +3,8 @@
 // 為什麼不沿用 ComicLibrary 的 chapter()：那條路進來會先 requireSource 再問一次詳情，
 // 飛航模式下不該有任何碰源的機會。這一話能不能讀，進來之前就由離線狀態決定了。
 // 因此這裡不 import sources/*，也不發任何請求：頁面清單與位元組都來自引擎的離線層。
+//
+// 另外收了 `canResumeOffline`：續讀入口與歷史卡的標籤共用這一條判定（只讀離線層，也一樣不碰源）。
 
 import type { ChapterSession } from "../../app/comic"
 import { readBytes } from "../../engine/fs"
@@ -15,6 +17,17 @@ import { t } from "../../i18n"
 /** 這一章下載完了沒（目錄能列、閱讀器能開的都必須是 `done`）。 */
 export function isOfflineReadable(key: OfflineKey): boolean {
   return statusOf(key).state === "done"
+}
+
+/**
+ * 續讀時要走離線嗎：**上次是在離線模式讀的**（書架上的 `Progress.offline`），而且那一話還在下載裡。
+ *
+ * 只看「有沒有下載」是不夠的：線上看過的作品只要下載過就會被拉進離線（目錄只剩已下載的章，是退化）。
+ * 反過來，下載被刪掉就別再走離線——退回線上那條路（源還在的話）。
+ * 歷史卡（顯示什麼標籤）與續讀入口（真的走哪條路）共用這一條，顯示與行為才不會不一致。
+ */
+export function canResumeOffline(key: OfflineKey, offline: boolean | undefined): boolean {
+  return offline === true && isOfflineReadable(key)
 }
 
 /**

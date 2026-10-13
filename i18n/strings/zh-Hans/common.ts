@@ -16,6 +16,7 @@ export default {
   loadFailed: "加载失败：{message}",
   retry: "重试",
   imageFailed: "（图片加载失败）",
+  offlineTag: "离线",
 
   pageMissing: "第 {n} 页不存在（共 {total} 页）",
   pages: { one: "{n} 页", other: "{n} 页" },

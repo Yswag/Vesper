@@ -28,6 +28,11 @@ export interface Progress {
   page?: number
   /** 讀到的那一話總共幾頁（畫格數）。舊資料沒有這個欄位。 */
   pageCount?: number
+  /**
+   * 這一筆是在**離線模式**讀的（離線書架／下載頁那兩個入口進來的）。
+   * 續讀時靠它決定走離線還是走源（`canResumeOffline`）；線上讀不寫這個欄位（＝蓋掉）。
+   */
+  offline?: boolean
   updatedAt: number
 }
 

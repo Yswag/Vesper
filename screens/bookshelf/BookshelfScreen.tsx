@@ -35,6 +35,7 @@ import {
   type Progress,
 } from "../../library/bookshelf"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
+import { canResumeOffline } from "../shared/offlineSession"
 import { OfflineLibraryScreen } from "./OfflineLibraryScreen"
 import { formatHistoryTime } from "./historyTime"
 import { comicCount, subscribeOffline } from "../../engine/offline"
@@ -137,9 +138,23 @@ export function BookshelfScreen() {
 /** 閱讀歷史卡片：小封面 + 標題／來源·話數／頁數·時間，右側箭頭。 */
 export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: () => void }) {
   const source = comicLibrary().source(entry.sourceKey)
-  const sourceName = source?.name ?? t("bookshelf.sourceRemovedTitle")
+  // 這筆點下去會不會走離線（上次是離線讀的 + 那一話還在下載裡）：標籤與能不能點都看它。
+  // 沒下載的、或下載被刪掉的，就退回原本「要源才進得去」那條。
+  const offline = canResumeOffline(
+    { sourceKey: entry.sourceKey, comicId: entry.comicId, epId: entry.epId },
+    entry.offline
+  )
+  const openable = source !== undefined || offline
+  // 源被移除時，還有離線內容就只顯示「離線」——內容就在手機上，那筆紀錄不該是紅字「來源已移除」。
+  const sourceName = source?.name ?? (offline ? null : t("bookshelf.sourceRemovedTitle"))
   const [opening, setOpening] = useState(false)
-  const meta = source ? `${sourceName} · ${entry.epTitle || t("bookshelf.lastRead")}` : sourceName
+  const meta = [
+    offline ? t("common.offlineTag") : null,
+    sourceName,
+    openable ? entry.epTitle || t("bookshelf.lastRead") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ")
   const pageLabel =
     entry.page === undefined
       ? null
@@ -147,13 +162,11 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
         ? t("bookshelf.pageOfTotal", { page: entry.page + 1, total: entry.pageCount })
         : t("bookshelf.pageOf", { page: entry.page + 1 })
   const barValue =
-    source && entry.page !== undefined && entry.pageCount && entry.pageCount > 1
+    openable && entry.page !== undefined && entry.pageCount && entry.pageCount > 1
       ? Math.min((entry.page + 1) / entry.pageCount, 1)
       : null
   // 兩段都可能沒有（沒有頁碼的舊資料／時間解析不出來），所以還是「有值的才接」；分隔號是標點。
-  const detail = source
-    ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ")
-    : null
+  const detail = openable ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ") : null
 
   const body = (
     <HStack
@@ -207,7 +220,7 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
 
         <Text
           font="caption"
-          foregroundStyle={source ? "secondaryLabel" : "systemRed"}
+          foregroundStyle={openable ? "secondaryLabel" : "systemRed"}
           lineLimit={1}
           frame={{ maxWidth: "infinity", alignment: "leading" }}
         >
@@ -234,7 +247,7 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
     </HStack>
   )
 
-  const row = source ? (
+  const row = openable ? (
     <Button
       buttonStyle="plain"
       disabled={opening}

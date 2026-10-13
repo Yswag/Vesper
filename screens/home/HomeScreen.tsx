@@ -16,6 +16,7 @@ import { capsule, cardBackgroundStrong, coverStroke, fill, hairlineStroke, palet
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
+import { canResumeOffline } from "../shared/offlineSession"
 import { PageBackground } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
@@ -471,6 +472,19 @@ function formatEpisodeBadge(epTitle?: string): string {
 /** 繼續閱讀卡片：包含封面、進度話數磨砂標籤、雙行對齊標題 */
 function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
   const source = comicLibrary().source(entry.sourceKey)
+  // 同歷史卡：上次是離線讀的、而且那一話還在下載裡 → 這張卡點下去會走離線閱讀器。
+  const offline = canResumeOffline(
+    { sourceKey: entry.sourceKey, comicId: entry.comicId, epId: entry.epId },
+    entry.offline
+  )
+  const openable = source !== undefined || offline
+  // 來源那一行：離線的紀錄在源名前面標「離線」；源被移除但還有離線內容時就只剩「離線」。
+  const sourceLabel = [
+    offline ? t("common.offlineTag") : null,
+    source?.name ?? (offline ? null : t("home.sourceRemoved")),
+  ]
+    .filter(Boolean)
+    .join(" · ")
   const { width, height } = size
   const [opening, setOpening] = useState(false)
 
@@ -522,7 +536,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
             frame={{ maxWidth: width - 12, alignment: "trailing" }}
           >
             <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-              {source ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")}
+              {openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")}
             </Text>
           </HStack>
         </HStack>
@@ -540,19 +554,20 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
         {entry.title}
       </Text>
 
-      {/* 來源名稱 */}
+      {/* 來源名稱（離線的紀錄前面多一個「離線」） */}
       <Text
         font="caption2"
         foregroundStyle="tertiaryLabel"
         lineLimit={1}
         frame={{ width, alignment: "center" }}
       >
-        {source ? source.name : t("home.sourceRemoved")}
+        {sourceLabel}
       </Text>
     </VStack>
   )
 
-  if (!source) return card
+  // 源沒了、也沒有離線內容就進不去（封面也要源才解析得出來）；標籤那顆膠囊改成「源失效」。
+  if (!openable) return card
 
   return (
     <Button

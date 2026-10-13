@@ -166,6 +166,12 @@ export interface ResumePoint {
   chapter: ChapterRef
   /** 領先可見頁，0 起算；已 clamp 到合法範圍。 */
   page: number
+  /**
+   * 這一筆上次是**在離線模式讀的**（`Progress.offline` 原樣帶出）。
+   * 續讀要不要真的走離線還要看那一話還在不在下載裡——判定在 `screens/shared/offlineSession` 的
+   * `canResumeOffline`（畫面端才有離線層的查詢權；這裡只負責把旗標帶出來）。
+   */
+  offline: boolean
 }
 
 /**
@@ -510,6 +516,7 @@ export function createComicLibrary(): ComicLibrary {
       return {
         chapter: { ...ref, epId: progress.epId },
         page: Math.max(0, count && count > 0 ? Math.min(page, count - 1) : page),
+        offline: progress.offline === true,
       }
     },
 
