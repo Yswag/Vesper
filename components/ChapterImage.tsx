@@ -112,13 +112,23 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
     )
   }
 
-  // 未載入時的佔位高度：
-  // 如果給了 size（畫廊/橫向）吃指定高度；沒給（縱向條漫）預設給 560pt（約螢幕 70% 高），
-  // 避免 160pt 導致 LazyVStack 開場一口氣塞進 5~6 個載入中並同時並行發起大圖網路與超分請求。
+  // 未載入時的佔位尺寸：
+  // 1. 若給了完整寬高（畫廊模式）直接吃指定尺寸；
+  // 2. 若只給了 height（橫向連續模式）：預設佔位寬度給「高度 × 0.7」或「螢幕寬度的 80%」，
+  //    避免 ProgressView 天然 20~30pt 導致 LazyHStack 開場瞬間塞滿幾十頁、狂發並行請求且載完後排版劇烈跳躍；
+  // 3. 沒給 size（縱向條漫模式）：預設給 560pt（約螢幕 70% 高），寬度自適應撐滿。
   const placeholderHeight = size?.height ?? 560
+  const placeholderWidth = size?.width ?? (size?.height ? Math.round(size.height * 0.7) : undefined)
 
   return (
-    <VStack alignment="center" spacing={12} frame={{ height: placeholderHeight }}>
+    <VStack
+      alignment="center"
+      spacing={12}
+      frame={{
+        height: placeholderHeight,
+        width: placeholderWidth,
+      }}
+    >
       {error ? (
         <VStack alignment="center" spacing={10}>
           <Text foregroundStyle="systemRed" font="caption">
