@@ -249,6 +249,7 @@ function ReaderContent({
   const [overscrollPx, setOverscrollPx] = useState(0)
   const overscrollRef = useRef(0)
   const isInteractingRef = useRef(false)
+  const hasTriggeredFullHapticRef = useRef(false)
   const PULL_THRESHOLD = 65
 
   /** 清掉一個閘門計時器（排程前與 effect cleanup 共用）；一律比 `null`。 */
@@ -401,6 +402,7 @@ function ReaderContent({
 
     // 換話立即歸零，避免上一話的頁碼狀態短暫帶到新的一話
     clearUpscaleCache()
+    hasTriggeredFullHapticRef.current = false
     setLeadingPage(0)
     scrubValue.setValue(0)
     scrollPos.setValue("0")
@@ -855,7 +857,16 @@ function ReaderContent({
                 const p = Math.min(1, Math.max(0, (overscroll - 2) / PULL_THRESHOLD))
                 setPullProgress(p)
                 setOverscrollPx(overscroll)
+                if (p >= 1) {
+                  if (!hasTriggeredFullHapticRef.current) {
+                    hasTriggeredFullHapticRef.current = true
+                    HapticFeedback.mediumImpact()
+                  }
+                } else {
+                  hasTriggeredFullHapticRef.current = false
+                }
               } else if (overscrollRef.current <= 0) {
+                hasTriggeredFullHapticRef.current = false
                 setPullProgress(0)
                 setOverscrollPx(0)
               }
@@ -870,6 +881,7 @@ function ReaderContent({
               (newPhase === "decelerating" || newPhase === "idle")
             ) {
               isInteractingRef.current = false
+              hasTriggeredFullHapticRef.current = false
               if (overscrollRef.current >= PULL_THRESHOLD && next) {
                 selectChapter(next.id)
               }
