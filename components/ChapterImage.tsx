@@ -74,7 +74,7 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
           if (!isTooLargeForUpscale) {
             const pageKey = `${chapterId}_p${index}`
             const t0 = Date.now()
-            void sharpenImage(pageKey, data).then(result => {
+            void sharpenImage(pageKey, data, () => !alive).then(result => {
               if (alive && result) {
                 const costMs = Date.now() - t0
                 setImage(result.image)

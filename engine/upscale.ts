@@ -42,8 +42,6 @@ function setCachedUpscaleImage(key: string, image: UIImage): void {
   sessionCache.set(key, image)
 }
 
-let processedCount = 0
-
 /**
  * 任務串行互斥隊列（避免並發請求覆蓋圖片發生串音）。
  * 所有對 WebViewController 的操作（推論、重置、換話清理）必須排入同一個隊列，
@@ -335,12 +333,19 @@ export function disposeUpscaleEngine(): void {
 /**
  * 對給定的原始圖像 Data 執行真實 ACNet ONNX 神經網路 2x 超解析度。
  */
-export async function sharpenImage(key: string, sourceData: Data): Promise<{ image: UIImage; fromCache: boolean } | null> {
+export async function sharpenImage(
+  key: string,
+  sourceData: Data,
+  isCancelled?: () => boolean
+): Promise<{ image: UIImage; fromCache: boolean } | null> {
   const cached = getCachedUpscaleImage(key)
   if (cached) return { image: cached, fromCache: true }
 
   // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
   const runTask = async (): Promise<{ image: UIImage; fromCache: boolean } | null> => {
+    // 檢查呼叫端元件是否已翻走或 unmount；若是，直接跳過神經網路計算，避免翻頁時隊列堆積拖垮 GPU
+    if (isCancelled && isCancelled()) return null
+
     // 二次檢查快取
     const doubleCheck = getCachedUpscaleImage(key)
     if (doubleCheck) return { image: doubleCheck, fromCache: true }
@@ -356,6 +361,9 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<{ ima
       // 1. 執行推論
       await controllerInstance.evaluateJavaScript(`return window.runACNet("http://127.0.0.1:${currentPort}/feed.jpg");`)
 
+      // 推論完畢再次檢查是否已被翻走
+      if (isCancelled && isCancelled()) return null
+
       // 2. 導出成果
       await controllerInstance.evaluateJavaScript(`return window.exportJpegBlob("http://127.0.0.1:${currentPort}/upload");`)
 
@@ -368,16 +376,6 @@ export async function sharpenImage(key: string, sourceData: Data): Promise<{ ima
       if (sharpenedImage) {
         setCachedUpscaleImage(key, sharpenedImage)
         log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
-
-        // 每累計處理 25 張超分圖片，重置一次 WebViewController，強制 WebKit 釋放所有內部顯存碎片
-        processedCount++
-        if (processedCount >= 25 && controllerInstance) {
-          processedCount = 0
-          controllerInstance.dispose()
-          controllerInstance = null
-          log("debug", "upscale", "超分累積達到 25 張，自動重置 WebViewController")
-        }
-
         return { image: sharpenedImage, fromCache: false }
       }
     } catch (error) {
