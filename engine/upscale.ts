@@ -305,35 +305,74 @@ async function ensureEngine(): Promise<void> {
   }
 }
 
+function resetEngineInstances(): void {
+  if (controllerInstance) {
+    try {
+      controllerInstance.dispose()
+    } catch {}
+    controllerInstance = null
+  }
+  if (serverInstance) {
+    try {
+      serverInstance.stop()
+    } catch {}
+    serverInstance = null
+    currentPort = 0
+  }
+}
+
 export function disposeUpscaleEngine(): void {
   // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS
   queuePromise = queuePromise.then(
-    () => {
-      if (controllerInstance) {
-        controllerInstance.dispose()
-        controllerInstance = null
-      }
-      if (serverInstance) {
-        serverInstance.stop()
-        serverInstance = null
-        currentPort = 0
-      }
-    },
-    () => {
-      if (controllerInstance) {
-        controllerInstance.dispose()
-        controllerInstance = null
-      }
-      if (serverInstance) {
-        serverInstance.stop()
-        serverInstance = null
-        currentPort = 0
-      }
-    }
+    () => resetEngineInstances(),
+    () => resetEngineInstances()
   )
   activeSourceData = null
   uploadedBuffer = null
   sessionCache.clear()
+}
+
+/**
+ * 單次推論執行的原子操作。
+ * 若 iOS 進入後台墓碑模式導致 socket 關閉或 WebKit 行程被終止，此處將拋出異常以供外層捕捉並重試自癒。
+ */
+async function executeInference(
+  key: string,
+  sourceData: Data,
+  isCancelled?: () => boolean
+): Promise<UIImage | null> {
+  await ensureEngine()
+  if (!controllerInstance || !currentPort) return null
+
+  activeSourceData = sourceData
+  uploadedBuffer = null
+
+  const inferStart = Date.now()
+  // 1. 執行推論
+  await controllerInstance.evaluateJavaScript(`return window.runACNet("http://127.0.0.1:${currentPort}/feed.jpg");`)
+
+  // 推論完畢再次檢查是否已被翻走；若已離開畫面，立即重置 Canvas 釋放 WebKit 顯存後提早結束
+  if (isCancelled && isCancelled()) {
+    try {
+      await controllerInstance.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
+    } catch {}
+    return null
+  }
+
+  // 2. 導出成果
+  await controllerInstance.evaluateJavaScript(`return window.exportJpegBlob("http://127.0.0.1:${currentPort}/upload");`)
+
+  if (!uploadedBuffer) return null
+
+  const outData = Data.fromArrayBuffer(uploadedBuffer)
+  if (!outData) return null
+
+  const sharpenedImage = UIImage.fromData(outData)
+  if (sharpenedImage) {
+    log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
+    return sharpenedImage
+  }
+  return null
 }
 
 /**
@@ -357,43 +396,28 @@ export async function sharpenImage(
     if (doubleCheck) return { image: doubleCheck, fromCache: true }
 
     try {
-      await ensureEngine()
-      if (!controllerInstance || !currentPort) return null
+      let sharpenedImage: UIImage | null = null
 
-      activeSourceData = sourceData
-      uploadedBuffer = null
+      try {
+        // 第一次嘗試：樂觀執行（平時 0 額外心跳/檢查開銷）
+        sharpenedImage = await executeInference(key, sourceData, isCancelled)
+      } catch (firstError) {
+        log("warning", "upscale", `推論遇到異常（可能剛自墓碑/背景喚醒），重置引擎並冷啟動重試...`, firstError)
+        resetEngineInstances()
 
-      const inferStart = Date.now()
-      // 1. 執行推論
-      await controllerInstance.evaluateJavaScript(`return window.runACNet("http://127.0.0.1:${currentPort}/feed.jpg");`)
-
-      // 推論完畢再次檢查是否已被翻走；若已離開畫面，立即重置 Canvas 釋放 WebKit 顯存後提早結束
-      if (isCancelled && isCancelled()) {
-        await controllerInstance.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
-        return null
+        // 第二次嘗試：全新冷啟動重試
+        if (!isCancelled || !isCancelled()) {
+          sharpenedImage = await executeInference(key, sourceData, isCancelled)
+        }
       }
 
-      // 2. 導出成果
-      await controllerInstance.evaluateJavaScript(`return window.exportJpegBlob("http://127.0.0.1:${currentPort}/upload");`)
-
-      if (!uploadedBuffer) return null
-
-      const outData = Data.fromArrayBuffer(uploadedBuffer)
-      if (!outData) return null
-
-      const sharpenedImage = UIImage.fromData(outData)
       if (sharpenedImage) {
         setCachedUpscaleImage(key, sharpenedImage)
-        log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
         return { image: sharpenedImage, fromCache: false }
       }
-    } catch (error) {
-      log("warning", "upscale", `頁面 ${key} ACNet 超分失敗，降級原圖`, error)
-      if (controllerInstance) {
-        try {
-          await controllerInstance.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
-        } catch {}
-      }
+    } catch (finalError) {
+      log("warning", "upscale", `頁面 ${key} ACNet 超分重試後仍失敗，降級原圖`, finalError)
+      resetEngineInstances()
     } finally {
       activeSourceData = null
       uploadedBuffer = null
