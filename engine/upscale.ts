@@ -376,6 +376,16 @@ async function executeInference(
 }
 
 /**
+ * 檢查圖像尺寸是否在 ACNet 安全推論範圍內。
+ * 避免長條漫或極大原圖 2x 放大產生數千萬像素張量超出 WebAssembly 32-bit 與 GPU 配額。
+ */
+export function isSafeForUpscale(width: number, height: number): boolean {
+  if (width <= 0 || height <= 0) return false
+  if (width >= 1920 || height >= 2560) return false
+  return width * height < 2_400_000
+}
+
+/**
  * 對給定的原始圖像 Data 執行真實 ACNet ONNX 神經網路 2x 超解析度。
  */
 export async function sharpenImage(

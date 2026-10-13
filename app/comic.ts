@@ -12,6 +12,8 @@ import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../e
 import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
 import { resolveThumbnailRequest } from "../engine/images"
 import { readerImageBytes, statusOf, totalBytes, type OfflineStatus } from "../engine/offline"
+import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
+import { getReaderSettings } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
@@ -134,6 +136,17 @@ export interface ChapterSession {
    * 回來的是**位元組**（正文不落地）。越界就抛。
    */
   pageImage(index: number): Promise<Uint8Array>
+  /**
+   * 載入並渲染頁面圖片（含解碼與可選的 AI 超解析度管線）。
+   * 原圖先見：直接 resolve 原始 UIImage；若開啟超分且處理成功，透過 onSharpened 回調推送超分圖。
+   */
+  loadPage(
+    index: number,
+    onSharpened?: (image: UIImage) => void,
+    isCancelled?: () => boolean
+  ): Promise<UIImage | null>
+  /** 動態更新當前會話是否啟用 AI 超解析度。 */
+  setHardwareSharpen(enabled: boolean): void
   /**
    * 預取：以這一頁為中心往前 3 頁（當前頁最優先）。畫面只負責在時機點呼叫——
    * 只有 session 知道「第幾頁 ↔ 取圖請求」，畫面不自己算 URL。
@@ -409,7 +422,7 @@ export function createComicLibrary(): ComicLibrary {
       }
       // 解析源的圖片請求本身也可能卡住（有的源在 onImageLoad 裡連網），所以重試的閉包也要帶 scope。
       const retry = handle.imageRetry({ signal: controller.signal })
-      const loadPage = async (index: number) =>
+      const loadPageBytes = async (index: number) =>
         readerImageBytes(
           {
             ...key,
@@ -424,10 +437,48 @@ export function createComicLibrary(): ComicLibrary {
       const prefetch = createPrefetchQueue({
         total: imageKeys.length,
         signal: controller.signal,
-        load: loadPage,
+        load: loadPageBytes,
         // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
         onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
       })
+
+      let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
+
+      const loadPage = async (
+        index: number,
+        onSharpened?: (image: UIImage) => void,
+        isCancelled?: () => boolean
+      ): Promise<UIImage | null> => {
+        const bytes = await loadPageBytes(index)
+        if (isCancelled && isCancelled()) return null
+
+        const data = Data.fromUint8Array(bytes)
+        if (!data) return null
+        const decoded = UIImage.fromData(data)
+        if (!decoded) return null
+
+        // 漸進式超分：若開關開啟且尺寸在 ACNet 安全範圍內，在背景排入超分推論並透過 callback 回傳
+        if (hardwareSharpenEnabled && isSafeForUpscale(decoded.width, decoded.height)) {
+          if (onSharpened) {
+            const pageKey = `${ref.epId}_p${index}`
+            const t0 = Date.now()
+            void sharpenImage(pageKey, data, isCancelled).then(result => {
+              if (result && (!isCancelled || !isCancelled())) {
+                const costMs = Date.now() - t0
+                if (result.fromCache) {
+                  log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+                } else {
+                  log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+                }
+                onSharpened(result.image)
+              }
+            })
+          }
+        }
+
+        return decoded
+      }
+
       return {
         ref,
         title: chapter?.title ?? ref.epId,
@@ -436,7 +487,11 @@ export function createComicLibrary(): ComicLibrary {
         pageCount: imageKeys.length,
         offline: statusOf(key),
         imageKey: index => imageKeyOf(index),
-        pageImage: loadPage,
+        pageImage: loadPageBytes,
+        loadPage,
+        setHardwareSharpen: enabled => {
+          hardwareSharpenEnabled = enabled
+        },
         warm: page => prefetch.focus(page),
         dispose: () => {
           prefetch.clear()

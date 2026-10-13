@@ -469,10 +469,17 @@ function ReaderContent({
   // Paging and tap zones share the actual full-bleed viewport.
   const pageSize = viewport
 
+  const [renderGeneration, setRenderGeneration] = useState(0)
+
   function updateSettings(patch: Partial<ReaderSettings>) {
     const next = { ...settings, ...patch }
     setSettings(next)
     setReaderSettings(next)
+    if (patch.hardwareSharpen !== undefined && session) {
+      session.setHardwareSharpen(patch.hardwareSharpen)
+      // 超分開關切換時推動世代序號，觸發當前畫面上所有 ChapterImage 重跑 loadPage 響應開關
+      setRenderGeneration(g => g + 1)
+    }
   }
 
   // 每一頁的排版：畫廊＝一張圖一頁、撐滿螢幕；橫向連續＝以畫布高度為準；縱向連續＝寬度撐滿。
@@ -501,10 +508,9 @@ function ReaderContent({
                     resetToken={currentEpId}
                   >
                     <ChapterImage
+                      key={`${id}:${renderGeneration}`}
                       session={session}
-                      chapterId={currentEpId}
                       index={i}
-                      hardwareSharpen={settings.hardwareSharpen}
                       size={pageSize}
                     />
                   </ZoomableView>
@@ -515,10 +521,9 @@ function ReaderContent({
               return (
                 <HStack key={id} tag={i} frame={{ height: pageSize.height }} alignment="center">
                   <ChapterImage
+                    key={`${id}:${renderGeneration}`}
                     session={session}
-                    chapterId={currentEpId}
                     index={i}
-                    hardwareSharpen={settings.hardwareSharpen}
                     size={{ height: pageSize.height }}
                   />
                 </HStack>
@@ -527,16 +532,15 @@ function ReaderContent({
             return (
               <VStack key={id} tag={i} frame={{ maxWidth: "infinity" }}>
                 <ChapterImage
+                  key={`${id}:${renderGeneration}`}
                   session={session}
-                  chapterId={currentEpId}
                   index={i}
-                  hardwareSharpen={settings.hardwareSharpen}
                 />
               </VStack>
             )
           })
         : [],
-    [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height, settings.hardwareSharpen],
+    [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height, renderGeneration],
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」

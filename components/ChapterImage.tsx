@@ -1,7 +1,6 @@
-// 章節內文圖片。取圖走 ComicLibrary 的 chapter session（離線 → 記憶體 LRU → 網路）；
-// session 已經把源與離線鍵收在裡面，畫面只認「第幾頁」與回來的位元組。
-// 正文圖幾乎都需要 Referer / Cookie，而且 onResponse 的解密也在這條路上，所以不能走 <Image imageUrl>；
-// 正文也不落地（記憶體快取），所以是 fromData 而不是 fromFile。
+// 章節內文圖片展示元件（純 View）。取圖走 ComicLibrary 的 chapter session（包含漸進式解碼與 AI 超解析度）；
+// 畫面只負責透過 session.loadPage 拿現成圖片，並在超分完成時透過 onSharpened 回調原地無縫替換。
+// 正文圖需要 Referer / Cookie 與解密，且正文不落地（記憶體快取），皆在 session 內處理完成。
 //
 // 離線命中時不會問源的圖片解析，所以在飛航模式下（源根本解析不出 URL）也讀得到。
 //
@@ -15,16 +14,11 @@ import type { ChapterSession } from "../app/comic"
 import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
-import { sharpenImage } from "../engine/upscale"
 
 export interface ChapterImageProps {
   session: ChapterSession
-  /** 章節識別碼（避免跨章節換話時快取或狀態串音）。 */
-  chapterId?: string
   /** 這一張在章節裡的頁索引（＝閱讀器的頁碼）。 */
   index: number
-  /** 是否啟用 AI 超解析度（硬體銳化）。 */
-  hardwareSharpen?: boolean
   /**
    * 指定圖片的顯示框（點）。給了就以 `fit` 方式置中塞進這個框（只給 height 就是「以高度為準」）；
    * 不給＝撐滿可用寬度、高度按比例（webtoon）。
@@ -32,13 +26,7 @@ export interface ChapterImageProps {
   size?: { width?: number; height?: number }
 }
 
-export function ChapterImage({
-  session,
-  chapterId = "default",
-  index,
-  hardwareSharpen = false,
-  size,
-}: ChapterImageProps) {
+export function ChapterImage({ session, index, size }: ChapterImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [aspect, setAspect] = useState<number | null>(null)
   const [error, setError] = useState("")
@@ -46,9 +34,6 @@ export function ChapterImage({
 
   useEffect(() => {
     let alive = true
-    // 量測：mount → 圖交出去（debug，不落地；連翻 10 頁時在 LogScreen 看這一行）。
-    // **這個數字不含光柵化**：`UIImage.fromData` 與 `fromFile` 一樣是惰性的，真正的解碼（實測 5–42ms）
-    // 落在第一次繪製。所以 0ms ＝「位元組早就備好、元件沒在等網路」，不是「眼睛看到圖的時間」。
     const started = Date.now()
     setImage(null)
     setAspect(null)
@@ -56,43 +41,23 @@ export function ChapterImage({
 
     void (async () => {
       try {
-        const bytes = await session.pageImage(index)
+        const initial = await session.loadPage(
+          index,
+          sharpened => {
+            if (alive) setImage(sharpened)
+          },
+          () => !alive
+        )
+
         if (!alive) return
-        const data = Data.fromUint8Array(bytes)
-        const decoded = data ? UIImage.fromData(data) : null
-        if (!decoded) {
+        if (!initial) {
           setError(t("common.undecodable"))
           return
         }
-        log("debug", "reader", `第 ${index + 1} 頁 mount→圖 ${Date.now() - started}ms`)
-        setAspect(decoded.width / decoded.height)
-        setImage(decoded)
 
-        // 漸進式增強：若使用者開啟硬體加速超分，原圖先見，背後執行 ACNet ONNX 超分後原地替換
-        // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
-        if (hardwareSharpen && data) {
-          // 若原始圖片已經很大，或總像素面積過大（如長條條漫 800x10000），
-          // 2x 放大將產出超過數千萬像素的巨型張量，超出 WebAssembly 32-bit 定址與 iOS GPU 顯存配額導致崩潰；
-          // 此時直接維持原圖高清輸出
-          const totalPixels = decoded.width * decoded.height
-          const isTooLargeForUpscale =
-            decoded.width >= 1920 || decoded.height >= 2560 || totalPixels >= 2_400_000
-          if (!isTooLargeForUpscale) {
-            const pageKey = `${chapterId}_p${index}`
-            const t0 = Date.now()
-            void sharpenImage(pageKey, data, () => !alive).then(result => {
-              if (alive && result) {
-                const costMs = Date.now() - t0
-                setImage(result.image)
-                if (result.fromCache) {
-                  log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
-                } else {
-                  log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
-                }
-              }
-            })
-          }
-        }
+        log("debug", "reader", `第 ${index + 1} 頁 mount→圖 ${Date.now() - started}ms`)
+        setAspect(initial.width / initial.height)
+        setImage(initial)
       } catch (error) {
         // 換話／離開閱讀器造成的取消是正常結束，不要顯示成「載入失敗：AbortError」。
         if (isAbortError(error)) return
@@ -105,7 +70,7 @@ export function ChapterImage({
     return () => {
       alive = false
     }
-  }, [session, chapterId, index, retryKey, hardwareSharpen])
+  }, [session, index, retryKey])
 
   if (image && aspect) {
     return (
