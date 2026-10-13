@@ -23,6 +23,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   const [entries, setEntries] = useState<RepositoryEntryStatus[]>([])
   const [busy, setBusy] = useState(false)
   const [busyKey, setBusyKey] = useState<string | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [status, setStatus] = useState<StatusNotice | null>(null)
 
   function sync() {
@@ -76,6 +77,152 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     }
   }
 
+  /** 一鍵安裝：掃描衝突、彈窗確認、循序/受控安裝 */
+  async function installAll() {
+    if (entries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
+
+    // 1. 同倉重複去重：同一倉庫內同 key 只保留第一筆
+    const seenInRepo = new Set<string>()
+    const uniqueEntries: RepositoryEntryStatus[] = []
+
+    for (const item of entries) {
+      if (seenInRepo.has(item.entry.key)) continue
+      seenInRepo.add(item.entry.key)
+      uniqueEntries.push(item)
+    }
+
+    // 2. 本地已安裝狀態分流
+    // - newOrUpdate: 全新未安裝，或同倉庫來源且有新版
+    // - conflict: 本地已安裝，但來源不是本倉庫（來自其他倉庫或手動匯入）
+    const normRepoUrl = repositoryUrl.trim().replace(/\/+$/, "").toLowerCase()
+    const newOrUpdate: CatalogEntry[] = []
+    const conflict: CatalogEntry[] = []
+
+    for (const item of uniqueEntries) {
+      if (!item.installed) {
+        newOrUpdate.push(item.entry)
+      } else {
+        const origin = (item.installed.stored.origin ?? "").trim().replace(/\/+$/, "").toLowerCase()
+        const isFromThisRepo = origin === normRepoUrl
+        if (isFromThisRepo) {
+          if (item.updateAvailable) {
+            newOrUpdate.push(item.entry)
+          }
+        } else {
+          conflict.push(item.entry)
+        }
+      }
+    }
+
+    // 3. 衝突確認與使用者決策
+    let targetsToInstall: CatalogEntry[] = []
+
+    if (conflict.length > 0) {
+      const actionIndex = await Dialog.actionSheet({
+        title: t("settings.repo.conflictTitle", { n: conflict.length }),
+        message: t("settings.repo.conflictMessage"),
+        actions: [
+          { label: t("settings.repo.skipConflict") },
+          { label: t("settings.repo.overwriteConflict") },
+        ],
+      })
+
+      // 嚴格判斷：非 0 且非 1 均視為取消
+      if (actionIndex !== 0 && actionIndex !== 1) return
+
+      if (actionIndex === 0) {
+        // 跳過衝突：只裝全新與同倉更新
+        targetsToInstall = newOrUpdate
+        if (targetsToInstall.length === 0) {
+          setStatus({ kind: "ready", text: t("settings.repo.allInstalled") })
+          return
+        }
+      } else {
+        // 全部覆蓋：全新 + 同倉更新 + 衝突源
+        targetsToInstall = [...newOrUpdate, ...conflict]
+      }
+
+      // 二次確認：讓使用者確認最終要安裝/覆蓋的總數
+      const confirmed = await Dialog.confirm({
+        title: t("settings.repo.installAllConfirmTitle"),
+        message: t("settings.repo.installAllConfirmMessage", { n: targetsToInstall.length }),
+        confirmLabel: t("common.confirm"),
+        cancelLabel: t("common.cancel"),
+      })
+      if (!confirmed) return
+    } else {
+      if (newOrUpdate.length === 0) {
+        setStatus({ kind: "ready", text: t("settings.repo.allInstalled") })
+        return
+      }
+
+      const confirmed = await Dialog.confirm({
+        title: t("settings.repo.installAllConfirmTitle"),
+        message: t("settings.repo.installAllConfirmMessage", { n: newOrUpdate.length }),
+        confirmLabel: t("common.confirm"),
+        cancelLabel: t("common.cancel"),
+      })
+
+      if (!confirmed) return
+      targetsToInstall = newOrUpdate
+    }
+
+    if (targetsToInstall.length === 0) return
+
+    // 4. 併發佇列安裝（最多 3 條併發，防 GitHub Rate Limit 與超時）
+    setBusy(true)
+    const totalCount = targetsToInstall.length
+    setBatchProgress({ current: 0, total: totalCount })
+    setStatus({
+      kind: "loading",
+      text: t("settings.repo.batchProgress", { current: 0, total: totalCount }),
+    })
+
+    let completedCount = 0
+    let successCount = 0
+    let failedCount = 0
+    const concurrency = 3
+    let nextIndex = 0
+
+    async function worker() {
+      while (nextIndex < targetsToInstall.length) {
+        const idx = nextIndex++
+        const entry = targetsToInstall[idx]
+        try {
+          await installRepositoryEntry(repositoryUrl, entry.key)
+          successCount++
+        } catch {
+          failedCount++
+        } finally {
+          completedCount++
+          setBatchProgress({ current: completedCount, total: totalCount })
+          setStatus({
+            kind: "loading",
+            text: t("settings.repo.batchProgress", { current: completedCount, total: totalCount }),
+          })
+        }
+      }
+    }
+
+    const workers = Array.from({ length: Math.min(concurrency, targetsToInstall.length) }, () => worker())
+    await Promise.all(workers)
+
+    // 5. 結算反饋
+    const skippedCount = uniqueEntries.length - targetsToInstall.length
+    const failedPart = failedCount > 0 ? t("settings.repo.batchSummaryFailed", { failed: failedCount }) : ""
+    setStatus({
+      kind: failedCount > 0 ? "error" : "ready",
+      text: t("settings.repo.batchSummary", {
+        installed: successCount,
+        skipped: skippedCount,
+        failed: failedPart,
+      }),
+    })
+
+    setBatchProgress(null)
+    setBusy(false)
+  }
+
   if (!repository) {
     return (
       <PageScroll title={t("settings.shared.repository")}>
@@ -87,6 +234,18 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       </PageScroll>
     )
   }
+
+  const normRepoUrl = repositoryUrl.trim().replace(/\/+$/, "").toLowerCase()
+  const hasUpdatable = entries.some(item => item.updateAvailable)
+  // 本倉已全安裝且無更新：每一筆都存在且來源為本倉，且無可更新版本
+  const allInstalledFromThisRepo =
+    entries.length > 0 &&
+    entries.every(item => {
+      if (!item.installed) return false
+      const origin = (item.installed.stored.origin ?? "").trim().replace(/\/+$/, "").toLowerCase()
+      return origin === normRepoUrl && !item.updateAvailable
+    })
+  const isActionDisabled = busy || busyKey !== null || batchProgress !== null || allInstalledFromThisRepo
 
   return (
     <PageScroll title={repository.name} onRefresh={refresh}>
@@ -105,7 +264,29 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
         <NoticeBanner tone="error" text={t("settings.shared.readFailed")} detail={repository.error} />
       ) : null}
 
-      <CardGroup title={t("settings.repo.sourcesGroup", { n: entries.length })}>
+      <CardGroup
+        title={t("settings.repo.sourcesGroup", { n: entries.length })}
+        headerAccessory={
+          entries.length > 0 ? (
+            <Button
+              title={
+                batchProgress
+                  ? t("settings.repo.batchProgress", { current: batchProgress.current, total: batchProgress.total })
+                  : hasUpdatable
+                    ? t("settings.repo.updateAll")
+                    : allInstalledFromThisRepo
+                      ? t("settings.repo.allInstalled")
+                      : t("settings.repo.installAll")
+              }
+              buttonStyle="bordered"
+              controlSize="regular"
+              tint={allInstalledFromThisRepo ? "secondaryLabel" : "accentColor"}
+              disabled={isActionDisabled}
+              action={installAll}
+            />
+          ) : undefined
+        }
+      >
         {entries.map((item, index) => (
           <VStack key={`${item.entry.key}:${index}`} spacing={0}>
             {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}

@@ -2,7 +2,7 @@
 //
 // 全 App 的頁面都用同一套 padding 與間距，不然每一頁的內容邊界都會差幾點。
 
-import { ScrollView, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
+import { HStack, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
 import { cardBackground, cardGap, cardShape, pageInsets, pageSpacing, shadow, type StackChildren } from "./tokens"
@@ -92,23 +92,33 @@ export function GroupHeader({ title }: { title: string }) {
   )
 }
 
-/** 一組設定：小標題 + 卡片 +（可選）卡下註腳。 */
+/** 一組設定：小標題 + 卡片 +（可選）卡下註腳。headerAccessory 可放右側操作按鈕。 */
 export function CardGroup({
   title,
+  headerAccessory,
   footnote,
   children,
   background,
   swipeActionsContainer,
 }: {
   title?: string
+  headerAccessory?: VirtualNode | (() => VirtualNode)
   footnote?: string
   children: StackChildren
   background?: Color
   swipeActionsContainer?: boolean
 }) {
+  const renderedAccessory = typeof headerAccessory === "function" ? headerAccessory() : headerAccessory
+
   return (
     <VStack spacing={cardGap} alignment="leading">
-      {title ? <GroupHeader title={title} /> : null}
+      {title || renderedAccessory ? (
+        <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
+          {title ? <GroupHeader title={title} /> : null}
+          <Spacer />
+          {renderedAccessory ?? null}
+        </HStack>
+      ) : null}
       <Card background={background} swipeActionsContainer={swipeActionsContainer}>
         {children}
       </Card>
