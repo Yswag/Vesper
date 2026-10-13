@@ -120,6 +120,7 @@ export interface ReaderProps {
 type ReaderLayout = {
   viewport: { width: number; height: number }
   safeAreaInsets: { top: number; bottom: number; leading: number; trailing: number }
+  hudVisible: ReturnType<typeof useObservable<boolean>>
 }
 
 /**
@@ -134,12 +135,23 @@ type ReaderStatus =
   | null
 
 export function ReaderScreen(props: ReaderProps) {
+  const hudVisible = useObservable(false)
+
   return (
-    <GeometryReader tabBarVisibility="hidden" navigationBarVisibility="hidden" statusBarHidden={true}>
+    <GeometryReader
+      tabBarVisibility="hidden"
+      navigationBarVisibility="hidden"
+      statusBarHidden={!hudVisible.value}
+    >
       {safeGeometry => (
         <GeometryReader ignoresSafeArea={true}>
           {canvasGeometry => (
-            <ReaderContent {...props} viewport={canvasGeometry.size} safeAreaInsets={safeGeometry.safeAreaInsets} />
+            <ReaderContent
+              {...props}
+              viewport={canvasGeometry.size}
+              safeAreaInsets={safeGeometry.safeAreaInsets}
+              hudVisible={hudVisible}
+            />
           )}
         </GeometryReader>
       )}
@@ -158,6 +170,7 @@ function ReaderContent({
   offlineMode = false,
   viewport,
   safeAreaInsets,
+  hudVisible,
 }: ReaderProps & ReaderLayout) {
   // 語言一換就重繪：這個畫面的字（HUD、目錄、閱讀設定、狀態遮罩）都是 render 時求值的。
   useSubscription(subscribeLocale)
@@ -201,8 +214,6 @@ function ReaderContent({
     const active = chapterGroups.find((g: ChapterGroup<ChapterRef>) => g.name === activeGroup)
     return active ? active.chapters : chapters
   }, [isGrouped, chapterGroups, activeGroup, chapters])
-  // HUD 覆蓋層（頂部/底部控制欄）的顯示狀態
-  const hudVisible = useObservable(false)
   // 目錄抽屜
   const [showChapterSheet, setShowChapterSheet] = useState(false)
   // 目錄排序（預設正序，false = 第一話到最新話，true = 最新話到第一話）
@@ -587,7 +598,7 @@ function ReaderContent({
       spacing={0}
       tabBarVisibility="hidden"
       navigationBarVisibility="hidden"
-      statusBarHidden={true}
+      statusBarHidden={!hudVisible.value}
       ignoresSafeArea={true}
       environments={{ colorScheme: "dark" }}
       background={fill.canvas}
