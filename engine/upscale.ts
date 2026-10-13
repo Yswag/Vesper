@@ -12,7 +12,6 @@ import { log } from "./log"
 let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
 let currentPort = 0
-let initPromise: Promise<void> | null = null
 
 // Session 記憶體快取（LRU 控制，最多保留 6 張超分圖像，單張解碼點陣圖約 25~35MB）
 const MAX_UPSCALE_CACHE_SIZE = 6
@@ -268,35 +267,36 @@ async function ensureServer(): Promise<number> {
   return currentPort
 }
 
+/**
+ * 確保 WebViewController 超分執行個體就緒。
+ * ⚠️ 必須僅在 queuePromise 串行隊列內部調用，嚴格保證不發生並發重入與狀態撕裂。
+ */
 async function ensureEngine(): Promise<void> {
   if (controllerInstance) return
-  if (initPromise) return initPromise
 
-  initPromise = (async () => {
-    try {
-      const port = await ensureServer()
+  let createdController: WebViewController | null = null
+  try {
+    const port = await ensureServer()
 
-      const controller = new WebViewController({ ephemeral: true })
-      await controller.loadHTML(buildACNetHTML(port), `http://127.0.0.1:${port}/`)
-      await controller.waitForLoad()
-      
-      // 初始化 ONNX 會話
-      await controller.evaluateJavaScript(`return window.initSession();`)
-      controllerInstance = controller
-      log("info", "upscale", `ONNX ACNet 神經網絡引擎就緒 (連接埠號 ${port})`)
-    } catch (e) {
-      log("warning", "upscale", "ONNX ACNet 引擎初始化失敗", e)
-      if (controllerInstance) {
-        controllerInstance.dispose()
-        controllerInstance = null
-      }
-      throw e
-    } finally {
-      initPromise = null
+    const controller = new WebViewController({ ephemeral: true })
+    createdController = controller
+    await controller.loadHTML(buildACNetHTML(port), `http://127.0.0.1:${port}/`)
+    await controller.waitForLoad()
+
+    // 初始化 ONNX 會話
+    await controller.evaluateJavaScript(`return window.initSession();`)
+    controllerInstance = controller
+    log("info", "upscale", `ONNX ACNet 神經網絡引擎就緒 (連接埠號 ${port})`)
+  } catch (e) {
+    log("warning", "upscale", "ONNX ACNet 引擎初始化失敗", e)
+    if (createdController) {
+      try {
+        createdController.dispose()
+      } catch {}
     }
-  })()
-
-  return initPromise
+    controllerInstance = null
+    throw e
+  }
 }
 
 export function disposeUpscaleEngine(): void {
