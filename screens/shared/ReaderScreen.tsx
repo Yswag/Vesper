@@ -816,6 +816,18 @@ function ReaderContent({
             of: "geometry",
             onChanged: (_, geo) => {
               if (!next) return
+              // 防誤觸守衛：必須已滾動或閱讀至章節末尾附近，才允許觸發 overscroll
+              // 1. 若內容長度不足一屏（短章節或單圖），必須確實滾動過末端；
+              // 2. 畫廊或連續模式下，可見頁碼必須在最後 1~2 頁之內（避免開頭或中間大幅彈動誤觸）
+              if (pageCount > 0 && leadingPage !== null && leadingPage < lastPage - 1) {
+                if (pullProgress > 0) {
+                  setPullProgress(0)
+                  setOverscrollPx(0)
+                  overscrollRef.current = 0
+                }
+                return
+              }
+
               let overscroll = 0
               if (vertical) {
                 const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)

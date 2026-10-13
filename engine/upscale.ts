@@ -207,17 +207,23 @@ window.runACNet = async function(imageUrl) {
   }
 };
 
-window.exportJpegBlob = async function(uploadUrl) {
-  const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.90));
-  // 關鍵修復：立即清空 Canvas 寬高以釋放 WebKit GPU Process 的大型像素緩衝區（Backing Store）
+window.resetCanvas = function() {
   canvas.width = 0;
   canvas.height = 0;
+};
 
-  await fetch(uploadUrl, {
-    method: "POST",
-    headers: { "Content-Type": "image/jpeg" },
-    body: blob,
-  });
+window.exportJpegBlob = async function(uploadUrl) {
+  try {
+    const blob = await new Promise(res => canvas.toBlob(res, "image/jpeg", 0.90));
+    await fetch(uploadUrl, {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: blob,
+    });
+  } finally {
+    // 關鍵修復：無論成功與否，立即清空 Canvas 寬高以釋放 WebKit GPU Process 的大型像素緩衝區
+    window.resetCanvas();
+  }
 };
 </script>
 </body>
@@ -361,8 +367,11 @@ export async function sharpenImage(
       // 1. 執行推論
       await controllerInstance.evaluateJavaScript(`return window.runACNet("http://127.0.0.1:${currentPort}/feed.jpg");`)
 
-      // 推論完畢再次檢查是否已被翻走
-      if (isCancelled && isCancelled()) return null
+      // 推論完畢再次檢查是否已被翻走；若已離開畫面，立即重置 Canvas 釋放 WebKit 顯存後提早結束
+      if (isCancelled && isCancelled()) {
+        await controllerInstance.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
+        return null
+      }
 
       // 2. 導出成果
       await controllerInstance.evaluateJavaScript(`return window.exportJpegBlob("http://127.0.0.1:${currentPort}/upload");`)
@@ -380,6 +389,11 @@ export async function sharpenImage(
       }
     } catch (error) {
       log("warning", "upscale", `頁面 ${key} ACNet 超分失敗，降級原圖`, error)
+      if (controllerInstance) {
+        try {
+          await controllerInstance.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
+        } catch {}
+      }
     } finally {
       activeSourceData = null
       uploadedBuffer = null
