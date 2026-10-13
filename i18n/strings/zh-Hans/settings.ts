@@ -39,7 +39,6 @@ export default {
     thumbCache: "缩略图缓存",
     thumbCacheDetail: "{files} · {size}",
     thumbCacheFiles: { one: "{n} 个文件", other: "{n} 个文件" },
-    thumbCacheUnreadable: "无法读取",
     clearThumbCache: "清除缩略图缓存",
     clearCacheTitle: "清除缩略图缓存？",
     clearCacheMessage: "封面与头像的缩略图会被清除，需要时会自动重新下载。正文图片不占用磁盘。",
@@ -63,7 +62,6 @@ export default {
     maxSize: "缓存容量限制",
     unlimited: "不限制",
     days: { one: "{n} 天", other: "{n} 天" },
-    clearedSuccess: "缓存已清除",
   },
 
   theme: {
@@ -99,13 +97,6 @@ export default {
     clear: "清除日志",
     empty: "没有记录",
     count: "{shown} / {total} 条",
-    levels: {
-      all: "全部",
-      error: "错误",
-      warning: "警告",
-      info: "信息",
-      debug: "调试",
-    },
   },
 
   sources: {
@@ -151,9 +142,7 @@ export default {
     webviewFootnote:
       "会打开一个浏览器窗口。登录完成后自动关闭，接下来的请求就用这次取得的 cookie 与网页数据。Cloudflare 过盾也走这条。",
     webviewAction: "打开浏览器登录",
-    register: "前往网站注册",
     registerNow: "立即注册",
-    registerTitle: "注册",
     accountPrompt: "用户名或邮箱",
     passwordPrompt: "密码",
     unsupported: "不支持的登录方式",
@@ -191,7 +180,6 @@ export default {
     cancel: "取消下载",
     pending: "未完成（{n}）",
     pendingFootnote: "没抓完的不会被当作已下载；再按一次下载只会补缺的。",
-    remove: "删除下载",
     doneGroup: "已完成（{n}）",
     doneFootnote: "点一下可直接离线阅读。",
     storage: "占用空间",

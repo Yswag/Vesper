@@ -16,7 +16,6 @@ export default {
 
   backToDetails: "Back to details",
   readingSettings: "Reading settings",
-  toc: "Contents",
   pageProgress: "Page {page} / {total}",
   chapterProgress: "Ch. {index} / {total}",
   dragToTurn: "Drag to turn pages",

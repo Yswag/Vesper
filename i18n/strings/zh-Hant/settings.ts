@@ -46,7 +46,6 @@ export default {
     thumbCache: "縮圖快取",
     thumbCacheDetail: "{files} · {size}",
     thumbCacheFiles: { one: "{n} 個檔案", other: "{n} 個檔案" },
-    thumbCacheUnreadable: "無法讀取",
     clearThumbCache: "清除縮圖快取",
     clearCacheTitle: "清除縮圖快取？",
     clearCacheMessage: "封面與頭像的縮圖會清除，需要時會自動重新下載。正文圖片不佔磁碟。",
@@ -70,7 +69,6 @@ export default {
     maxSize: "快取容量限制",
     unlimited: "不限制",
     days: { one: "{n} 天", other: "{n} 天" },
-    clearedSuccess: "快取已清除",
   },
 
   /** 外觀主題頁與主題名稱表。 */
@@ -108,13 +106,6 @@ export default {
     clear: "清除日誌",
     empty: "沒有紀錄",
     count: "{shown} / {total} 筆",
-    levels: {
-      all: "全部",
-      error: "錯誤",
-      warning: "警告",
-      info: "資訊",
-      debug: "除錯",
-    },
   },
 
   /** 漫畫源清單頁。 */
@@ -163,9 +154,7 @@ export default {
     webviewFootnote:
       "會開啟一個瀏覽器視窗。登入完成後自動關閉，接下來的請求就用這次取得的 cookie 與網頁資料。 Cloudflare 過盾也走這條。",
     webviewAction: "開啟瀏覽器登入",
-    register: "前往網站註冊",
     registerNow: "立即註冊",
-    registerTitle: "註冊",
     accountPrompt: "使用者名稱或信箱",
     passwordPrompt: "密碼",
     unsupported: "不支援的登入方式",
@@ -205,7 +194,6 @@ export default {
     cancel: "取消下載",
     pending: "未完成（{n}）",
     pendingFootnote: "沒抓完的不會被當成已下載；再按一次下載只會補缺的。",
-    remove: "刪除下載",
     doneGroup: "已完成（{n}）",
     doneFootnote: "點一下可直接離線閱讀。",
     storage: "佔用空間",

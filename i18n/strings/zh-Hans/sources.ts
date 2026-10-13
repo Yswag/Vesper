@@ -31,6 +31,8 @@ export default {
   notOffline: "这一章不在离线存储里",
   pageUnreadable: "第 {n} 页读不到（文件不存在或已损坏）",
 
+  verificationTitle: "请完成安全验证 ({name})",
+
   login: {
     expired: "登录已过期，请重新登录",
     cancelled: "已取消登录",

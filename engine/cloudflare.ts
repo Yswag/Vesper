@@ -3,6 +3,7 @@
 
 import { type Cookie, setCookies } from "./cookies"
 import { log } from "./log"
+import { t } from "../i18n"
 import { findSource } from "../sources/registry"
 
 const CF_TIMEOUT_MS = 45000
@@ -121,7 +122,7 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
           isPresented = true
           const source = findSource(sourceKey)
           const sourceName = source?.meta?.name || source?.stored?.name || sourceKey
-          const title = `請完成安全驗證 (${sourceName})`
+          const title = t("sources.verificationTitle", { name: sourceName })
           void controller.present({
             fullscreen: true,
             navigationTitle: title,

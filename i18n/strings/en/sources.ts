@@ -31,6 +31,8 @@ export default {
   notOffline: "This chapter is not in offline storage",
   pageUnreadable: "Page {n} cannot be read (the file is missing or damaged)",
 
+  verificationTitle: "Complete the security check ({name})",
+
   login: {
     expired: "Sign-in expired, please sign in again",
     cancelled: "Sign-in cancelled",

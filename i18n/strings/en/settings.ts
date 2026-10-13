@@ -40,7 +40,6 @@ export default {
     thumbCache: "Thumbnail cache",
     thumbCacheDetail: "{files} · {size}",
     thumbCacheFiles: { one: "{n} file", other: "{n} files" },
-    thumbCacheUnreadable: "Unreadable",
     clearThumbCache: "Clear thumbnail cache",
     clearCacheTitle: "Clear thumbnail cache?",
     clearCacheMessage:
@@ -66,7 +65,6 @@ export default {
     maxSize: "Cache Size Limit",
     unlimited: "Unlimited",
     days: { one: "{n} day", other: "{n} days" },
-    clearedSuccess: "Cache cleared",
   },
 
   theme: {
@@ -102,13 +100,6 @@ export default {
     clear: "Clear log",
     empty: "No entries",
     count: "{shown} / {total} entries",
-    levels: {
-      all: "All",
-      error: "Error",
-      warning: "Warning",
-      info: "Info",
-      debug: "Debug",
-    },
   },
 
   sources: {
@@ -155,9 +146,7 @@ export default {
     webviewFootnote:
       "Opens a browser window. It closes automatically once you sign in, and later requests use the cookies and page data from that session. Cloudflare challenges go through this path too.",
     webviewAction: "Open browser to sign in",
-    register: "Register on the website",
     registerNow: "Register now",
-    registerTitle: "Register",
     accountPrompt: "Username or email",
     passwordPrompt: "Password",
     unsupported: "Unsupported sign-in method",
@@ -197,7 +186,6 @@ export default {
     cancel: "Cancel download",
     pending: "Incomplete ({n})",
     pendingFootnote: "Incomplete downloads are not treated as downloaded; downloading again only fetches what is missing.",
-    remove: "Delete download",
     doneGroup: "Completed ({n})",
     doneFootnote: "Tap to read offline.",
     storage: "Storage used",

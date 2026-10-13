@@ -1,4 +1,4 @@
-// 源層自己寫、會被使用者看到的訊息：`sources/**`、`app/comic.ts`、離線 session。
+// 源層自己寫、會被使用者看到的訊息：`sources/**`、`engine/cloudflare.ts`、`app/comic.ts`、離線 session。
 //
 // 來源回傳的資料（標題、標籤、選項名）與 `log()` 診斷不進字典（見 spec 跨票規則 1）：
 // 那些是資料與開發訊息，收了只會讓字典變成雜物間。
@@ -42,6 +42,9 @@ export default {
   notOffline: "這一章不在離線儲存裡",
   /** `{n}` 是頁碼（1 起算）。 */
   pageUnreadable: "第 {n} 頁讀不到（檔案不存在或已損壞）",
+
+  /** Cloudflare 過盾視窗的標題；`{name}` 是來源名稱。 */
+  verificationTitle: "請完成安全驗證 ({name})",
 
   /** 登入（帳密 / cookie / 瀏覽器）。 */
   login: {

@@ -26,7 +26,6 @@ export default {
   /** HUD。 */
   backToDetails: "返回漫畫詳情",
   readingSettings: "閱讀設定",
-  toc: "目錄",
   /** 頁碼指示。`{page}`／`{total}` 都是頁。 */
   pageProgress: "第 {page} / {total} 頁",
   /** 還沒有頁數時的指示。`{index}`／`{total}` 都是話。 */

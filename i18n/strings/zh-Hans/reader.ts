@@ -16,7 +16,6 @@ export default {
 
   backToDetails: "返回漫画详情",
   readingSettings: "阅读设置",
-  toc: "目录",
   pageProgress: "第 {page} / {total} 页",
   chapterProgress: "{index} / {total} 话",
   dragToTurn: "拖动翻页",
