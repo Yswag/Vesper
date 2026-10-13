@@ -16,7 +16,6 @@ import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
 import { sharpenImage } from "../engine/upscale"
-import { getReaderSettings } from "../library/readerSettings"
 
 export interface ChapterImageProps {
   session: ChapterSession
@@ -24,6 +23,8 @@ export interface ChapterImageProps {
   chapterId?: string
   /** 這一張在章節裡的頁索引（＝閱讀器的頁碼）。 */
   index: number
+  /** 是否啟用 AI 超解析度（硬體銳化）。 */
+  hardwareSharpen?: boolean
   /**
    * 指定圖片的顯示框（點）。給了就以 `fit` 方式置中塞進這個框（只給 height 就是「以高度為準」）；
    * 不給＝撐滿可用寬度、高度按比例（webtoon）。
@@ -31,7 +32,13 @@ export interface ChapterImageProps {
   size?: { width?: number; height?: number }
 }
 
-export function ChapterImage({ session, chapterId = "default", index, size }: ChapterImageProps) {
+export function ChapterImage({
+  session,
+  chapterId = "default",
+  index,
+  hardwareSharpen = false,
+  size,
+}: ChapterImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [aspect, setAspect] = useState<number | null>(null)
   const [error, setError] = useState("")
@@ -63,8 +70,7 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
 
         // 漸進式增強：若使用者開啟硬體加速超分，原圖先見，背後執行 ACNet ONNX 超分後原地替換
         // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
-        const settings = getReaderSettings()
-        if (settings.hardwareSharpen && data) {
+        if (hardwareSharpen && data) {
           // 若原始圖片已經很大，或總像素面積過大（如長條條漫 800x10000），
           // 2x 放大將產出超過數千萬像素的巨型張量，超出 WebAssembly 32-bit 定址與 iOS GPU 顯存配額導致崩潰；
           // 此時直接維持原圖高清輸出
@@ -99,7 +105,7 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
     return () => {
       alive = false
     }
-  }, [session, chapterId, index, retryKey])
+  }, [session, chapterId, index, retryKey, hardwareSharpen])
 
   if (image && aspect) {
     return (

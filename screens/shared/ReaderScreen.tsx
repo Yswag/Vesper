@@ -500,7 +500,13 @@ function ReaderContent({
                     box={pageSize}
                     resetToken={currentEpId}
                   >
-                    <ChapterImage session={session} chapterId={currentEpId} index={i} size={pageSize} />
+                    <ChapterImage
+                      session={session}
+                      chapterId={currentEpId}
+                      index={i}
+                      hardwareSharpen={settings.hardwareSharpen}
+                      size={pageSize}
+                    />
                   </ZoomableView>
                 </ZStack>
               )
@@ -508,18 +514,29 @@ function ReaderContent({
             if (!vertical) {
               return (
                 <HStack key={id} tag={i} frame={{ height: pageSize.height }} alignment="center">
-                  <ChapterImage session={session} chapterId={currentEpId} index={i} size={{ height: pageSize.height }} />
+                  <ChapterImage
+                    session={session}
+                    chapterId={currentEpId}
+                    index={i}
+                    hardwareSharpen={settings.hardwareSharpen}
+                    size={{ height: pageSize.height }}
+                  />
                 </HStack>
               )
             }
             return (
               <VStack key={id} tag={i} frame={{ maxWidth: "infinity" }}>
-                <ChapterImage session={session} chapterId={currentEpId} index={i} />
+                <ChapterImage
+                  session={session}
+                  chapterId={currentEpId}
+                  index={i}
+                  hardwareSharpen={settings.hardwareSharpen}
+                />
               </VStack>
             )
           })
         : [],
-    [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height],
+    [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height, settings.hardwareSharpen],
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
