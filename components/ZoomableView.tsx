@@ -85,6 +85,7 @@ export function ZoomableView({
     content: { width: 0, height: 0 },
     startZoom: 0,
     startPan: { x: 0, y: 0 },
+    anchorVector: { x: 0, y: 0 },
     dragging: false,
   })
 
@@ -123,6 +124,7 @@ export function ZoomableView({
   const clearStart = () => {
     latest.current.startZoom = 0
     latest.current.startPan = { x: 0, y: 0 }
+    latest.current.anchorVector = { x: 0, y: 0 }
   }
 
   const reset = () => {
@@ -140,11 +142,31 @@ export function ZoomableView({
     () => ({
       magnify: MagnifyGesture()
         .onChanged(value => {
-          // 手勢開始：記下起點，之後一律算絕對值（跟手、不漏第一個取樣）。
-          if (latest.current.startZoom <= 0) latest.current.startZoom = latest.current.zoom
+          // 手勢開始：記下起點與雙指中心錨點向量，之後一律算絕對值（跟手、不漏第一個取樣）。
+          if (latest.current.startZoom <= 0) {
+            latest.current.startZoom = latest.current.zoom
+            latest.current.startPan = latest.current.pan
+            // 雙指中心相對於內容正中心的偏移向量（考慮當前已有的平移）
+            const cx = (latest.current.box.width || latest.current.content.width) / 2
+            const cy = (latest.current.box.height || latest.current.content.height) / 2
+            const loc = value.startLocation ?? { x: cx, y: cy }
+            latest.current.anchorVector = {
+              x: loc.x - cx - latest.current.pan.x,
+              y: loc.y - cy - latest.current.pan.y,
+            }
+          }
           const magnitude = value.magnification > 0 ? value.magnification : 1
           const next = clampZoom(latest.current.startZoom * magnitude)
-          commit(next, clampPan(latest.current.pan, next))
+          const scaleDelta = next / latest.current.startZoom
+          // 內容以中心縮放，若要讓雙指中心在放大過程中留在雙指正下方，位移補償為 anchorVector * (1 - scaleDelta)
+          const nextPan = clampPan(
+            {
+              x: latest.current.startPan.x + latest.current.anchorVector.x * (1 - scaleDelta),
+              y: latest.current.startPan.y + latest.current.anchorVector.y * (1 - scaleDelta),
+            },
+            next
+          )
+          commit(next, nextPan)
         })
         .onEnded(() => {
           clearStart()
