@@ -65,9 +65,12 @@ export function ChapterImage({ session, chapterId = "default", index, size }: Ch
         // 注意：絕對不能改變 aspect（寬高比），否則 LazyVStack 在重新排版時會導致捲動位置跳躍錯位！
         const settings = getReaderSettings()
         if (settings.hardwareSharpen && data) {
-          // 若原始圖片已經很大（寬度或高度大於 1920），再 2x 放大將產出超過 4K 的巨型紋理，
-          // 會迅速耗盡 iOS GPU 顯存配額導致黑圖崩潰；此時保持原圖高清輸出即可
-          const isTooLargeForUpscale = decoded.width >= 1920 || decoded.height >= 2560
+          // 若原始圖片已經很大，或總像素面積過大（如長條條漫 800x10000），
+          // 2x 放大將產出超過數千萬像素的巨型張量，超出 WebAssembly 32-bit 定址與 iOS GPU 顯存配額導致崩潰；
+          // 此時直接維持原圖高清輸出
+          const totalPixels = decoded.width * decoded.height
+          const isTooLargeForUpscale =
+            decoded.width >= 1920 || decoded.height >= 2560 || totalPixels >= 2_400_000
           if (!isTooLargeForUpscale) {
             const pageKey = `${chapterId}_p${index}`
             const t0 = Date.now()

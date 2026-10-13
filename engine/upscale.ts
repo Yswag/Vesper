@@ -44,6 +44,13 @@ function setCachedUpscaleImage(key: string, image: UIImage): void {
 
 let processedCount = 0
 
+/**
+ * 任務串行互斥隊列（避免並發請求覆蓋圖片發生串音）。
+ * 所有對 WebViewController 的操作（推論、重置、換話清理）必須排入同一個隊列，
+ * 嚴禁在推論執行途中外部直接 dispose，否則會引發 iOS WebKit 原生 EXC_BAD_ACCESS 閃退。
+ */
+let queuePromise = Promise.resolve<any>(null)
+
 /** 清理當前話／會話的所有超分圖片記憶體快取（換話時呼叫） */
 export function clearUpscaleCache(): void {
   const size = sessionCache.size
@@ -51,12 +58,22 @@ export function clearUpscaleCache(): void {
     sessionCache.clear()
     log("debug", "upscale", `已清空超分圖片記憶體快取，釋放 ${size} 張高解析度圖像`)
   }
-  // 換話時主動釋放 WebViewController 實例，重置 WebKit WebProcess 與 WebAssembly 累積顯存
-  if (controllerInstance) {
-    controllerInstance.dispose()
-    controllerInstance = null
-    log("debug", "upscale", "已重置 WebViewController 消除 WebKit 顯存累積")
-  }
+  // 安全重置：將 dispose 排入串行隊列尾端，確保當前飛航推論結束後才安全釋放，絕不在執行途中銷毀
+  queuePromise = queuePromise.then(
+    () => {
+      if (controllerInstance) {
+        controllerInstance.dispose()
+        controllerInstance = null
+        log("debug", "upscale", "已安全重置 WebViewController 消除 WebKit 顯存累積")
+      }
+    },
+    () => {
+      if (controllerInstance) {
+        controllerInstance.dispose()
+        controllerInstance = null
+      }
+    }
+  )
 }
 
 function buildACNetHTML(port: number): string {
@@ -94,6 +111,9 @@ window.runACNet = async function(imageUrl) {
 
   const inW = img.naturalWidth;
   const inH = img.naturalHeight;
+  if (!inW || !inH || inW * inH > 2500000) {
+    throw new Error("Image dimension out of safe upscale bounds");
+  }
   
   canvas.width = inW;
   canvas.height = inH;
@@ -282,15 +302,31 @@ async function ensureEngine(): Promise<void> {
 }
 
 export function disposeUpscaleEngine(): void {
-  if (controllerInstance) {
-    controllerInstance.dispose()
-    controllerInstance = null
-  }
-  if (serverInstance) {
-    serverInstance.stop()
-    serverInstance = null
-    currentPort = 0
-  }
+  // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS
+  queuePromise = queuePromise.then(
+    () => {
+      if (controllerInstance) {
+        controllerInstance.dispose()
+        controllerInstance = null
+      }
+      if (serverInstance) {
+        serverInstance.stop()
+        serverInstance = null
+        currentPort = 0
+      }
+    },
+    () => {
+      if (controllerInstance) {
+        controllerInstance.dispose()
+        controllerInstance = null
+      }
+      if (serverInstance) {
+        serverInstance.stop()
+        serverInstance = null
+        currentPort = 0
+      }
+    }
+  )
   activeSourceData = null
   uploadedBuffer = null
   sessionCache.clear()
@@ -299,9 +335,6 @@ export function disposeUpscaleEngine(): void {
 /**
  * 對給定的原始圖像 Data 執行真實 ACNet ONNX 神經網路 2x 超解析度。
  */
-// 任務串行互斥隊列（避免並發請求覆蓋圖片發生串音）
-let queuePromise = Promise.resolve<any>(null)
-
 export async function sharpenImage(key: string, sourceData: Data): Promise<{ image: UIImage; fromCache: boolean } | null> {
   const cached = getCachedUpscaleImage(key)
   if (cached) return { image: cached, fromCache: true }
