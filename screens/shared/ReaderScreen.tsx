@@ -46,6 +46,7 @@ import {
   Toggle,
   RoundedRectangle,
   ScrollView,
+  ScrollViewReader,
   Slider,
   Spacer,
   Text,
@@ -64,6 +65,7 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
+import { ChapterDrawer } from "../../components/ChapterDrawer"
 import { ZoomableView } from "../../components/ZoomableView"
 import { fill, neutral, radius, rect } from "../../design/tokens"
 import { isFavorite, setProgress, toggleFavorite } from "../../library/bookshelf"
@@ -208,16 +210,8 @@ function ReaderContent({
     return active ? active.chapters : chapters
   }, [isGrouped, chapterGroups, currentEpId, activeGroup, chapters])
 
-  // 目錄抽屜中當前選取分組的章節清單
-  const sheetDisplayChapters: ChapterRef[] = useMemo(() => {
-    if (!isGrouped) return chapters
-    const active = chapterGroups.find((g: ChapterGroup<ChapterRef>) => g.name === activeGroup)
-    return active ? active.chapters : chapters
-  }, [isGrouped, chapterGroups, activeGroup, chapters])
   // 目錄抽屜
   const [showChapterSheet, setShowChapterSheet] = useState(false)
-  // 目錄排序（預設正序，false = 第一話到最新話，true = 最新話到第一話）
-  const [reversedChapters, setReversedChapters] = useState(false)
   // 收藏狀態：每次 render 重新從書架讀取（不在 useState 裡留副本，否則會與
   // 詳情頁那邊的改動不同步）；bumpFavorite 只負責讓點擊當下立刻重繪。
   const [, bumpFavorite] = useState(0)
@@ -606,188 +600,16 @@ function ReaderContent({
         isPresented: showChapterSheet,
         onChanged: setShowChapterSheet,
         content: (
-          <VStack
-            spacing={0}
-            frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-            environments={{ colorScheme: "dark" }}
-            preferredColorScheme="dark"
-            presentationBackground="clear"
-            glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.sheet) }}
-            ignoresSafeArea={{ edges: "bottom" }}
-            presentationDetents={["medium", "large"]}
-            presentationDragIndicator="visible"
-            presentationCornerRadius={24}
-          >
-            {/* 目錄標題列 */}
-            <HStack
-              alignment="center"
-              padding={{ top: 18, horizontal: 20, bottom: 12 }}
-            >
-              <VStack alignment="leading" spacing={2}>
-                <Text font="headline" fontWeight="bold" foregroundStyle="white">
-                  {t("reader.chaptersTitle")}
-                </Text>
-                <Text font="caption2" foregroundStyle={neutral.secondary}>
-                  {isGrouped ? `${sheetDisplayChapters.length} / ${chapters.length}` : t("reader.chapterCount", { n: chapters.length })}
-                </Text>
-              </VStack>
-              <Spacer />
-              {/* 正序／倒序切換膠囊 */}
-              <Button
-                buttonStyle="plain"
-                accessibilityLabel={reversedChapters ? t("reader.sortAscending") : t("reader.sortDescending")}
-                action={() => setReversedChapters(!reversedChapters)}
-              >
-                <HStack spacing={4} frame={{ minHeight: 44 }}>
-                <Image
-                  systemName="arrow.up.arrow.down"
-                  font={11}
-                  fontWeight="medium"
-                  foregroundStyle={neutral.secondary}
-                />
-                <Text font="caption" fontWeight="medium" foregroundStyle={neutral.secondary}>
-                  {reversedChapters ? t("reader.sortDescendingShort") : t("reader.sortAscendingShort")}
-                </Text>
-                </HStack>
-              </Button>
-              <Spacer frame={{ width: 10 }} />
-              {/* 圓形關閉按鈕 */}
-              <Button
-                buttonStyle="plain"
-                accessibilityLabel={t("reader.closeChapters")}
-                action={() => setShowChapterSheet(false)}
-              >
-                <Image
-                  systemName="xmark"
-                  frame={{ width: 44, height: 44 }}
-                  font={15}
-                  fontWeight="medium"
-                  foregroundStyle="secondaryLabel"
-                />
-              </Button>
-            </HStack>
-
-            <Divider />
-
-            {/* 分組標籤列（支援橫向滾動膠囊） */}
-            {isGrouped ? (
-              <VStack spacing={0}>
-                <ScrollView axes="horizontal">
-                  <HStack spacing={8} padding={{ horizontal: 16, vertical: 10 }}>
-                    {chapterGroups.map((group: ChapterGroup<ChapterRef>) => {
-                      const isCurrentGroup = group.name === activeGroup
-                      return (
-                        <Button
-                          key={group.name}
-                          buttonStyle="plain"
-                          action={() => setSelectedGroup(group.name)}
-                        >
-                          <HStack
-                            spacing={5}
-                            padding={{ horizontal: 12, vertical: 6 }}
-                            background={isCurrentGroup ? "accentColor" : "rgba(255, 255, 255, 0.08)"}
-                            clipShape={rect(radius.chip)}
-                          >
-                            <Text
-                              font="caption"
-                              fontWeight={isCurrentGroup ? "semibold" : "regular"}
-                              foregroundStyle={isCurrentGroup ? "white" : neutral.secondary}
-                              lineLimit={1}
-                            >
-                              {group.name}
-                            </Text>
-                            <Text
-                              font="caption2"
-                              fontWeight="medium"
-                              foregroundStyle={isCurrentGroup ? "white" : neutral.tertiary}
-                            >
-                              {group.chapters.length}
-                            </Text>
-                          </HStack>
-                        </Button>
-                      )
-                    })}
-                  </HStack>
-                </ScrollView>
-                <Divider />
-              </VStack>
-            ) : null}
-
-            {/* 離線模式把沒下載完的章擋掉了，說一聲免得使用者以為目錄壞了。 */}
-            {offlineMode && hiddenChapters > 0 ? (
-              <HStack
-                spacing={8}
-                padding={{ horizontal: 20, vertical: 10 }}
-                frame={{ maxWidth: "infinity" }}
-              >
-                <Image systemName="info.circle" font={12} foregroundStyle={neutral.secondary} />
-                <Text font="caption2" foregroundStyle={neutral.secondary}>
-                  {t("reader.offlineOnlyDownloaded")}
-                </Text>
-                <Spacer />
-              </HStack>
-            ) : null}
-
-            {/* 目錄章節清單 */}
-            <ScrollView>
-              <VStack spacing={8} padding={{ horizontal: 16, vertical: 12 }}>
-                {(reversedChapters ? [...sheetDisplayChapters].reverse() : sheetDisplayChapters).map(ch => {
-                  const isCurrent = ch.id === currentEpId
-                  return (
-                    <ZStack key={ch.id} alignment="center">
-                      <HStack
-                        alignment="center"
-                        padding={{ horizontal: 14, vertical: 11 }}
-                        background={isCurrent ? fill.highlight : "clear"}
-                        clipShape={rect(radius.thumb)}
-                        onTapGesture={() => selectChapter(ch.id)}
-                      >
-                        {/* 當前閱讀中圖示 */}
-                        <Image
-                          systemName={isCurrent ? "bookmark.fill" : "doc.text"}
-                          font={13}
-                          foregroundStyle={isCurrent ? "accentColor" : neutral.tertiary}
-                        />
-                        <Spacer frame={{ width: 8 }} />
-                        <Text
-                          font="subheadline"
-                          fontWeight={isCurrent ? "semibold" : "regular"}
-                          foregroundStyle={isCurrent ? "white" : "label"}
-                          lineLimit={1}
-                        >
-                          {ch.title}
-                        </Text>
-                        <Spacer />
-                        {isCurrent ? (
-                          <HStack
-                            padding={{ horizontal: 7, vertical: 2 }}
-                            background="accentColor"
-                            clipShape={{ type: "capsule", style: "circular" }}
-                          >
-                            <Text font="caption2" fontWeight="semibold" foregroundStyle="white">
-                              {t("reader.readingBadge")}
-                            </Text>
-                          </HStack>
-                        ) : null}
-                      </HStack>
-
-                      {/* 完美貼合圓角的藍色高光邊框（iOS HIG 精準描邊） */}
-                      {isCurrent ? (
-                        <RoundedRectangle
-                          cornerRadius={radius.thumb}
-                          stroke={{
-                            shapeStyle: fill.highlightBorder,
-                            strokeStyle: { lineWidth: 1.2 },
-                          }}
-                          allowsHitTesting={false}
-                        />
-                      ) : null}
-                    </ZStack>
-                  )
-                })}
-              </VStack>
-            </ScrollView>
-          </VStack>
+          <ChapterDrawer
+            currentEpId={currentEpId}
+            chapters={chapters}
+            chapterGroups={chapterGroups}
+            isGrouped={isGrouped}
+            offlineMode={offlineMode}
+            hiddenChapters={hiddenChapters}
+            onSelectChapter={selectChapter}
+            onClose={() => setShowChapterSheet(false)}
+          />
         ),
       }}
     >

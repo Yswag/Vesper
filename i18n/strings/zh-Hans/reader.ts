@@ -11,6 +11,7 @@ export default {
   sortAscendingShort: "正序",
   sortDescendingShort: "倒序",
   offlineOnlyDownloaded: "离线模式仅显示已下载的章节",
+  locateCurrent: "定位",
   readingBadge: "阅读中",
 
   backToDetails: "返回漫画详情",

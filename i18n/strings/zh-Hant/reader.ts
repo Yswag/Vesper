@@ -19,7 +19,8 @@ export default {
   sortAscendingShort: "正序",
   sortDescendingShort: "倒序",
   offlineOnlyDownloaded: "離線模式僅顯示已下載的章節",
-  /** 目錄裡「就是這一話」的徽章。 */
+  /** 快速跳轉至當前閱讀章節的按鈕文案。 */
+  locateCurrent: "定位",
   readingBadge: "閱讀中",
 
   /** HUD。 */
