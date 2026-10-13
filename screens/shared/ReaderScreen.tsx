@@ -429,7 +429,13 @@ function ReaderContent({
     }, 600)
   }
 
-  /** 畫布點擊：三區翻頁（左／中／右）；沒開分區、或閱讀方向是上到下時，整頁點擊＝切 HUD。 */
+  /**
+   * 畫布點擊：三區翻頁（左／中／右）；沒開分區、或閱讀方向是上到下連續模式時，整頁點擊＝切 HUD。
+   *
+   * 座標空間契約：手勢必須宣告為 `coordinateSpace: "global"`（見 ScrollView:onTapGesture）。
+   * 原因是若宣告為 "local"，ScrollView 回傳的是內容絕對座標（Content Offset），橫向或縱向
+   * 捲動過第 1 頁後 location 會累計位移達數百至數千點，導致判定永遠漂出中間區。
+   */
   function handleCanvasTap(location: Point) {
     // 縱向畫廊模式：支援上 1/4 上一頁、下 1/4 下一頁、中 1/2 切 HUD
     if (vertical && paginated && settings.tapZones) {
@@ -442,14 +448,13 @@ function ReaderContent({
       return
     }
 
-    // 由上到下（ttb）連續條漫模式不做點擊翻頁——那個方向靠滑動。
+    // 由上到下（ttb）連續條漫模式不做點擊翻頁——那個方向靠滑動，全屏點擊切 HUD。
     if (!settings.tapZones || settings.direction === "ttb") {
       toggleHUD()
       return
     }
 
-    // 分區＝左右各 1/4 翻頁、中間 1/2 切 HUD。
-    // （2026-10-10 從三等分改的：三等分的翻頁區佔 2/3 寬，實機覺得可翻頁的區域太大。）
+    // 橫向分區＝左右各 1/4 翻頁、中間 1/2 切 HUD。
     const quarter = viewport.width / 4
     if (location.x > quarter && location.x < quarter * 3) {
       toggleHUD()
@@ -811,7 +816,8 @@ function ReaderContent({
             },
           }}
           environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
-          onTapGesture={{ count: 1, coordinateSpace: "local", perform: handleCanvasTap }}
+          // ⚠️ 必須為 global：若為 local，ScrollView 翻過第 1 頁後 location 會包含累計滾動位移，導致點擊區域判定完全漂移
+          onTapGesture={{ count: 1, coordinateSpace: "global", perform: handleCanvasTap }}
           onScrollGeometryChange={{
             of: "geometry",
             onChanged: (_, geo) => {
