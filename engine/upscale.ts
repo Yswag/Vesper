@@ -88,7 +88,11 @@ const canvas = document.getElementById("c");
 let session = null;
 
 ort.env.wasm.wasmPaths = "http://127.0.0.1:${port}/";
-ort.env.wasm.numThreads = 2;
+// 這個頁面是由 loopback 送出、帶 COOP/COEP 的（見 ensureServer），所以 crossOriginIsolated 成立、
+// SharedArrayBuffer 可用，numThreads 才真的有效。跟硬體走：超過實體核心數會退化（oversubscription），
+// 實測甜蜜點就是核心數（這台 4 核：2→4 再快 6%，6/8 反而退化）；上限 8 只是天花板，
+// 因為執行緒越多、session 建立越貴（要 spawn worker），而且沒有 8 核以上的資料。
+ort.env.wasm.numThreads = Math.min(8, navigator.hardwareConcurrency || 2);
 
 window.initSession = async function() {
   const resp = await fetch("http://127.0.0.1:${port}/anime4k_acnet.onnx");
@@ -233,6 +237,21 @@ window.exportJpegBlob = async function(uploadUrl) {
 let activeSourceData: Data | null = null
 let uploadedBuffer: ArrayBuffer | null = null
 
+/**
+ * 帶標頭的靜態回應（`HttpResponse.raw` 的 body 只收 Data）。
+ * 同源資源一律聲明 `Cross-Origin-Resource-Policy`：頁面本身帶 COEP: require-corp。
+ */
+function staticResponse(bytes: Uint8Array, contentType: string, extraHeaders: Record<string, string> = {}): HttpResponse {
+  return HttpResponse.raw(200, "OK", {
+    headers: {
+      "Content-Type": contentType,
+      "Cross-Origin-Resource-Policy": "same-origin",
+      ...extraHeaders,
+    },
+    body: Data.fromArrayBuffer(bytes.buffer as ArrayBuffer)!,
+  })
+}
+
 async function ensureServer(): Promise<number> {
   if (serverInstance && currentPort) return currentPort
 
@@ -240,26 +259,38 @@ async function ensureServer(): Promise<number> {
 
   const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
   const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
-  const wasmPath = join(Script.directory, "assets/acnet/ort-wasm.wasm")
-  const wasmSimdPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
+  const wasmThreadedPath = join(Script.directory, "assets/acnet/ort-wasm-simd-threaded.wasm")
+  const wasmFallbackPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
 
   const acnetBytes = readBytes(acnetPath)
   const ortJsBytes = readBytes(ortJsPath)
-  const wasmBytes = readBytes(wasmPath)
-  const wasmSimdBytes = readBytes(wasmSimdPath) || wasmBytes
+  // 多執行緒時 ORT 要 threaded 版；隔離失效或 numThreads = 1 時它會回頭要非 threaded 那顆。
+  const wasmThreadedBytes = readBytes(wasmThreadedPath)
+  const wasmFallbackBytes = readBytes(wasmFallbackPath)
 
-  if (!acnetBytes || !ortJsBytes || !wasmBytes) {
+  // 兩顆都當成必要資源：不同 build 的 wasm 不能互換，拿 threaded 去頂 fallback 的 URL
+  // 只會把「找不到檔」變成更難懂的初始化失敗。
+  if (!acnetBytes || !ortJsBytes || !wasmThreadedBytes || !wasmFallbackBytes) {
     throw new Error("ACNet 資源檔案丟失 (請確認 assets/acnet 目錄完整)")
   }
 
+  // 頁面必須由本機伺服器送出才帶得到 COOP/COEP：少了它們就沒有 crossOriginIsolated，
+  // ort.env.wasm.numThreads 會被 ORT 忽略（退回單執行緒，實測整頁慢 30%）。
+  // port 只有 start() 之後才知道，所以 HTML 在 handler 裡才組（那時 currentPort 已經指派）。
+  server.registerHandler("/", () =>
+    staticResponse(new TextEncoder().encode(buildACNetHTML(currentPort)), "text/html; charset=utf-8", {
+      "Cross-Origin-Opener-Policy": "same-origin",
+      "Cross-Origin-Embedder-Policy": "require-corp",
+    })
+  )
   server.registerHandler("/feed.jpg", () => {
     if (!activeSourceData) return HttpResponse.notFound()
     return HttpResponse.ok(HttpResponseBody.data(activeSourceData))
   })
   server.registerHandler("/anime4k_acnet.onnx", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(acnetBytes.buffer as ArrayBuffer)!)))
-  server.registerHandler("/ort.min.js", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(ortJsBytes.buffer as ArrayBuffer)!)))
-  server.registerHandler("/ort-wasm.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmBytes.buffer as ArrayBuffer)!)))
-  server.registerHandler("/ort-wasm-simd.wasm", () => HttpResponse.ok(HttpResponseBody.data(Data.fromArrayBuffer(wasmSimdBytes!.buffer as ArrayBuffer)!)))
+  server.registerHandler("/ort.min.js", () => staticResponse(ortJsBytes, "text/javascript"))
+  server.registerHandler("/ort-wasm-simd-threaded.wasm", () => staticResponse(wasmThreadedBytes, "application/wasm"))
+  server.registerHandler("/ort-wasm-simd.wasm", () => staticResponse(wasmFallbackBytes, "application/wasm"))
   server.registerHandler("/upload", req => {
     if (req.body) uploadedBuffer = req.body.toArrayBuffer()
     return HttpResponse.ok(HttpResponseBody.text("ok"))
@@ -286,7 +317,7 @@ async function ensureEngine(): Promise<void> {
 
     const controller = new WebViewController({ ephemeral: true })
     createdController = controller
-    await controller.loadHTML(buildACNetHTML(port), `http://127.0.0.1:${port}/`)
+    await controller.loadURL(`http://127.0.0.1:${port}/`)
     await controller.waitForLoad()
 
     // 初始化 ONNX 會話
