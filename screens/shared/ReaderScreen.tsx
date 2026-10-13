@@ -39,15 +39,11 @@ import {
   LazyHStack,
   LazyVStack,
   MagnifyGesture,
-  Menu,
   Navigation,
   ProgressView,
-  Picker,
-  Toggle,
   RoundedRectangle,
   ScrollView,
   ScrollViewReader,
-  Slider,
   Spacer,
   Text,
   VStack,
@@ -66,6 +62,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
+import { ReaderHUD } from "../../components/ReaderHUD"
 import { ZoomableView } from "../../components/ZoomableView"
 import { fill, neutral, radius, rect } from "../../design/tokens"
 import { isFavorite, setProgress, toggleFavorite } from "../../library/bookshelf"
@@ -79,14 +76,6 @@ import { createOfflineSession, isOfflineReadable } from "./offlineSession"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
-/** 控制列滑入／滑出的彈性動畫 */
-const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
-/**
- * HUD 面板收回時的位移量。
- * 只取「略大於面板高度」——取太大會讓動畫前段耗在螢幕外，看起來就會變成「先沒動、再衝進來」。
- */
-const HUD_SLIDE_TOP = 130
-const HUD_SLIDE_BOTTOM = 145
 /**
  * 單擊翻頁的滑動動畫。
  *
@@ -856,327 +845,34 @@ function ReaderContent({
           )
         ) : null}
 
-        {/* 2. 全螢幕 HUD Overlay
-              外框恆在：遮罩與上下工具列用 offset/opacity 收放，
-              靠 allowsHitTesting 在隱藏時放掉觸控。 */}
-        <ZStack
-          alignment="top"
-          frame={{
-            maxWidth: "infinity",
-            maxHeight: "infinity",
-          }}
-          ignoresSafeArea={true}
-          allowsHitTesting={hudVisible.value}
-          zIndex={100}
-        >
-          {/* 2.1 最底層：漫畫遮罩（淡入淡出） */}
-          <VStack
-            spacing={0}
-            frame={{
-              maxWidth: "infinity",
-              maxHeight: "infinity",
-            }}
-            background={fill.scrimSoft}
-            opacity={hudVisible.value ? 1 : 0}
-            allowsHitTesting={hudVisible.value}
-            onTapGesture={() => toggleHUD()}
-            animation={{ animation: HUD_ANIM, value: hudVisible.value }}
-            zIndex={0}
-          />
-
-          {/* 2.2 Top HUD 定位層（定位層本身不位移） */}
-          <VStack
-            spacing={0}
-            frame={{
-              maxWidth: "infinity",
-              maxHeight: "infinity",
-              alignment: "top",
-            }}
-            allowsHitTesting={hudVisible.value}
-            zIndex={2}
-          >
-            {/* 面板恆在、用 offset 收放 */}
-            <VStack
-              spacing={0}
-              environments={{ colorScheme: "dark" }}
-              glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.panel) }}
-              ignoresSafeArea={true}
-              frame={{ maxWidth: "infinity" }}
-              offset={{ x: 0, y: hudVisible.value ? 0 : -HUD_SLIDE_TOP }}
-              opacity={hudVisible.value ? 1 : 0}
-              animation={{ animation: HUD_ANIM, value: hudVisible.value }}
-            >
-              {/* 頂部內容區塊 */}
-              <VStack
-                spacing={0}
-                padding={{
-                  top: safeAreaInsets.top + 4,
-                  leading: safeAreaInsets.leading + 16,
-                  trailing: safeAreaInsets.trailing + 16,
-                  bottom: 12,
-                }}
-                frame={{ maxWidth: "infinity" }}
-              >
-                <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
-                  {/* 標題居中層：以螢幕物理中心為準嚴格置中，兩側夾 padding 避開按鈕 */}
-                  <VStack alignment="center" spacing={2} padding={{ horizontal: 96 }}>
-                    <Text font="headline" fontWeight="bold" foregroundStyle="white" lineLimit={1}>
-                      {comicTitle}
-                    </Text>
-                    <Text font="caption2" foregroundStyle={neutral.secondary} lineLimit={1}>
-                      {title}
-                    </Text>
-                  </VStack>
-
-                  {/* 兩側按鈕層：左返回、右選單 */}
-                  <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
-                    <Button action={dismiss} buttonStyle="plain" accessibilityLabel={t("reader.backToDetails")}>
-                      <Image systemName="chevron.left" font={18} frame={{ width: 44, height: 44 }} foregroundStyle="white" />
-                    </Button>
-
-                    <Spacer />
-
-                    <HStack spacing={4} alignment="center">
-                      <Button
-                        buttonStyle="plain"
-                        accessibilityLabel={t("reader.chaptersTitle")}
-                        action={() => setShowChapterSheet(true)}
-                      >
-                        <Image
-                          frame={{ width: 44, height: 44 }}
-                          systemName="list.bullet"
-                          font={15}
-                          fontWeight="medium"
-                          foregroundStyle="white"
-                        />
-                      </Button>
-
-                      <Menu
-                        accessibilityLabel={t("reader.readingSettings")}
-                        label={
-                          <Image
-                            frame={{ width: 44, height: 44 }}
-                            systemName="gearshape"
-                            font={15}
-                            fontWeight="medium"
-                            foregroundStyle="white"
-                          />
-                        }
-                      >
-                      <Picker
-                        title={t("reader.mode")}
-                        value={settings.mode}
-                        pickerStyle="segmented"
-                        onChanged={(mode: string | number) => updateSettings({ mode: mode === "gallery" ? "gallery" : "continuous" })}
-                      >
-                        <Text tag="gallery">{t("reader.modeGallery")}</Text>
-                        <Text tag="continuous">{t("reader.modeContinuous")}</Text>
-                      </Picker>
-
-                      <Picker
-                        title={t("reader.direction")}
-                        value={settings.direction}
-                        pickerStyle="menu"
-                        onChanged={(direction: string | number) => updateSettings({ direction: direction === "ltr" || direction === "rtl" ? direction : "ttb" })}
-                      >
-                        <Text tag="ltr">{t("reader.directionLtr")}</Text>
-                        <Text tag="rtl">{t("reader.directionRtl")}</Text>
-                        <Text tag="ttb">{t("reader.directionTtb")}</Text>
-                      </Picker>
-
-                      {/* 縱向閱讀沒有三分區翻頁；選單列沒有第二行放提示，就接在標題後面。 */}
-                      <Toggle
-                        title={settings.direction === "ttb" ? `${t("reader.tapZones")}${t("reader.gestureHint")}` : t("reader.tapZones")}
-                        systemImage="hand.tap"
-                        disabled={settings.direction === "ttb"}
-                        value={settings.tapZones && settings.direction !== "ttb"}
-                        onChanged={value => {
-                          if (settings.direction !== "ttb") updateSettings({ tapZones: value })
-                        }}
-                      />
-
-                      <Toggle
-                        title={t("reader.hardwareSharpen")}
-                        systemImage="sparkles"
-                        value={settings.hardwareSharpen}
-                        onChanged={value => updateSettings({ hardwareSharpen: value })}
-                      />
-                    </Menu>
-                  </HStack>
-                </HStack>
-              </ZStack>
-              </VStack>
-            </VStack>
-          </VStack>
-
-          {/* 2.3 底部 HUD。
-              面板恆在、用 offset 收放；動畫由各自的 animation modifier 驅動，
-              HUD 不用 transition + withAnimation（那條路徑實測會退化成淡入淡出）。 */}
-          <VStack
-            spacing={0}
-            frame={{
-              maxWidth: "infinity",
-              maxHeight: "infinity",
-              alignment: "bottom",
-            }}
-            allowsHitTesting={hudVisible.value}
-            zIndex={2}
-          >
-            <VStack
-              spacing={0}
-              environments={{ colorScheme: "dark" }}
-              glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.panel) }}
-              frame={{ maxWidth: "infinity" }}
-              ignoresSafeArea={true}
-              offset={{ x: 0, y: hudVisible.value ? 0 : HUD_SLIDE_BOTTOM }}
-              opacity={hudVisible.value ? 1 : 0}
-              animation={{ animation: HUD_ANIM, value: hudVisible.value }}
-            >
-              {/* 主控制區塊（緊湊流線型：整合頁碼、Slider 與換話列） */}
-              <VStack
-                spacing={12}
-                padding={{ top: 14, leading: safeAreaInsets.leading + 20, trailing: safeAreaInsets.trailing + 20, bottom: 4 }}
-                frame={{ maxWidth: "infinity" }}
-              >
-                {/* 換話快捷控制欄 */}
-                <HStack spacing={8} alignment="center" frame={{ maxWidth: "infinity" }}>
-                  <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                    {previous ? (
-                      <ChapterLink chapter={previous} label={t("reader.previousChapter")} systemImage="backward.fill" onSelect={selectChapter} />
-                    ) : (
-                      <ChapterLinkDisabled label={t("reader.atFirstChapter")} systemImage="backward.fill" />
-                    )}
-                  </HStack>
-
-                  <Text
-                    font="caption"
-                    fontWeight="semibold"
-                    foregroundStyle={neutral.secondary}
-                    monospacedDigit={true}
-                    frame={{ maxWidth: "infinity", alignment: "center" }}
-                  >
-                    {t("reader.chapterProgress", { index: index + 1, total: chapters.length })}
-                  </Text>
-
-                  <HStack frame={{ maxWidth: "infinity", alignment: "trailing" }}>
-                    {next ? (
-                      <ChapterLink chapter={next} label={t("reader.nextChapter")} systemImage="forward.fill" isTrailingIcon={true} onSelect={selectChapter} />
-                    ) : (
-                      <ChapterLinkDisabled label={t("reader.atLastChapter")} systemImage="forward.fill" isTrailingIcon={true} />
-                    )}
-                  </HStack>
-                </HStack>
-
-                {/* 拖曳翻頁 Slider（含實時頁碼反饋） */}
-                {pageCount > 1 ? (
-                  <VStack spacing={6}>
-                    <Slider
-                      min={0}
-                      max={lastPage}
-                      step={1}
-                      value={scrubValue}
-                      accessibilityLabel={t("reader.dragToTurn")}
-                      onEditingChanged={editing => {
-                        if (editing) {
-                          setScrubbing(true)
-                          scrubValue.setValue(clampPage(leadingPage ?? 0))
-                        } else {
-                          commitScrub()
-                        }
-                      }}
-                    />
-                    <HStack>
-                      <Spacer />
-                      <Text font="caption2" fontWeight="medium" foregroundStyle={neutral.secondary}>
-                        {t("reader.pageProgress", {
-                          page: scrubbing ? clampPage(scrubValue.value) + 1 : currentPage,
-                          total: pageCount,
-                        })}
-                      </Text>
-                      <Spacer />
-                    </HStack>
-                  </VStack>
-                ) : null}
-              </VStack>
-
-              {/* HUD 底部留白：面板踩在 Home Indicator 上 */}
-              <VStack frame={{ height: 14, maxWidth: "infinity" }} />
-            </VStack>
-          </VStack>
-
-        </ZStack>
+        {/* 2. 全螢幕 HUD Overlay */}
+        <ReaderHUD
+          hudVisible={hudVisible}
+          safeAreaInsets={safeAreaInsets}
+          comicTitle={comicTitle}
+          chapterTitle={title}
+          settings={settings}
+          onUpdateSettings={updateSettings}
+          onDismiss={dismiss}
+          onOpenChapterSheet={() => setShowChapterSheet(true)}
+          onToggleHUD={toggleHUD}
+          previousChapter={previous}
+          nextChapter={next}
+          chapterIndex={index + 1}
+          totalChapters={chapters.length}
+          onSelectChapter={selectChapter}
+          pageCount={pageCount}
+          currentPage={currentPage}
+          leadingPage={leadingPage}
+          scrubbing={scrubbing}
+          scrubValue={scrubValue}
+          onScrubStart={() => setScrubbing(true)}
+          onScrubCommit={commitScrub}
+        />
 
       </ZStack>
     </VStack>
   )
 }
 
-/**
- * 換話按鈕。
- *
- * 這裡刻意**不是** NavigationLink：換話若推新頁，每讀一話就多疊一層 route，
- * 一次看很多話之後要返回詳情頁就得連點很多次「返回」。改成回呼，
- * 由 ReaderScreen 自己換掉 `currentEpId`（同一頁就地換話，只留一層）。
- */
-function ChapterLink({
-  chapter,
-  label,
-  systemImage,
-  isTrailingIcon = false,
-  isButton = false,
-  onSelect,
-}: {
-  chapter: ChapterRef
-  label: string
-  systemImage?: string
-  isTrailingIcon?: boolean
-  isButton?: boolean
-  onSelect: (epId: string) => void
-}) {
-  const select = () => onSelect(chapter.id)
-  const content = isButton ? (
-    <HStack
-      padding={{ horizontal: 22, vertical: 12 }}
-      background="accentColor"
-      clipShape={rect(radius.sheet)}
-      onTapGesture={select}
-    >
-      <Text font="headline" foregroundStyle="white" fontWeight="medium">
-        {label}
-      </Text>
-    </HStack>
-  ) : (
-    <Button action={select} buttonStyle="plain" accessibilityLabel={t("reader.chapterLinkLabel", { label, title: chapter.title })}>
-    <HStack
-      frame={{ minHeight: 44 }}
-      spacing={5}
-      alignment="center"
-    >
-      {systemImage && !isTrailingIcon ? (
-        <Image systemName={systemImage} font={11} foregroundStyle="white" />
-      ) : null}
-      <Text font="subheadline" fontWeight="medium" foregroundStyle="white" lineLimit={1}>
-        {label}
-      </Text>
-      {systemImage && isTrailingIcon ? (
-        <Image systemName={systemImage} font={11} foregroundStyle="white" />
-      ) : null}
-    </HStack>
-    </Button>
-  )
-
-  return content
-}
-
-function ChapterLinkDisabled({ label, systemImage, isTrailingIcon = false }: { label: string; systemImage: string; isTrailingIcon?: boolean }) {
-  return (
-    <Button action={() => {}} buttonStyle="plain" disabled={true} accessibilityLabel={label}>
-      <HStack spacing={5} frame={{ minHeight: 44 }} foregroundStyle={neutral.tertiary}>
-        {!isTrailingIcon ? <Image systemName={systemImage} font={11} /> : null}
-        <Text font="subheadline" lineLimit={1}>{label}</Text>
-        {isTrailingIcon ? <Image systemName={systemImage} font={11} /> : null}
-      </HStack>
-    </Button>
-  )
-}
 
