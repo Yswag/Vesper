@@ -31,7 +31,7 @@ export function CustomDialogOverlay() {
         }}
         onTapGesture={() => dismissCustomDialog()}
       />
-      <DialogCard request={request} />
+      <DialogCard key={request.id} request={request} />
     </ZStack>
   )
 }
@@ -148,6 +148,11 @@ function NativeAlertButton({
 function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind: "input" }> }) {
   const [value, setValue] = useState("")
   const [error, setError] = useState("")
+
+  useEffect(() => {
+    setValue("")
+    setError("")
+  }, [request.id])
 
   function submit() {
     try {

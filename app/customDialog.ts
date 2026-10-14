@@ -10,6 +10,7 @@ export interface DialogAction {
 
 export type CustomDialogRequest =
   | {
+      id: number
       kind: "message"
       title: string
       content: string
@@ -17,6 +18,7 @@ export type CustomDialogRequest =
       resolve: () => void
     }
   | {
+      id: number
       kind: "input"
       title: string
       image?: string | UIImage | null
@@ -24,6 +26,7 @@ export type CustomDialogRequest =
       resolve: (value: string | null) => void
     }
   | {
+      id: number
       kind: "select"
       title: string
       options: string[]
@@ -31,6 +34,7 @@ export type CustomDialogRequest =
       resolve: (value: number | null) => void
     }
 
+let nextDialogId = 1
 let queue: CustomDialogRequest[] = []
 
 const bus = createEmitter()
@@ -41,8 +45,9 @@ export function activeCustomDialog(): CustomDialogRequest | undefined {
 
 export const subscribeCustomDialog = bus.subscribe
 
-function enqueue(request: CustomDialogRequest) {
-  queue = queue.concat(request)
+function enqueue(request: Omit<CustomDialogRequest, "id">) {
+  const item = { ...request, id: nextDialogId++ } as CustomDialogRequest
+  queue = queue.concat(item)
   bus.emit()
 }
 
@@ -64,18 +69,20 @@ export function finishCustomDialog(request: CustomDialogRequest, value: string |
   bus.emit()
 }
 
-export function presentCustomInput(request: Omit<Extract<CustomDialogRequest, { kind: "input" }>, "kind" | "resolve">): Promise<string | null> {
+export function presentCustomInput(
+  request: Omit<Extract<CustomDialogRequest, { kind: "input" }>, "id" | "kind" | "resolve">,
+): Promise<string | null> {
   return new Promise(resolve => enqueue({ kind: "input", ...request, resolve }))
 }
 
 export function presentCustomMessage(
-  request: Omit<Extract<CustomDialogRequest, { kind: "message" }>, "kind" | "resolve">,
+  request: Omit<Extract<CustomDialogRequest, { kind: "message" }>, "id" | "kind" | "resolve">,
 ): Promise<void> {
   return new Promise(resolve => enqueue({ kind: "message", ...request, resolve }))
 }
 
 export function presentCustomSelect(
-  request: Omit<Extract<CustomDialogRequest, { kind: "select" }>, "kind" | "resolve">,
+  request: Omit<Extract<CustomDialogRequest, { kind: "select" }>, "id" | "kind" | "resolve">,
 ): Promise<number | null> {
   return new Promise(resolve => enqueue({ kind: "select", ...request, resolve }))
 }
