@@ -189,6 +189,7 @@ export function resetSourceSetting(key: string, id: string) {
 
 /** 呼叫源宣告的 `type: "callback"` 設定（例如 mxs 的「檢測當前域名」）。 */
 export async function runSourceSettingCallback(key: string, id: string): Promise<void> {
+  await ensureSourceReady(key)
   const source = findSource(key)
   const callback = source?.instance?.settings?.[id]?.callback
   if (typeof callback !== "function") throw new Error(t("sources.settingNoAction"))

@@ -38,7 +38,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [status, setStatus] = useState<StatusNotice | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [runningId, setRunningId] = useState<string | null>(null)
 
   useEffect(() => {
     reloadRegistry()
@@ -94,7 +94,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
   }
 
   async function runCallback(id: string, label: string) {
-    setBusy(true)
+    setRunningId(id)
     setStatus({ kind: "loading", text: t("common.inProgress", { label }) })
     try {
       await runSourceSettingCallback(sourceKey, id)
@@ -104,7 +104,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
       setStatus({ kind: "error", text: t("common.failed", { message }) })
       await Dialog.alert({ title: label, message })
     } finally {
-      setBusy(false)
+      setRunningId(null)
     }
   }
 
@@ -114,7 +114,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
       values={source?.stored.settings ?? {}}
       draft={draft}
       status={status}
-      busy={busy}
+      runningId={runningId}
       onDraft={(id, value) => setDraft(current => ({ ...current, [id]: value }))}
       onApply={apply}
       onReset={reset}
@@ -128,7 +128,7 @@ export interface SourceSettingsViewProps {
   values: Record<string, unknown>
   draft: Record<string, string>
   status: StatusNotice | null
-  busy: boolean
+  runningId: string | null
   onDraft: (id: string, value: string) => void
   onApply: (id: string, value: unknown) => void
   onReset: (id: string) => void
@@ -141,7 +141,7 @@ export function SourceSettingsView({
   values,
   draft,
   status,
-  busy,
+  runningId,
   onDraft,
   onApply,
   onReset,
@@ -162,7 +162,7 @@ export function SourceSettingsView({
             spec={spec}
             values={values}
             draft={draft}
-            busy={busy}
+            runningId={runningId}
             onDraft={onDraft}
             onApply={onApply}
             onReset={onReset}
@@ -186,7 +186,7 @@ function SpecCard({
   spec,
   values,
   draft,
-  busy,
+  runningId,
   onDraft,
   onApply,
   onReset,
@@ -195,7 +195,7 @@ function SpecCard({
   spec: SettingSpec
   values: Record<string, unknown>
   draft: Record<string, string>
-  busy: boolean
+  runningId: string | null
   onDraft: (id: string, value: string) => void
   onApply: (id: string, value: unknown) => void
   onReset: (id: string) => void
@@ -242,13 +242,15 @@ function SpecCard({
 
   if (spec.type === "callback") {
     const label = spec.buttonText ?? t("settings.sourceSettings.run")
+    const isRunning = runningId === spec.id
+    const isAnyRunning = runningId !== null
     return (
       <CardGroup title={spec.title}>
         <IconRow
           icon={style.icon}
-          title={busy ? t("settings.shared.running") : label}
-          titleColor={busy ? "secondaryLabel" : "label"}
-          onTap={busy ? undefined : () => onRun(spec.id, label)}
+          title={isRunning ? t("settings.shared.running") : label}
+          titleColor={isRunning ? "secondaryLabel" : "label"}
+          onTap={isAnyRunning ? undefined : () => onRun(spec.id, label)}
         />
       </CardGroup>
     )
