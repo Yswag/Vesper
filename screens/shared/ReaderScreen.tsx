@@ -29,6 +29,7 @@
 // 「頁」＝圖片索引，跟底欄頁碼同一個口徑。
 //
 // 底欄另有頁碼拖曳列（Slider）：拖曳中只動頁碼、放開才跳頁；逐格拉會連續觸發圖片載入。
+// 頁碼列的右緣是收藏（與詳情頁同一顆愛心，寫的是本地書架）。
 // 跳頁後到捲動落定前要擋掉可見集合回報，否則舊回報會把頁碼彈回去（`scrubTarget`）。
 
 import {
@@ -206,6 +207,10 @@ function ReaderContent({
   // 詳情頁那邊的改動不同步）；bumpFavorite 只負責讓點擊當下立刻重繪。
   const [, bumpFavorite] = useState(0)
   const favorite = isFavorite(sourceKey, comicId)
+  const handleToggleFavorite = () => {
+    toggleFavorite({ sourceKey, comicId, title: comicTitle, cover: comicCover })
+    bumpFavorite(previous => previous + 1)
+  }
   // 閱讀模式／方向（持久化，換話或重開都沿用）
   const [settings, setSettings] = useState<ReaderSettings>(getReaderSettings())
   // 領先可見頁（0 起算）：畫廊/連續都看 onScrollTargetVisibilityChange 回報的可見集合。
@@ -880,6 +885,8 @@ function ReaderContent({
           onDismiss={dismiss}
           onOpenChapterSheet={() => setShowChapterSheet(true)}
           onToggleHUD={toggleHUD}
+          favorite={favorite}
+          onToggleFavorite={handleToggleFavorite}
           previousChapter={previous}
           nextChapter={next}
           chapterIndex={index + 1}

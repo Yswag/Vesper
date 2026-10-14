@@ -48,6 +48,9 @@ export interface ReaderHUDProps {
   onDismiss: () => void
   onOpenChapterSheet: () => void
   onToggleHUD: () => void
+  // 收藏（與詳情頁同一顆：寫的是本地書架）
+  favorite: boolean
+  onToggleFavorite: () => void
   // 底部進度與換話
   previousChapter?: ChapterSummary
   nextChapter?: ChapterSummary
@@ -65,7 +68,7 @@ export interface ReaderHUDProps {
 }
 
 /**
- * 閱讀器 HUD 覆蓋層：包含全螢幕點擊遮罩、頂部工具列（返回、標題、目錄按鈕、閱讀設定 Menu）與底部工具列（前後話切換、頁碼拖曳 Slider）。
+ * 閱讀器 HUD 覆蓋層：包含全螢幕點擊遮罩、頂部工具列（返回、標題、目錄按鈕、閱讀設定 Menu）與底部工具列（前後話切換、頁碼拖曳 Slider、收藏）。
  */
 export function ReaderHUD({
   hudVisible,
@@ -77,6 +80,8 @@ export function ReaderHUD({
   onDismiss,
   onOpenChapterSheet,
   onToggleHUD,
+  favorite,
+  onToggleFavorite,
   previousChapter,
   nextChapter,
   chapterIndex,
@@ -326,8 +331,8 @@ export function ReaderHUD({
             </HStack>
 
             {/* 拖曳翻頁 Slider（含實時頁碼反饋） */}
-            {pageCount > 1 ? (
-              <VStack spacing={6}>
+            <VStack spacing={6} frame={{ maxWidth: "infinity" }}>
+              {pageCount > 1 ? (
                 <Slider
                   min={0}
                   max={lastPage}
@@ -343,18 +348,37 @@ export function ReaderHUD({
                     }
                   }}
                 />
-                <HStack>
-                  <Spacer />
+              ) : null}
+
+              {/* 頁碼維持置中（以面板中心為準，跟頂部 HUD 的標題同一個套路），收藏貼齊右緣。 */}
+              <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
+                {pageCount > 1 ? (
                   <Text font="caption2" fontWeight="medium" foregroundStyle={neutral.secondary}>
                     {t("reader.pageProgress", {
                       page: scrubbing ? clampPage(scrubValue.value) + 1 : currentPage,
                       total: pageCount,
                     })}
                   </Text>
-                  <Spacer />
+                ) : null}
+
+                <HStack frame={{ maxWidth: "infinity", alignment: "trailing" }}>
+                  <Button
+                    action={onToggleFavorite}
+                    buttonStyle="plain"
+                    accessibilityLabel={favorite ? t("detail.unfavorite") : t("detail.favorite")}
+                  >
+                    <Image
+                      systemName={favorite ? "heart.fill" : "heart"}
+                      font={15}
+                      fontWeight="medium"
+                      // 高度只取 32：這一列原本只有一顆 caption2 的文字（~16pt），44 會讓整個面板多長 28pt。
+                      frame={{ width: 44, height: 32 }}
+                      foregroundStyle={favorite ? "systemRed" : "white"}
+                    />
+                  </Button>
                 </HStack>
-              </VStack>
-            ) : null}
+              </ZStack>
+            </VStack>
           </VStack>
 
           {/* HUD 底部留白：面板踩在 Home Indicator 上 */}
