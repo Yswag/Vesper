@@ -85,7 +85,8 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       if (isCancelled && isCancelled()) return null
 
       // 解碼只是為了量長寬；超分圖與寫檔都沿用這個比例。
-      const decoded = UIImage.fromData(Data.fromUint8Array(bytes))
+      // `fromUint8Array` 宣告回 `Data | null`（空陣列才 null）；這裡的 bytes 剛從檔案讀出來，一定非空。
+      const decoded = UIImage.fromData(Data.fromUint8Array(bytes)!)
       if (!decoded) return null
       const aspect = decoded.width / decoded.height
       const name = `p${index}`
@@ -101,7 +102,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
         if (onSharpened) {
           const pageKey = `${key.epId}_p${index}`
           const t0 = Date.now()
-          void sharpenImage(pageKey, Data.fromUint8Array(bytes), isCancelled).then(result => {
+          void sharpenImage(pageKey, Data.fromUint8Array(bytes)!, isCancelled).then(result => {
             // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
             if (!result || disposed || (isCancelled && isCancelled())) return
             const costMs = Date.now() - t0

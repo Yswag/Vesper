@@ -259,7 +259,10 @@ async function ensureServer(): Promise<number> {
   const server = new HttpServer()
 
   const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
-  const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
+  // 副檔名刻意是 `.txt`：`.js` 會被專案的型別服務收進 program，這支 540KB 的 minified JS
+  // 會讓它只載入部分檔案，整個專案噴幾百條假錯。這裡是讀位元組、再由 loopback 以
+  // `text/javascript` 送出，檔名不影響執行（送出的 URL 是下面那條 registerHandler 決定的）。
+  const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js.txt")
   const wasmThreadedPath = join(Script.directory, "assets/acnet/ort-wasm-simd-threaded.wasm")
   const wasmFallbackPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
 
