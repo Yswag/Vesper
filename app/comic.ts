@@ -17,6 +17,14 @@ import { getReaderSettings } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
+import {
+  closeRenderDir,
+  findSharpenedPage,
+  openRenderDir,
+  writePage,
+  writeSharpenedPage,
+  type PageRender,
+} from "../engine/pagefiles"
 import { createPageCache } from "../engine/pageimages"
 import { createPrefetchQueue } from "../engine/prefetch"
 import {
@@ -138,13 +146,13 @@ export interface ChapterSession {
   pageImage(index: number): Promise<Uint8Array>
   /**
    * 載入並渲染頁面圖片（含解碼與可選的 AI 超解析度管線）。
-   * 原圖先見：直接 resolve 原始 UIImage；若開啟超分且處理成功，透過 onSharpened 回調推送超分圖。
+   * 原圖先見：直接 resolve 原圖；若開啟超分且處理成功，透過 onSharpened 回調推送超分圖。
    */
   loadPage(
     index: number,
-    onSharpened?: (image: UIImage) => void,
+    onSharpened?: (render: PageRender) => void,
     isCancelled?: () => boolean
-  ): Promise<UIImage | null>
+  ): Promise<PageRender | null>
   /** 動態更新當前會話是否啟用 AI 超解析度。 */
   setHardwareSharpen(enabled: boolean): void
   /**
@@ -161,6 +169,12 @@ export interface ChapterSession {
    */
   dispose(): void
 }
+
+/**
+ * 一頁可以直接畫的東西。定義在 `engine/pagefiles.ts`（那裡說明為什麼不給 `UIImage`、
+ * 以及這些檔案的生命週期）。這裡原樣轉出去，畫面照樣只從 `app/comic` 拿型別。
+ */
+export type { PageRender }
 
 export interface ResumePoint {
   chapter: ChapterRef
@@ -450,18 +464,36 @@ export function createComicLibrary(): ComicLibrary {
 
       let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
 
+      // 這一話的暫存檔目錄（每頁的原圖與超分圖），生命週期＝這個 session。
+      // 開場順手清掉上一輪被系統殺掉時留下的孤兒。
+      const renderDir = openRenderDir(ref.epId)
+      let disposed = false
+
       const loadPage = async (
         index: number,
-        onSharpened?: (image: UIImage) => void,
+        onSharpened?: (render: PageRender) => void,
         isCancelled?: () => boolean
-      ): Promise<UIImage | null> => {
+      ): Promise<PageRender | null> => {
         const bytes = await loadPageBytes(index)
         if (isCancelled && isCancelled()) return null
 
+        // 解碼只是為了量長寬（惰性，幾乎免費），而且只做這一次：寫檔與超分都沿用這個比例。
         const data = Data.fromUint8Array(bytes)
         if (!data) return null
         const decoded = UIImage.fromData(data)
         if (!decoded) return null
+        const aspect = decoded.width / decoded.height
+
+        const name = `p${index}`
+        // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
+        if (hardwareSharpenEnabled) {
+          const cached = findSharpenedPage(renderDir, name, aspect)
+          if (cached) return cached
+        }
+
+        if (disposed) return null
+        const render = writePage(renderDir, name, bytes, aspect)
+        if (!render) return null
 
         // 漸進式超分：若開關開啟且尺寸在 ACNet 安全範圍內，在背景排入超分推論並透過 callback 回傳
         if (hardwareSharpenEnabled && isSafeForUpscale(decoded.width, decoded.height)) {
@@ -469,20 +501,26 @@ export function createComicLibrary(): ComicLibrary {
             const pageKey = `${ref.epId}_p${index}`
             const t0 = Date.now()
             void sharpenImage(pageKey, data, isCancelled).then(result => {
-              if (result && (!isCancelled || !isCancelled())) {
-                const costMs = Date.now() - t0
-                if (result.fromCache) {
-                  log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
-                } else {
-                  log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
-                }
-                onSharpened(result.image)
+              // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
+              if (!result || disposed || (isCancelled && isCancelled())) return
+              const costMs = Date.now() - t0
+              if (result.fromCache) {
+                log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+              } else {
+                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
               }
+              const sharpened = writeSharpenedPage(
+                renderDir,
+                name,
+                new Uint8Array(result.data.toArrayBuffer()),
+                aspect
+              )
+              if (sharpened) onSharpened(sharpened)
             })
           }
         }
 
-        return decoded
+        return render
       }
 
       return {
@@ -500,9 +538,12 @@ export function createComicLibrary(): ComicLibrary {
         },
         warm: page => prefetch.focus(page),
         dispose: () => {
+          disposed = true
           prefetch.clear()
           controller.abort()
           pageCache.clear()
+          // 這一話畫過的所有暫存檔（原圖＋超分圖）一次收掉。
+          closeRenderDir(renderDir)
         },
       }
     },

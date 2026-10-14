@@ -1,16 +1,20 @@
 // 章節內文圖片展示元件（純 View）。取圖走 ComicLibrary 的 chapter session（包含漸進式解碼與 AI 超解析度）；
-// 畫面只負責透過 session.loadPage 拿現成圖片，並在超分完成時透過 onSharpened 回調原地無縫替換。
-// 正文圖需要 Referer / Cookie 與解密，且正文不落地（記憶體快取），皆在 session 內處理完成。
+// 畫面只負責把 session 給的「可顯示頁面」（檔案路徑＋比例）畫出來，並在超分完成時透過 onSharpened 回調原地無縫替換。
+// 正文圖需要 Referer / Cookie 與解密，且正文不落地（快取在記憶體），皆在 session 內處理完成。
 //
 // 離線命中時不會問源的圖片解析，所以在飛航模式下（源根本解析不出 URL）也讀得到。
 //
-// 排版：讀出 UIImage 的真實長寬，用 aspectRatio 讓它「撐滿寬度、高度按比例」——
-// 長條型的跨頁圖才不會被壓扁，也不會用原始像素爆版。
-// 給了 `size`（閱讀器的畫廊／橫向模式）就以 `fit` 置中塞進那個框。
+// ⚠️ 為什麼用 `Canvas` 而不是 `Image`：`Image` 每顯示一個新的 `UIImage` 就**永久留一份點陣**
+// （成本 ∝ 像素：一頁 850×1206 約 4MB，超分後 1700×2412 約 15.6MB），而且卸載不還——
+// 連續讀 20 分鐘會爬到 3GB 被系統殺。`Canvas.drawImage({ filePath })` 不會累積
+// （實測：`Image` +4.13MB/張 vs Canvas +0.02MB/張，見 dev/probe-display-via.tsx）。
+//
+// 排版：Canvas 自己算 contain 置中；給了 `size`（畫廊／橫向模式）就塞進那個框，
+// 不給就靠 `aspectRatio` 撐出高度（webtoon）。
 
-import { Button, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
+import { Button, Canvas, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 
-import type { ChapterSession } from "../app/comic"
+import type { ChapterSession, PageRender } from "../app/comic"
 import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
@@ -20,23 +24,21 @@ export interface ChapterImageProps {
   /** 這一張在章節裡的頁索引（＝閱讀器的頁碼）。 */
   index: number
   /**
-   * 指定圖片的顯示框（點）。給了就以 `fit` 方式置中塞進這個框（只給 height 就是「以高度為準」）；
+   * 指定圖片的顯示框（點）。給了就以 `contain` 方式置中塞進這個框（只給 height 就是「以高度為準」）；
    * 不給＝撐滿可用寬度、高度按比例（webtoon）。
    */
   size?: { width?: number; height?: number }
 }
 
 export function ChapterImage({ session, index, size }: ChapterImageProps) {
-  const [image, setImage] = useState<UIImage | null>(null)
-  const [aspect, setAspect] = useState<number | null>(null)
+  const [render, setRender] = useState<PageRender | null>(null)
   const [error, setError] = useState("")
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     let alive = true
     const started = Date.now()
-    setImage(null)
-    setAspect(null)
+    setRender(null)
     setError("")
 
     void (async () => {
@@ -44,7 +46,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         const initial = await session.loadPage(
           index,
           sharpened => {
-            if (alive) setImage(sharpened)
+            if (alive) setRender(sharpened)
           },
           () => !alive
         )
@@ -56,8 +58,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         }
 
         log("debug", "reader", `第 ${index + 1} 頁 mount→圖 ${Date.now() - started}ms`)
-        setAspect(initial.width / initial.height)
-        setImage(initial)
+        setRender(initial)
       } catch (error) {
         // 換話／離開閱讀器造成的取消是正常結束，不要顯示成「載入失敗：AbortError」。
         if (isAbortError(error)) return
@@ -72,12 +73,25 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     }
   }, [session, index, retryKey])
 
-  if (image && aspect) {
+  if (render) {
     return (
-      <Image
-        image={image}
-        resizable={true}
-        aspectRatio={{ value: aspect, contentMode: "fit" }}
+      <Canvas
+        // 每次換圖（原圖→超分圖）路徑都不同，key 讓 Canvas 真的重畫。
+        key={render.path}
+        opaque={true}
+        draw={(ctx, canvas) => {
+          // contain：等比塞進 Canvas 的框並置中。
+          const fitWidth = Math.min(canvas.width, canvas.height * render.aspect)
+          const fitHeight = fitWidth / render.aspect
+          ctx.drawImage(
+            { filePath: render.path },
+            (canvas.width - fitWidth) / 2,
+            (canvas.height - fitHeight) / 2,
+            fitWidth,
+            fitHeight
+          )
+        }}
+        aspectRatio={{ value: render.aspect, contentMode: "fit" }}
         frame={size ? { width: size.width, height: size.height } : undefined}
       />
     )

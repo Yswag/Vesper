@@ -32,8 +32,9 @@ engine/              源執行沙箱與媒體管線
   http.ts            統一 HTTP 請求、Cookie 管理與併發限制
   imageprocess.ts    modifyImage 幾何累積引擎
   imagecache.ts      縮圖磁碟快取與自動清理
-  pageimages.ts      正文圖片管線（記憶體快取與預取，不落地）
-  upscale.ts         ACNet ONNX 2x 超解析度引擎（WebViewController 沙箱 + LRU 記憶體控制）
+  pageimages.ts      正文圖片管線（記憶體快取與預取）
+  pagefiles.ts       正文頁面暫存檔（位元組落地、格式嗅探、session 生命週期）
+  upscale.ts         ACNet ONNX 2x 超解析度引擎（WebViewController 沙箱 + LRU 位元組快取）
   offline.ts         離線章節下載與讀取
 sources/             漫畫源管理
   runner.ts          SourceRunner：執行源邏輯的唯一中介
@@ -58,9 +59,9 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
    - `modifyImage` 僅暴露同步幾何累積 API，實際影像渲染由 UI 離屏合成器處理。
 
 2. **圖片與快取層級**：
-   - **正文圖片**：預設走記憶體管線（前方 3 頁預取），閱讀結束即釋放，不寫入磁碟。
+   - **正文圖片**：預取走記憶體管線（前方 3 頁）；要顯示的那一頁才落地成暫存檔（`Canvas.drawImage` 需要檔案路徑），生命週期＝開啟的那一話，離開閱讀器即刪除，App 被殺掉留下的殘檔下次開場清掉。
    - **縮圖快取**：封面、頭像與留言圖片落地儲存，由 LRU 機制維持容量上限。
-   - **超解析度快取**：ACNet ONNX 產生的超分大圖限制最多保留 10 張（LRU），切換章節時即時釋放。
+   - **超解析度快取**：ACNet ONNX 產生的超分圖限制最多保留 6 張（LRU，存的是 JPEG 位元組），切換章節時即時釋放。
    - **離線儲存**：下載內容獨立存於 `offline/`，不受快取清理影響。
 
 3. **閱讀器生命週期**：
@@ -72,4 +73,5 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 - 漫畫源腳本：`文件/Vesper/sources/<key>.js`
 - 倉庫設定：`文件/Vesper/sources/repositories.json`
 - 書架與歷史：`文件/Vesper/library.json`
+- 閱讀暫存頁面：`文件/Vesper/cache/reader/<一話一個目錄>/`（離開閱讀器即刪）
 - 離線章節：`文件/Vesper/offline/<comicKey>/<epId>/`

@@ -6,9 +6,10 @@
 //
 // 另外收了 `canResumeOffline`：續讀入口與歷史卡的標籤共用這一條判定（只讀離線層，也一樣不碰源）。
 
-import type { ChapterSession } from "../../app/comic"
+import type { ChapterSession, PageRender } from "../../app/comic"
 import { readBytes } from "../../engine/fs"
 import { chapterOf, offlinePagePath, statusOf, type OfflineKey } from "../../engine/offline"
+import { closeRenderDir, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../../engine/pagefiles"
 import { isSafeForUpscale, sharpenImage } from "../../engine/upscale"
 import { getReaderSettings } from "../../library/readerSettings"
 import { log } from "../../engine/log"
@@ -50,6 +51,11 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
 
   let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
 
+  // 超分圖要寫檔（它是記憶體裡的位元組）；原圖不必——離線的原圖本來就是磁碟上的檔，
+  // 直接把那個路徑交給 Canvas 就是零複製。
+  const renderDir = openRenderDir(key.epId)
+  let disposed = false
+
   const loadPageBytes = async (index: number): Promise<Uint8Array> => {
     // 圖片鍵對不上（源換過這一章的圖）或檔案被刪掉，`offlinePagePath` 都會回 null。
     const path = offlinePagePath(key, index, imageKeyOf(index))
@@ -57,6 +63,9 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     if (!bytes) throw new Error(t("sources.pageUnreadable", { n: index + 1 }))
     return bytes
   }
+
+  /** 離線的原圖路徑（就是顯示要用的那一個）。拿不到就回 null。 */
+  const sourcePath = (index: number): string | null => offlinePagePath(key, index, imageKeyOf(index))
 
   return {
     ref: key,
@@ -69,43 +78,61 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     pageImage: loadPageBytes,
     loadPage: async (
       index: number,
-      onSharpened?: (image: UIImage) => void,
+      onSharpened?: (render: PageRender) => void,
       isCancelled?: () => boolean
-    ) => {
+    ): Promise<PageRender | null> => {
       const bytes = await loadPageBytes(index)
       if (isCancelled && isCancelled()) return null
 
-      const data = Data.fromUint8Array(bytes)
-      if (!data) return null
-      const decoded = UIImage.fromData(data)
+      // 解碼只是為了量長寬；超分圖與寫檔都沿用這個比例。
+      const decoded = UIImage.fromData(Data.fromUint8Array(bytes))
       if (!decoded) return null
+      const aspect = decoded.width / decoded.height
+      const name = `p${index}`
+
+      // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
+      if (hardwareSharpenEnabled) {
+        const cached = findSharpenedPage(renderDir, name, aspect)
+        if (cached) return cached
+      }
 
       // 漸進式超分：離線閱讀同樣享受 ACNet ONNX 超分
       if (hardwareSharpenEnabled && isSafeForUpscale(decoded.width, decoded.height)) {
         if (onSharpened) {
           const pageKey = `${key.epId}_p${index}`
           const t0 = Date.now()
-          void sharpenImage(pageKey, data, isCancelled).then(result => {
-            if (result && (!isCancelled || !isCancelled())) {
-              const costMs = Date.now() - t0
-              if (result.fromCache) {
-                log("debug", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX [快取命中]，0ms 直接顯示`)
-              } else {
-                log("info", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX 超分完成，耗時 ${costMs}ms`)
-              }
-              onSharpened(result.image)
+          void sharpenImage(pageKey, Data.fromUint8Array(bytes), isCancelled).then(result => {
+            // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
+            if (!result || disposed || (isCancelled && isCancelled())) return
+            const costMs = Date.now() - t0
+            if (result.fromCache) {
+              log("debug", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX [快取命中]，0ms 直接顯示`)
+            } else {
+              log("info", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX 超分完成，耗時 ${costMs}ms`)
             }
+            const sharpened = writeSharpenedPage(
+              renderDir,
+              name,
+              new Uint8Array(result.data.toArrayBuffer()),
+              aspect
+            )
+            if (sharpened) onSharpened(sharpened)
           })
         }
       }
 
-      return decoded
+      const path = sourcePath(index)
+      if (!path) return null
+      return { path, aspect }
     },
     setHardwareSharpen: enabled => {
       hardwareSharpenEnabled = enabled
     },
-    // 檔案就在本機、又沒有記憶體快取，所以沒有預取與清理可做。
+    // 檔案就在本機、又沒有記憶體快取，所以沒有預取可做；超分圖的暫存檔要收掉。
     warm: () => {},
-    dispose: () => {},
+    dispose: () => {
+      disposed = true
+      closeRenderDir(renderDir)
+    },
   }
 }

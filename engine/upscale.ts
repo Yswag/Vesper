@@ -13,11 +13,12 @@ let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
 let currentPort = 0
 
-// Session 記憶體快取（LRU 控制，最多保留 6 張超分圖像，單張解碼點陣圖約 25~35MB）
+// Session 記憶體快取（LRU 控制，最多保留 6 張超分圖）。存的是**推論輸出回來的 JPEG 位元組**，
+// 不是解碼後的 `UIImage`：呼叫端要的是「可以寫成檔案給 Canvas 畫」的東西，而且點陣每張 25～35MB、位元組只有幾百 KB。
 const MAX_UPSCALE_CACHE_SIZE = 6
-const sessionCache = new Map<string, UIImage>()
+const sessionCache = new Map<string, Data>()
 
-function getCachedUpscaleImage(key: string): UIImage | undefined {
+function getCachedUpscaleData(key: string): Data | undefined {
   const item = sessionCache.get(key)
   if (item) {
     // LRU: 重新放入尾端標記為最近使用
@@ -27,7 +28,7 @@ function getCachedUpscaleImage(key: string): UIImage | undefined {
   return item
 }
 
-function setCachedUpscaleImage(key: string, image: UIImage): void {
+function setCachedUpscaleData(key: string, data: Data): void {
   if (sessionCache.has(key)) {
     sessionCache.delete(key)
   } else if (sessionCache.size >= MAX_UPSCALE_CACHE_SIZE) {
@@ -38,7 +39,7 @@ function setCachedUpscaleImage(key: string, image: UIImage): void {
       log("debug", "upscale", `超分快取觸發 LRU 淘汰: ${oldestKey}`)
     }
   }
-  sessionCache.set(key, image)
+  sessionCache.set(key, data)
 }
 
 /**
@@ -371,7 +372,7 @@ async function executeInference(
   key: string,
   sourceData: Data,
   isCancelled?: () => boolean
-): Promise<UIImage | null> {
+): Promise<Data | null> {
   await ensureEngine()
   if (!controllerInstance || !currentPort) return null
 
@@ -398,12 +399,8 @@ async function executeInference(
   const outData = Data.fromArrayBuffer(uploadedBuffer)
   if (!outData) return null
 
-  const sharpenedImage = UIImage.fromData(outData)
-  if (sharpenedImage) {
-    log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
-    return sharpenedImage
-  }
-  return null
+  log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
+  return outData
 }
 
 /**
@@ -418,43 +415,46 @@ export function isSafeForUpscale(width: number, height: number): boolean {
 
 /**
  * 對給定的原始圖像 Data 執行真實 ACNet ONNX 神經網路 2x 超解析度。
+ *
+ * 回傳的是**推論輸出的圖檔位元組**（引擎內部就是 JPEG：WebView 算完 → `exportJpegBlob` → POST 回 app）。
+ * 呼叫端自己決定要不要寫成檔案、怎麼顯示。
  */
 export async function sharpenImage(
   key: string,
   sourceData: Data,
   isCancelled?: () => boolean
-): Promise<{ image: UIImage; fromCache: boolean } | null> {
-  const cached = getCachedUpscaleImage(key)
-  if (cached) return { image: cached, fromCache: true }
+): Promise<{ data: Data; fromCache: boolean } | null> {
+  const cached = getCachedUpscaleData(key)
+  if (cached) return { data: cached, fromCache: true }
 
   // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
-  const runTask = async (): Promise<{ image: UIImage; fromCache: boolean } | null> => {
+  const runTask = async (): Promise<{ data: Data; fromCache: boolean } | null> => {
     // 檢查呼叫端元件是否已翻走或 unmount；若是，直接跳過神經網路計算，避免翻頁時隊列堆積拖垮 GPU
     if (isCancelled && isCancelled()) return null
 
     // 二次檢查快取
-    const doubleCheck = getCachedUpscaleImage(key)
-    if (doubleCheck) return { image: doubleCheck, fromCache: true }
+    const doubleCheck = getCachedUpscaleData(key)
+    if (doubleCheck) return { data: doubleCheck, fromCache: true }
 
     try {
-      let sharpenedImage: UIImage | null = null
+      let sharpened: Data | null = null
 
       try {
         // 第一次嘗試：樂觀執行（平時 0 額外心跳/檢查開銷）
-        sharpenedImage = await executeInference(key, sourceData, isCancelled)
+        sharpened = await executeInference(key, sourceData, isCancelled)
       } catch (firstError) {
         log("warning", "upscale", `推論遇到異常（可能剛自墓碑/背景喚醒），重置引擎並冷啟動重試...`, firstError)
         resetEngineInstances()
 
         // 第二次嘗試：全新冷啟動重試
         if (!isCancelled || !isCancelled()) {
-          sharpenedImage = await executeInference(key, sourceData, isCancelled)
+          sharpened = await executeInference(key, sourceData, isCancelled)
         }
       }
 
-      if (sharpenedImage) {
-        setCachedUpscaleImage(key, sharpenedImage)
-        return { image: sharpenedImage, fromCache: false }
+      if (sharpened) {
+        setCachedUpscaleData(key, sharpened)
+        return { data: sharpened, fromCache: false }
       }
     } catch (finalError) {
       log("warning", "upscale", `頁面 ${key} ACNet 超分重試後仍失敗，降級原圖`, finalError)
