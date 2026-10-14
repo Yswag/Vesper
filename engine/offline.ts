@@ -1,14 +1,5 @@
-// 離線層：下載章節的落地，以及閱讀器取圖的優先序。
-//
-// 為什麼自己一層（不沿用縮圖快取）：快取鍵只認 URL 與 modifyImage，回答不了「這章下載了沒、
-// 佔多少」，而且設定頁的「清除縮圖快取」是整個目錄刪掉——下載的東西被它清掉會被當成 bug。
-// 所以在 <documents>/Vesper/offline/ 另存一份，自己的目錄與鍵。
-//
-// 識別＝(sourceKey, comicId, epId) + 頁索引；頁索引就是 loadEp 陣列的位置，閱讀器的頁碼也是它。
-// 每章一份 manifest：圖片鍵、張數、已完成張數、總位元組與時間。
-//
-// 取圖優先序：離線 → 正文記憶體管線（記憶體 LRU → 網路）。離線命中時**不問源的 onImageLoad**——
-// 那支函式是拿 URL 用的，飛航模式下解析不出來，這是不打網路就能讀的關鍵。
+// 離線儲存層：負責已下載漫畫章節之磁碟落地、manifest 管理與離線優先取圖。
+// 目錄位於 <documents>/offline/，章節以 (sourceKey, comicId, epId) 雜湊隔離。
 
 import type { AbortSignal } from "scripting"
 
@@ -64,7 +55,7 @@ export function idOf(key: OfflineKey): string {
   return `${key.sourceKey}\n${key.comicId}\n${key.epId}`
 }
 
-/** 一章一個資料夾；資料夾名用鍵的雜湊（comicId / epId 可能含斜線等路徑字元）。 */
+/** 章節資料夾（以 key 雜湊避免路徑特殊字元衝突）。 */
 function folderOf(key: OfflineKey): string {
   return join(offlineRoot(), Convert.hexEncode(Convert.md5(Convert.encodeUtf8(idOf(key)))))
 }
@@ -124,7 +115,7 @@ function loadIndex(): Map<string, OfflineChapter> {
 
 // ------------------------------------------------------------------ 變更通知
 
-/** 去抖 250ms：下載時每抓完一張就變一次，畫面合併成一次重繪（毫秒數是這裡決定的，見 emitter.ts）。 */
+/** 變更通知匯流排（去抖 250ms 避免單頁下載密集重繪）。 */
 const bus = createEmitter({ debounceMs: 250 })
 
 export const subscribeOffline = bus.subscribe
@@ -150,8 +141,7 @@ function writeChapter(chapter: OfflineChapter) {
 }
 
 /**
- * 開始（或續傳）一章：記下這一章的圖片鍵。
- * 已經抓到、而且圖片鍵還對得上的頁留著（重跑只補缺的）；對不上或超出的頁連檔案一起清掉。
+ * 初始化或續傳章節：比對並記錄 imageKeys 清單，清理不相符之過期檔案。
  */
 export function beginChapter(
   key: OfflineKey,
@@ -181,7 +171,7 @@ export function beginChapter(
   return chapter
 }
 
-/** 存一頁的最終位元組（先寫 .part 再改名，跟縮圖快取同一招）。 */
+/** 寫入單頁檔案（先寫 .part 再原子重命名）。 */
 export function savePage(chapter: OfflineChapter, index: number, imageKey: string, bytes: Uint8Array): void {
   const target = pageFile(chapter.key, index)
   ensureDir(folderOf(chapter.key))
@@ -259,8 +249,7 @@ export interface ReaderChapter {
 }
 
 /**
- * 這一部能離線讀的章節（只列下載完的），照下載順序排（`updatedAt` 升冪）。
- * 離線入口的閱讀器換話清單吃這一份；下載順序就當閱讀順序。
+ * 取得指定漫畫已完成下載的章節清單（依下載時間排序）。
  */
 export function chaptersForReader(sourceKey: string, comicId: string): ReaderChapter[] {
   return listChapters()
@@ -304,10 +293,7 @@ export interface ReaderImageRequest {
 }
 
 /**
- * 閱讀器取一張正文圖的**位元組**：離線（本機檔案讀成位元組）→ 正文管線（記憶體 LRU → 網路）。
- * 離線命中時直接回傳離線檔的內容，**不會**呼叫源的圖片解析。
- *
- * `cache` 由呼叫端提供（一份快取＝一次閱讀，見 `engine/pageimages.ts`）：這裡不持有任何跨呼叫的狀態。
+ * 閱讀器正文取圖位元組（離線檔案 ➔ 正文記憶體 LRU ➔ 網路）。
  */
 export async function readerImageBytes(
   request: ReaderImageRequest,
@@ -349,11 +335,7 @@ export function offlineImageKeys(key: OfflineKey): string[] | null {
 }
 
 /**
- * 開一章要的頁面清單（閱讀器開章的唯一入口）。
- *
- * 這一章在離線層就**直接**用離線層記下的清單——`loadEp` 需要網路，飛航模式下根本解析不出來，
- * 而圖其實都在。清單的來源與下載時同一份，所以頁數、頁碼與閱讀進度都跟線上一樣。
- * 沒有離線檔才問源；問源失敗但離線層有東西時（例如剛好在中斷與重跑之間）也退回離線。
+ * 取得章節圖片鍵清單（離線存在時直接採用 manifest，否則向線上請求）。
  */
 export async function readChapterImageKeys(
   key: OfflineKey,

@@ -1,13 +1,5 @@
-// 下載管理員：app 層級、不綁畫面。
-//
-// 進度與狀態活在這個模組（不是 React state），所以下載中離開詳情頁、切到別的 tab 都照樣跑；
-// 畫面用 subscribeDownloads 訂閱。04 的選取模式、下載全部與下載頁都建在它上面。
-//
-// 一張圖一律走正文的圖片管線（resolveImageRequest → onResponse → modifyImage → 最終位元組），
-// 再把那一份位元組多寫一份進離線層——離線看到的圖與線上完全一致，閱讀時也不必重跑管線。
-// 管線的快取是**這裡自己的一份**（不是閱讀器那一份），所以閱讀器換話不會把下載剛抓好的頁清掉。
-//
-// 「完成」的定義交給離線層：整章每一張都成功才算已下載，有缺就是未完成，重跑只補缺的。
+// 下載管理員：全域後台章節下載佇列與狀態調度器。
+// 下載圖片依序執行 onResponse 與 modifyImage 後寫入離線儲存，任務進度獨立於 UI 生命週期。
 
 import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
@@ -84,11 +76,7 @@ type AnyTask = Task | FinishedTask
 /** 同時最多跑兩章：一章內是逐張抓，兩章並行對站方已經夠客氣了。 */
 const MAX_PARALLEL = 2
 
-/**
- * 下載自己那一份正文快取：下載是 app 層級的、不綁畫面；閱讀器那一份隨換話／離開放掉。
- * 兩份分開之後，閱讀器 dispose 不會清掉下載剛抓好的頁（反過來也一樣）。
- * 這裡沒有「放掉」的時機——抓過的頁都寫進離線層了，這一邊只留最近 24 頁（LRU 自己淘汰）。
- */
+/** 下載專用的正文記憶體快取（獨立於閱讀器 session，避免生命週期相互影響）。 */
 const pageCache = createPageCache()
 
 // 跑完的任務會從 Task 換成 FinishedTask（source／deps 就放掉了，見 runTask 的 finally）。
@@ -120,13 +108,7 @@ export function chapterDownloadState(key: OfflineKey): ChapterDownloadState {
 }
 
 /**
- * 任務與離線層合起來 → 畫面上的狀態。**全 App 唯一的一份映射**（章節列與下載頁都走它）。
- *
- * 順序就是語意：
- *   跑得中 → 離線層說完成 → 離線層有東西但沒齊 → 試過而且失敗 → 未下載。
- *
- * 「能不能續傳」決定 `partial` 還是 `failed`：抓到一半的算 partial（`beginChapter` 留下對得上的頁，
- * 重跑只補缺的）；一張都沒抓到的才算 failed。兩者在下載頁同屬「未完成」，差別只在有沒有理由可說。
+ * 整合進行中任務與離線儲存狀態，產生章節的最終下載狀態。
  */
 function chapterStateOf(task: AnyTask | undefined, offline: OfflineStatus): ChapterDownloadState {
   if (task && isActive(task.state)) {
@@ -236,8 +218,7 @@ async function fetchPageBytes(
 }
 
 /**
- * 開始下載一章。已經在跑就接回同一條；回傳的 promise 在這一章跑完時解決，**不會 reject**
- * （單一張失敗只記在狀態裡，整章的成敗由離線層決定）。
+ * 下載單一章節（若已在進行中則共用相同 Promise）。
  */
 export function startChapterDownload(
   source: InstalledSource,
@@ -274,8 +255,7 @@ export function startChapterDownload(
 }
 
 /**
- * 一次送出多章下載（選取模式與「下載全部」共用）。已下載的跳過、重複的不重抓；
- * 回傳的 promise 在這些章節都跑完時解決（單一張失敗只記在狀態裡，不會 reject）。
+ * 批量下載章節（自動跳過已下載與重複章節）。
  */
 export interface DownloadRequest {
   epId: string
@@ -303,8 +283,7 @@ export function downloadChapters(
 }
 
 /**
- * 取消一章（排隊中或跑得中的）。已抓到的頁面留著，這一章不會被當成已下載。
- * 排隊中的直接抽掉，跑得中的讓它跑完手上這一張就停。
+ * 取消指定章節下載（排隊中直接移除，進行中完成當前頁後中止）。
  */
 export function cancelChapterDownload(key: OfflineKey): void {
   const id = idOf(key)
@@ -377,9 +356,7 @@ async function runTask(task: Task) {
     log("error", "download", `${task.key.epId} 下載失敗`, error)
   } finally {
     running--
-    // 跑完就不再需要 source 與 deps 了：沒事的任務直接丟掉（狀態改由離線層回答）；
-    // 有錯的換成一個輕量紀錄（只剩畫面要的 key/meta/error/total）——失敗一樣說得出原因，
-    // 但 registry 重新載入之後不會再釘著上一代的源實例。
+    // 任務結束釋放 source 與 deps 引用；若有錯誤保留輕量紀錄供 UI 呈現錯誤訊息
     if (task.error) {
       tasks.set(idOf(task.key), {
         key: task.key,

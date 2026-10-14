@@ -1,6 +1,5 @@
-// 統一的 HTTP 出口。Venera 的 http host method 對應這裡。
-// 關鍵契約：4xx/5xx 不拋錯（源自己檢查 status）；headers 一律小寫化；
-// 源沒給 User-Agent 就補一個 web UA；自動附上該源的 cookie。
+// 統一 HTTP 出口：負責 headers 正規化、預設 User-Agent 注入、Cookie 同步與失控重試防護。
+// 依契約 4xx/5xx 不主動拋出例外（由調用端檢驗 status）。
 
 import { fetch, type AbortSignal } from "scripting"
 
@@ -8,8 +7,7 @@ import { absorbResponseCookies, cookieHeader } from "./cookies"
 import { isCloudflareChallenge, solveCloudflare } from "./cloudflare"
 import { log } from "./log"
 
-// 對齊 Venera 的 webUA（lib/foundation/consts.dart）：
-// 源若沒有提供 User-Agent，預設填入桌面版 Windows Chrome UA，避免站方自動切成手機版 HTML 導致 DOM 解析失敗。
+// 預設桌面版 User-Agent（防止站方切換為行動版導致 HTML 解析異常）
 export const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 
@@ -26,19 +24,8 @@ export interface HttpBytesResponse {
   body: ArrayBuffer
 }
 
-// ------------------------------------------------------------------ 失控防護
-//
-// 源有可能自己寫出無限重試迴圈（實際案例：comic_walker 的 refreshToken → request
-// → 看到錯誤碼又呼叫 refreshToken，同一個 POST 每秒打兩次）。JS 沒辦法從外面殺掉一條
-// promise 鏈，所以改成在出口擋：**同一個 URL 短時間內重複太多次**就拋錯——
-// 迴圈會因為例外而解開，也不再打人家的伺服器。
-//
-// 為什麼不看「總次數」：有些源（hitomi）正常探索就會在幾秒內發幾十個「不同」的請求
-// （索引分段抓取），用總次數會誤殺正常行為。重複同一個 URL 才是迴圈的指紋。
-// 圖片不納入計算（由 UI 驅動，一章可能同時幾十張）。
-//
-// 回傳的 `undo` 給**被取消的請求**用：取消不是重試，取消後立刻重送同一個 URL 是正常行為，
-// 不撤銷就會被當成迴圈（見 perform 的說明）。
+// ------------------------------------------------------------------ 請求失控防護
+// 針對單一來源在滑動視窗內重複請求同一 URL 超標時主動拋出例外，防範來源進入無限重試迴圈。
 const WINDOW_MS = 10000
 const SAME_URL_LIMIT = 8
 const TOTAL_LIMIT = 200

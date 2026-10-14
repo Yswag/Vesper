@@ -24,11 +24,9 @@ const CACHE_VERSION = 8
 
 const USER_AGENT = "VesperApp/1.0 (iOS)"
 
-// type 1 是「書籍」大類（漫畫＋小說＋畫集）。server 端是「先過濾再分頁」，所以掛上
-// meta_tags 能讓每一頁 20 個位子都留給漫畫，等於深度乘數（實測 3 頁 60 本 vs 不掛 42 本）；
-// 代價是看不到沒掛這個公共標籤的少數漫畫（如浪客行）。
-// TOP 100 要的是「榜上名次連續」，而且那個標籤漏很大（rank 前 40 只掛到 14 筆，
-// platform 是漫畫的有 24 筆），所以那邊不掛濾網，抓回來自己用 platform 判。
+// Bangumi 書籍類型過濾策略：
+// - BOOK_FILTER：不預掛公共標籤，抓回後前端篩選漫畫，確保榜單名次連續。
+// - TAGGED_MANGA_FILTER：預先過濾「漫画」標籤以提高熱門新作等清單的漫畫密度。
 const BOOK_FILTER = { type: [1] }
 const TAGGED_MANGA_FILTER = { type: [1], meta_tags: ["漫画"] }
 
@@ -79,9 +77,7 @@ function parseSubject(item: any): BangumiSubject | null {
   // 匿名請求時 filter.nsfw 會被官方忽略（要 token 才真的生效），所以 R18 得自己擋。
   if (item.nsfw === true) return null
 
-  // 1. 嚴格確認是「漫畫」：
-  // Bangumi 的 type: 1 代表「書籍 (Book)」，裡面包含「漫画」、「小说」、「画集」、「公式书」等。
-  // 我們只保留 platform 為「漫画」，或 meta_tags / tags 明確包含「漫画」且 platform 不是「小说」的條目。
+  // 篩選漫畫分類：排除小說、畫集，確認 platform 或 tags 包含漫畫標籤
   const platform = item.platform || ""
   if (platform === "小说" || platform === "画集") return null
 

@@ -1,5 +1,4 @@
-// 把源的各種回傳形狀正規化成我們 UI 吃的樣子。
-// 這裡每一條都是 spike 實測出來的落差（見 spike-report.md 第 4 節）。
+// 來源回傳結構適配層：將漫畫源的多樣化列表、章節與分區格式正規化為標準領域結構。
 
 import { t } from "../i18n"
 
@@ -11,10 +10,7 @@ export interface ComicListItem {
   tags: string[]
   description?: string
   updateTime?: string
-  /**
-   * 這本有幾頁（源的 `maxPage`）。**不是**分頁的頁數 ——
-   * picacg 是 `comic.pagesCount`、nhentai 是 `item.num_pages`，上游把它畫在標題前綴（`[459P]`）。
-   */
+  /** 單行本/全冊頁數（源的 maxPage 或 pagesCount，非分頁頁數）。 */
   pageCount?: number
 }
 
@@ -48,11 +44,7 @@ export interface SectionPage {
 }
 
 /**
- * 章節形狀有三種：
- *   ① 巢狀 `Map<分組名, Map<epId, 標題>>`（多數源）
- *   ② 扁平 `Map<epId, 標題>`
- *   ③ 純物件（少數源根本不用 ComicDetails）
- * epId 一律轉字串（有源用整數鍵）。
+ * 解析章節清單（支援巢狀 Map、扁平 Map 與物件結構，epId 統一轉字串）。
  */
 export function chapterEntries(chapters: unknown): Array<{ group: string; id: string; title: string }> {
   if (chapters == null) return []
@@ -89,8 +81,7 @@ export function firstChapterId(chapters: unknown): string | null {
 }
 
 /**
- * 有些源是單章漫畫（例如 hitomi）：`loadInfo` 根本不回 `chapters`，`loadEp` 也忽略 epId。
- * Venera 對這種源就當作「只有一章」，所以我們也補一個合成章節，epId 用 comicId。
+ * 單章漫畫（無 chapters 陣列）自動補齊單一合成章節（epId = comicId）。
  */
 export function resolveChapters(chapters: unknown, comicId: string): Array<{ group: string; id: string; title: string }> {
   const list = chapterEntries(chapters)
@@ -144,11 +135,7 @@ export function collectItems(raw: unknown[]): ComicListItem[] {
 }
 
 /**
- * 把探索回傳拆成「區塊」。
- *
- * 為什麼不能只攤平：`multiPartPage` / `singlePageWithMultiPart` 的源**本來就只有一頁**，
- * 使用者要更多內容的入口是每個區塊的 `viewMore`（跳去分類頁或搜尋頁）。
- * 只回一串 comics 的話，那個入口就消失了，使用者只會看到「已經到底了」。
+ * 正規化探索分區頁面，保留 multiPart 區塊與 viewMore 跳轉資訊。
  */
 export function normalizeListSections(result: unknown): SectionPage {
   if (Array.isArray(result)) {
@@ -229,8 +216,7 @@ export function normalizeListSections(result: unknown): SectionPage {
 }
 
 /**
- * 源宣告的跳轉目標有兩種寫法：現在的 `{page, attributes}`，以及舊版的
- * `{action, keyword, param}`（manga_dex 的 dynamic 分類就是後者）。兩種都吃。
+ * 正規化探索區塊的跳轉目標（相容 {page, attributes} 與舊版 {action, keyword, param}）。
  */
 export function normalizeJumpTarget(raw: unknown): JumpTarget | undefined {
   if (!raw || typeof raw !== "object") return undefined
@@ -250,12 +236,7 @@ export function normalizeJumpTarget(raw: unknown): JumpTarget | undefined {
 }
 
 /**
- * 攤平版本（搜尋結果與需要單一列表的地方用）；保留區塊結構的請用 normalizeListSections。
- *   ① `{comics, maxPage|next}`（最常見）
- *   ② `[{title, comics, viewMore}]`（`multiPartPage`）
- *   ③ `{"最近更新": Comic[], "完結": Comic[]}`（`singlePageWithMultiPart`，如 comick）
- *   ④ `{data: [...]}`（`mixed`）
- * 一律攤平成一串 comics。
+ * 正規化分頁列表（將各類分區或分節資料平鋪為單一漫畫清單）。
  */
 export function normalizeListPage(result: unknown): ComicListPage {
   let page = normalizeByShape(result)
@@ -309,7 +290,7 @@ function normalizeByShape(result: unknown): ComicListPage {
   }
 }
 
-/** `loadEp` 一定要回 `{images: string[]}`；空字串要當失敗（送去 fetch 會永久 hang）。 */
+/** 提取並過濾章節圖片 URL 清單（過濾無效空字串）。 */
 export function normalizeImages(result: unknown): string[] {
   const images = (result as any)?.images
   if (!Array.isArray(images)) {

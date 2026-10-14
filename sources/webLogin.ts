@@ -1,14 +1,5 @@
-// 瀏覽器登入：真的開一個瀏覽器，登入完把東西交回該源。
-//
-// 五個真實源宣告 loginWithWebview，而它們要的不只是 cookie：mycomic 要 Cloudflare 的
-// cf_clearance、ccc 要網頁 localStorage 裡的 JWT、nhentai 要從 cookie 撈 access_token、
-// ehentai 要把論壇 cookie 改網域、manga_dex 只要 session cookie。
-//
-// 順序照 Venera：先寫 localStorage、再把 cookie 併進 jar、最後才呼叫 onLoginSuccess——
-// ccc / nhentai / ehentai 的 callback 就是在讀前面那兩樣東西。
-//
-// 這一層屬於 UI（WebViewController 是 UI 的東西），engine 不碰它；憑證落地（loggedIn、
-// 重建實例）留給呼叫端 registry，這裡只回傳結果。
+// 瀏覽器登入流程：透過 WebViewController 供使用者互動登入。
+// 支援 cookie 雙向同步、localStorage 憑證儲存與 onLoginSuccess 回調執行。
 
 import type { Cookie } from "../engine/convert-types"
 import { domainMatchesHost, getCookies, hostOf, setCookies } from "../engine/cookies"
@@ -79,10 +70,7 @@ function toBrowserCookie(cookie: Cookie) {
   }
 }
 
-/**
- * 把該源 jar 裡的 cookie 播種進瀏覽器，這樣「已經登入過、只是想重抓一次」的重按是安全的：
- * 每次都是帶著現況進去、帶著最新狀態出來。
- */
+/** 將來源持久化 cookie 預先同步寫入 WebViewController。 */
 export async function seedCookies(controller: WebViewController, sourceKey: string, url: string): Promise<number> {
   let count = 0
   for (const cookie of getCookies(sourceKey, url)) {
@@ -95,10 +83,7 @@ export async function seedCookies(controller: WebViewController, sourceKey: stri
   return count
 }
 
-/**
- * 收割瀏覽器裡的 cookie。只留跟這些網址同網域的（瀏覽器可能看過別的站），
- * 形狀收成 jar 的形式（name / value / domain），同一個 (name, domain) 只留一筆。
- */
+/** 提取 WebViewController 中與目標網域匹配的 cookie 清單。 */
 export async function harvestCookies(controller: WebViewController, urls: string[]): Promise<Cookie[]> {
   const hosts = urls.map(hostOf).filter(Boolean)
   const all = await controller.getAllCookies()

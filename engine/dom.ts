@@ -28,9 +28,7 @@ const docs = new Map<number, Doc>()
 let nextDocKey = 0
 let nextNodeKey = 1
 
-// 源幾乎不呼叫 dispose()（真實源 18 個檔案裡有 12 個一次都沒呼叫），所以註冊表不能只靠源
-// 自己收。這裡自己封頂：Map 的迭代順序＝插入順序，摸過的文件會被搬到尾端，於是頭部就是
-// 最久沒被用到的那份；超過上限就從那裡淘汰。被淘汰後再被使用，走的是原本那條「已釋放」的路。
+// LRU 文件快取上限（16 份），防止來源未調用 dispose() 導致記憶體洩漏
 const MAX_LIVE_DOCS = 16
 
 function isTag(node: any): boolean {

@@ -1,12 +1,6 @@
-// Scripting 預設首頁入口 (Home Screen Tab UI)
-// 當在 Scripting 設定中開啟「Show Home Tab」並選擇 Vesper 時，本組件將直接渲染於 Scripting 首頁分頁。
-// 注意：
-// 1. 不可呼叫 Navigation.present
-// 2. 不可呼叫 Script.exit()
-// 3. 實例長駐於記憶體，支援 Script.onHomeTabEvent 監聽 tab 切換事件
-//
-// 這一頁本身就是 Scripting 的一條 tab，所以 App 用 hideTabBar：不要 tab bar，
-// 五個分類改由導覽列左上角的選單切換。
+// Scripting 預設首頁入口（Home Screen Tab UI）。
+// 長駐於 Scripting 首頁分頁，不可調用 Navigation.present 與 Script.exit()。
+// 採 hideTabBar 模式，導覽透過左上角選單切換。
 
 import { Device, ProgressView, Script, ZStack, useEffect, useState } from "scripting"
 
@@ -43,12 +37,7 @@ function initVesperForHomeScreen() {
 }
 
 /**
- * 授權結算後才把盤上的資料載進來。
- *
- * 源與書架都在盤上（`<documents>/Vesper`），而 store 在授權還沒結算時會退回 Storage KV
- * —— 那個 KV 是空的，畫面看起來就像「一個源都沒裝」，而且不會自己好（要等別頁再 reload 一次）。
- * index.tsx 是 `await ensureFileAccess()` 之後才 `reloadRegistry()`；這個入口不能 await
- *（身體要直接回傳畫面），所以改成載完補一次 reload。
+ * 檔案授權確認後加載本機資料（若尚未授權則退守 KV 備援）。
  */
 async function loadVesperData() {
   const granted = await ensureFileAccess()
@@ -60,9 +49,7 @@ async function loadVesperData() {
 }
 
 export default function HomeScreenDefaultUI() {
-  // 一定要在 render 就接好 composition root：子畫面（HomeScreen…）在 render 期間就會跟
-  // ComicLibrary 要資料，而 effect 是等這一輪 build 完才跑 —— 放 effect 會直接炸
-  // 「ComicLibrary 還沒建立」。index.tsx 也是同一個順序（先 install 再 present）。
+  // 於 render 階段建立服務實例（子畫面在 render 期間即依賴 ComicLibrary）
   initVesperForHomeScreen()
 
   const [dataReady, setDataReady] = useState(() => fileAccess() !== null)

@@ -1,8 +1,4 @@
-// 把一份源檔載進沙箱並建出實例。
-//
-// 入口技巧照 Venera 的 parser：用正則找 `class X extends ComicSource`，把整份原始碼塞進
-// IIFE 執行、以 this 當作「全域物件」，再從 this['temp'] 取實例。差別只在於我們把 shim
-// 當成 new Function 的參數注入，而不是真的掛到全域。
+// 漫畫源沙箱加載器：透過 new Function 注入沙箱全域物件並實例化 ComicSource 子類別。
 
 import type { HostContext } from "./globals"
 import { createGlobals } from "./globals"
@@ -44,12 +40,7 @@ export interface SettingSpec {
 }
 
 /**
- * 把源宣告的 `settings` 抽成「預設值 + 可供 UI 描述的規格」。
- *
- * 這件事非做不可：源很常靠 `this.loadSetting("domains")` 拿站點網址（mxs 就是），
- * 沒把 default 餵進去，第一個請求就會送空 URL。
- *
- * 注意 callback 型別是「動作」不是值，不能進預設值；函式也不能被序列化。
+ * 提取來源宣告的 settings 結構（包含預設值與 UI 設定項規格）。
  */
 export function extractSettings(instance: any): { defaults: Record<string, unknown>; specs: SettingSpec[] } {
   const raw = instance?.settings
@@ -75,7 +66,7 @@ export function extractSettings(instance: any): { defaults: Record<string, unkno
   return { defaults, specs }
 }
 
-/** Venera 允許兩種寫法：`"值-顯示名稱"` 字串，或 `{value, text}` 物件。 */
+/** 解析選項格式（支援 "值-名" 字串或 {value, text} 物件）。 */
 function normalizeOptions(raw: unknown): SettingOption[] {
   if (!Array.isArray(raw)) return []
   const out: SettingOption[] = []

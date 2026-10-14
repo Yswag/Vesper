@@ -1,8 +1,5 @@
-// SourceRunner：Venera 源執行的唯一入口（Phase 0 契約骨架）。
-//
-// 現在只把呼叫端的 interface 定義出來，實作暫時 delegate 給既有 registry / operations；
-// 舊 exports 照舊，callers 遷移完成前不刪任何東西。這一層未來要負責的 policy
-// （lazy init、登入過期重試、shape 正規化）目前仍在 operations.ts 裡。
+// SourceRunner：漫畫源執行封裝層。
+// 提供統一的 SourceHandle 門面，封裝探索、分區列表、詳情、章節與留言操作。
 
 import type { ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
 import type { HostUI } from "../engine/globals"
@@ -83,10 +80,7 @@ export interface SourceHandle {
   readonly settings: Readonly<Record<string, unknown>>
   /** 載入失敗的原因（成功時 undefined）。 */
   readonly error: string | undefined
-  /**
-   * 跑源的 init()（按需、只跑一次）。**不能取消**：init 是每源一個共用的 promise，
-   * 取消只能「不再等它」，不能真的殺掉。
-   */
+  /** 執行來源非同步 init() 初始化（按需觸發，共用 Promise 不重複發起）。 */
   ready(): Promise<void>
   explore(): ExploreEntry[]
   /** 排行榜（平舖清單，形狀與 SectionPage 不同，所以不塞進 list）。 */

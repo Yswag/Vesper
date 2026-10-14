@@ -33,7 +33,6 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { isFavorite, toggleFavorite } from "../../library/bookshelf"
-// 星等是純顯示（源給的 0–5 分數 → 五顆星），住在設計層，不讓畫面去碰源。
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
@@ -47,11 +46,7 @@ import { PageLoading } from "../../design/status"
 import { GlassSurface } from "../../design/GlassSurface"
 
 /**
- * 一次重繪算一輪章節狀態：每個 epId 只問一次（同一個章節只算一次），回傳 epId → 現在狀態的表。
- *
- * 詳情頁的章節列與「下載 (n)」都讀這一張表——以前是列自己問一次、`pendingOf()` 再問一次，
- * 下載中每 200ms 重繪一次，200 章就是每 200ms 掃 400 次（見 dev/probe-detail-chapter-state.ts）。
- * 不讀 `ComicPage.chapters[].download`：那是詳情載入當時的快照，下載中的列就不會跟著動了。
+ * 批次解析章節下載狀態映射表（單次重繪單一章節僅查詢一次，提升效能）。
  */
 export function chapterDownloadStates(
   library: Pick<ComicLibrary, "downloadState">,
@@ -86,24 +81,20 @@ export function ComicDetailScreen({
   const [status, setStatus] = useState<string | null>(null)
   const [reverseOrder, setReverseOrder] = useState(false)
   const [descExpanded, setDescExpanded] = useState(false)
-  // 選取模式（ticket 04）：勾選的章節 id（還没送出的）。
+  // 多選下載模式：已勾選待下載的章節 ID 清單
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  // hero 封面的尺寸依這一行量到的容器寬度算（不看 Device.screen），
-  // 0＝還沒量到，heroCoverSize 會先給上限。
+  // 依容器實測寬度動態計算 hero 封面尺寸
   const [heroContainerWidth, setHeroContainerWidth] = useState(0)
   // 頂部氛圍光暈圖片
   const [ambientImage, setAmbientImage] = useState<UIImage | null>(null)
   // 滾動離開視線時才在導航欄顯示書名
   const [showNavTitle, setShowNavTitle] = useState(false)
 
-  // 來源安裝/變更、下載進度、書架（收藏與續讀）都由庫的單一訂閱通知；
-  // 下載進行中（不管是哪一章）也要讓章節列的狀態跟著動——下載的進度與狀態由下載管理員
-  // 持有（不綁畫面），這一頁只是訂閱它。語言一換也要重繪（`t()` 讀模組層級的當前語言）。
+  // 訂閱來源變更、下載進度、書架狀態與語言切換
   const refresh = useSubscription(library.onChange, subscribeLocale)
 
-  // 收藏狀態每次 render 重讀：書架一變就靠上面的訂閱重繪，sourceKey/comicId 換了也會重算。
-  // 不留在 useState 裡，否則從閱讀器改回來的內容會停在舊值。
+  // 收藏狀態直接從書架讀取
   const favorite = isFavorite(sourceKey, comicId)
 
   useEffect(() => {
@@ -182,7 +173,7 @@ export function ComicDetailScreen({
     comicCover,
   }
 
-  // 確定首選閱讀章節：有進度讀進度，沒進度讀第一話（進度指的章節可能已經不在清單裡）。
+  // 確定首選閱讀章節：優先續讀上次進度，無進度則自第一話起算
   const targetEpId =
     resumed && chapters.some(c => c.id === resumed.chapter.epId) ? resumed.chapter.epId : chapters[0]?.id
 
@@ -208,8 +199,7 @@ export function ComicDetailScreen({
   // 章節排序（針對當前分組）
   const displayChapters = reverseOrder ? [...currentGroupChapters].reverse() : currentGroupChapters
 
-  // 一次重繪只算一輪：章節列與下面的「下載 (n)」都讀這一張表（同一份狀態）。
-  // 勾選中的章節也一起算進來（它們本來就來自上面的 chapters，但不假設）。
+  // 依當前重繪單一快照查詢章節下載狀態表
   const chapterStates = chapterDownloadStates(library, { sourceKey, comicId }, [
     ...chapters.map(chapter => chapter.id),
     ...selectedIds,

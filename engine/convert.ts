@@ -1,14 +1,5 @@
-// Venera 的 Convert 全域。回傳型別照 init.js：hash 系列回「位元組」（不是 hex），
-// 只有 hmacString 回 hex 字串；hexEncode 是純 JS。
-//
-// 全部走 crypto-js，不用 Scripting 的假 Node crypto。理由有兩個：
-//   1. 它是 JS 墊片而且**缺 AES-ECB**（createDecipheriv("aes-*-ecb", key, null) 會拋 iv.length）；
-//   2. 實測它比較慢（512 KB 負載，每次）：
-//        md5 62.4 → 44.9 ms、sha256 145.3 → 115.7 ms、hmac 147.9 → 115.8 ms、
-//        AES-128-CBC 183.3 → 53.1 ms
-// 少一層 Buffer 轉換也少一個相依。
-//
-// utf8 與 hex 自己實作（純字串處理，不必繞 WordArray）。
+// Convert 模組：提供來源沙箱所需之雜湊（MD5/SHA/HMAC）、對稱加密（AES-CBC/ECB）與編碼轉換。
+// 基於 crypto-js 實作，hash 函式回傳 Uint8Array 位元組，符合沙箱 API 規範。
 
 declare const require: (id: string) => any
 
@@ -59,10 +50,7 @@ function utf8Encode(str: string): Bytes {
   return new Uint8Array(out)
 }
 
-// 逐位元組解 UTF-8，遇到無效序列就用 U+FFFD 取代並記一筆 —— 而不是讓
-// decodeURIComponent 抛 URIError。
-// 源很常把「任意位元組」丢進來解字串（例如解密後的內容），一次 URIError 就會讓
-// 整個源載入失敗，比回傳帶取代字元的字串難除錯得多。
+// 逐位元組解 UTF-8，遇到無效序列以 U+FFFD 取代，避免解密資料觸發 URIError 導致中斷。
 function utf8Decode(bytes: Bytes): string {
   let out = ""
   let invalid = 0

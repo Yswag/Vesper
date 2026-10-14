@@ -1,17 +1,5 @@
-// 單一源的探索頁（App Store 雜誌風 / Bookshelf 佈局）。
-//
-// 1. 支援多分類（explore 陣列）頂部膠囊分段標籤切換（Capsule Chips）。
-// 2. 當當前頁有「多個區塊（multiPartPage）」時：
-//    - 呈現 App Store 式的垂直雜誌流。
-//    - 每個區塊有標準 iOS Section Header（粗體標題 + 右側「查看全部 ›」按鈕）。
-//    - 內容為橫向平滑滾動（Horizontal Carousel）。
-//    - 點擊「查看全部 ›」可進入該區塊的完整大網格（支援持續無限滾動與 viewMore 就地翻頁）。
-// 3. 當當前頁只有「單一區塊（multiPageComicList）」時：
-//    - 直接呈現精緻 3 欄大網格，滾動到底部自動無縫載入下一頁（搭配 HIG 風格轉圈與簡約到底提示）。
-// 4. 搜尋：導覽列 drawer 的搜尋框（固定顯示，見下面的註解）搜的是**這個源**
-//    （`library.searchSource`），**按送出才搜**（源是對外網站，逐字搜會被打）。
-//    結果用同一套 ComicGridLayout 就地顯示，關鍵字清掉就復原成上面的探索內容
-//    （不必重新載入：分頁資料還留著）。
+// 單一來源探索頁：支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
+// 導覽列搜尋框採 drawer 佈局，送出時針對當前來源發起搜尋。
 
 import {
   AbortController,
@@ -276,10 +264,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const searchMode = submitted.length > 0
 
   /**
-   * 分類 chip 列（源有多個 explore 分類才有）。**放在 ScrollView 裡面**：
-   * 原本它是固定在搜尋框下面的兄弟列，但系統抽屜只給**捲動內容**留 inset，固定的列拿不到——
-   * 框冒出來時會被壓在 chips 後面，而且怎麼滑都不會出現（實機 2026-10-10）。
-   * 放進內容就跟著 inset 走，也會隨內容捲走。
+   * 分類 chip 列（源有多個 explore 分類才有，放置於 ScrollView 內隨內容捲動）。
    */
   const chipRow =
     entries.length > 1 ? (
@@ -302,17 +287,9 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         spacing={0}
         navigationTitle={navTitle}
         navigationBarTitleDisplayMode="inline"
-        // 沒有內容時（載入中/錯誤）這個 VStack 只有標籤列高，會被 ZStack 垂直置中
-        // 而跑到畫面中間；自己摸滿整個高度並靠頂。見 dev/probe-top-align.tsx。
+        // 靠頂對齊避免內容不足時被 ZStack 垂直置中
         frame={{ maxHeight: "infinity", alignment: "top" }}
-        // 搜尋框用系統的 drawer（就在網格上方），模式是 automatic：進去收著，在內容上往下拉才
-        // 露出來，往下滑又收起來（實機 2026-10-10，每個源都一致）。
-        // **關鍵是內容區的 ScrollView 要一直存在、而且裝得下東西**：系統是看「捲動內容夠不夠」
-        // 決定一開始收不收；之前 chip 列固定在 ScrollView 外面，那個當下就被判定成「沒東西可捲」
-        // 而把框留在畫面上（而且固定的 chips 還會蓋住它）。chips 收進 ScrollView 之後就一致了。
-        // 對照過的死路：掛在巢狀 view（會變成畫面底部的浮動列）、綁 `presented`、大標題、
-        // 載入中把容器撐高——見 dev/probe-searchable-initial.tsx。`always` 會永遠黏著、不讓開。
-        // 轉場殘影（push 滑入、pop 原位淡出）是已知的 Apple bug（FB17031212）。
+        // 搜尋框採用系統 drawer 模式（下拉展開、滑動收起）
         searchable={{
           placement: "navigationBarDrawerAutomaticDisplay",
           prompt: t("browse.searchInSource", { name: navTitle }),
@@ -346,7 +323,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
           {busy && sections.length === 0 ? <PageLoading /> : null}
 
           {isMultiSection ? (
-            /* 串流影音雜誌流：俐落大留白垂直分區，全幅橫向滑動 */
+            /* 多區塊模式：垂直列表 + 橫向輪播 */
             <VStack spacing={14} padding={{ top: 10, bottom: 44 }}>
               {sections.map((section, idx) => (
                 <MagazineSectionRow
@@ -359,7 +336,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
               ))}
             </VStack>
           ) : singleSection ? (
-            /* 單一區塊：全幅精緻 3 欄海報網格，滾到底自動靜默載入 */
+            /* 單一區塊模式：3 欄網格與滾動分頁 */
             <VStack spacing={0}>
               {singleSection.title ? (
                 <HStack padding={{ horizontal: 16, top: 12, bottom: 4 }}>
@@ -383,7 +360,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   )
 }
 
-/** 串流影音 / 頂級雜誌風的極簡海報列 */
+/** 橫向輪播區塊列 */
 function MagazineSectionRow({
   sourceKey,
   entry,
@@ -403,7 +380,7 @@ function MagazineSectionRow({
     <NamespaceReader>
       {exploreNs => (
         <VStack spacing={4}>
-          {/* 標題欄：極簡粗體分區名 + 單一右向小箭頭（無廢話資訊雜訊） */}
+          {/* 標題欄 */}
           <NavigationLink
             destination={
               <SectionGridScreen
@@ -423,7 +400,7 @@ function MagazineSectionRow({
             </HStack>
           </NavigationLink>
 
-          {/* 橫向滑動卡片架：3.3 欄黃金比例，倒三角對稱中軸排版 */}
+          {/* 橫向滑動卡片架 */}
           <ScrollView
             axes="horizontal"
             background={
@@ -469,10 +446,7 @@ function MagazineSectionRow({
                           cornerRadius={radius.cover}
                         />
                         {comic.updateTime ? (
-                          // 更新時間徽章（靠右下）。外層先撑滿封面再靠右下對齊、內層用 `card.width - 12`
-                          // 夾住寬度：`updateTime` 是**源的原始字串**（有時是一長串 ISO），
-                          // 不夾的話膠囊會比封面寬、超出圖片（跟首頁續讀卡同一個修法，見 HomeScreen 的進度標籤）。
-                          // 對照：dev/preview-badge-clamp.tsx（同一個字串，夾與不夾並排）。
+                          // 更新時間徽章（夾寬度避免長字串超出封面）
                           <HStack
                             offset={{ x: -6, y: -6 }}
                             frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
@@ -555,7 +529,7 @@ function SearchResults({
   onRetry: () => void
 }) {
   if (error) return <MessageBlock text={error} onRetry={onRetry} />
-  // 還沒有結果，或原本就空手還在重搜：轉圈（先不喊「沒有結果」）。
+  // 尚無結果或重新搜尋中：顯示加載動畫
   if (hits === null || (searching && hits.length === 0)) return <PageLoading />
   if (hits.length === 0) {
     return (

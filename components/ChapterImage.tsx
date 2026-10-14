@@ -1,16 +1,6 @@
-// 章節內文圖片展示元件（純 View）。取圖走 ComicLibrary 的 chapter session（包含漸進式解碼與 AI 超解析度）；
-// 畫面只負責把 session 給的「可顯示頁面」（檔案路徑＋比例）畫出來，並在超分完成時透過 onSharpened 回調原地無縫替換。
-// 正文圖需要 Referer / Cookie 與解密，且正文不落地（快取在記憶體），皆在 session 內處理完成。
-//
-// 離線命中時不會問源的圖片解析，所以在飛航模式下（源根本解析不出 URL）也讀得到。
-//
-// ⚠️ 為什麼用 `Canvas` 而不是 `Image`：`Image` 每顯示一個新的 `UIImage` 就**永久留一份點陣**
-// （成本 ∝ 像素：一頁 850×1206 約 4MB，超分後 1700×2412 約 15.6MB），而且卸載不還——
-// 連續讀 20 分鐘會爬到 3GB 被系統殺。`Canvas.drawImage({ filePath })` 不會累積
-// （實測：`Image` +4.13MB/張 vs Canvas +0.02MB/張，見 dev/probe-display-via.tsx）。
-//
-// 排版：Canvas 自己算 contain 置中；給了 `size`（畫廊／橫向模式）就塞進那個框，
-// 不給就靠 `aspectRatio` 撐出高度（webtoon）。
+// 章節正文圖片渲染元件：透過 ChapterSession 加載原圖與漸進式超分替換。
+// 採用 Canvas.drawImage 配合暫存路徑繪製，避免 Image 組件常駐累積 UIImage 點陣記憶體。
+// 排版支援畫廊/橫向 contain 模式與縱向自適應模式。
 
 import { Button, Canvas, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 
@@ -97,11 +87,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     )
   }
 
-  // 未載入時的佔位尺寸：
-  // 1. 若給了完整寬高（畫廊模式）直接吃指定尺寸；
-  // 2. 若只給了 height（橫向連續模式）：預設佔位寬度給「高度 × 0.7」或「螢幕寬度的 80%」，
-  //    避免 ProgressView 天然 20~30pt 導致 LazyHStack 開場瞬間塞滿幾十頁、狂發並行請求且載完後排版劇烈跳躍；
-  // 3. 沒給 size（縱向條漫模式）：預設給 560pt（約螢幕 70% 高），寬度自適應撐滿。
+  // 未載入時的佔位尺寸：依畫廊、橫向連續（預設 0.7 比例）或縱向模式（預設 560pt）設定合適外框，防範骨架過小引發排版抖動
   const placeholderHeight = size?.height ?? 560
   const placeholderWidth = size?.width ?? (size?.height ? Math.round(size.height * 0.7) : undefined)
 

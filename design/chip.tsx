@@ -1,8 +1,4 @@
-// 分區 chip（玻璃膠囊）。探索／分類／排行都是「一組可以選的分區」，
-// 現在只有這一種長相 —— 原本三頁各有一套（淡底文字／玻璃／原生 bordered），
-// 選中態與字色都不一樣（dev/preview-chips.tsx 有對照）。
-//
-// 容器（橫向捲動或換行流）由各頁自己決定：分類頁的分區多，用 FlowLayout 換行比較好讀。
+// 分區 chip（玻璃膠囊）：供探索、分類、排行等場景切換分區。
 
 import { Button, HStack, ScrollView, Text } from "scripting"
 

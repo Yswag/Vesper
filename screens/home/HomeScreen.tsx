@@ -1,5 +1,4 @@
-// 首頁：繼續閱讀與 Bangumi 熱門/高分推薦。
-// 移除與書架重複的收藏列表，專注於「接續閱讀」與「新漫發現」。
+// 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
 import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useState } from "scripting"
 
@@ -22,8 +21,7 @@ import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
 
 /**
- * 量橫向 carousel 的**捲動視窗**寬：卡片寬是等一下要算出來的結果，不能當輸入，
- * 也不是螢幕寬。掛在 ScrollView 的 background 上量到的就是視窗寬，見 dev/probe-carousel-width.tsx。
+ * 量測橫向輪播的 ScrollView 視窗寬度，供子卡片計算尺寸。
  */
 function carouselWidthProbe(onWidth: (width: number) => void) {
   return (
@@ -82,8 +80,7 @@ export function HomeScreen() {
     void loadFeed(false).finally(() => setLoadingFeed(false))
   }, [])
 
-  // 頂部輪播圖自動輪播（4 秒切換一次，帶平滑換頁動畫，無限循環回第一張）
-  // 記憶注意：Scripting 執行期沒有 setInterval，且第一個 setTimeout handle 為 0，清理時需比對 !== null。
+  // 輪播計時器（runtime 無 setInterval，且 setTimeout handle 0 為合法值需比對 !== null）
   useEffect(() => {
     if (heroItems.length <= 1) return
 
@@ -104,8 +101,6 @@ export function HomeScreen() {
     <NamespaceReader>
       {homeNs => (
         <ZStack
-          // 分頁被推入的閱讀器蓋住時不會重繪；回來時重新讀一次書架，
-          // 並從快取大池中隨機重新挑選一批全新輪播組合（零網路延遲，每次進入都有驚喜）。
           onAppear={() => {
             refresh()
             if (popularPool.length >= 8 || topRank.length >= 8) {
@@ -131,14 +126,12 @@ export function HomeScreen() {
         >
           <VStack spacing={24} padding={{ bottom: 44 }}>
 
-            {/* 0. 🎬 現代串流風格 Hero 輪播（無界限環境氛圍光 + 懸浮卡片） */}
+            {/* Hero 輪播區塊 */}
             {heroItems.length > 0 && (
               <VStack
                 spacing={8}
                 frame={{ maxWidth: "infinity" }}
-                // 氛圍光放在 background：它是裝飾層，不該參與版面。
-                // 以前它跟內容同在一個 ZStack 裡當兄弟層，260 的高度會把整塊撐高
-                //（內容只有 195 + 8 + 4 = 207）→ 點點跟「繼續閱讀」之間多出 ~53pt 的空白。
+                // 氛圍光作為 background 裝飾層，不參與版面高度計算
                 background={
                   <ZStack alignment="top" frame={{ maxWidth: "infinity" }}>
                     {heroItems.map((item, idx) => {

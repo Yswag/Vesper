@@ -1,8 +1,4 @@
-// 搜尋：左側源側邊欄（全部 + 各源 + 結果數）＋右側兩欄結果，底部輸入欄。
-// 結果不混排、不重排（Q20）：預設顯示全部，點側邊欄的源只看該源。
-//
-// 篩選是「每一源自己的」（`search.optionList`，30 個源各不同），所以不排全域 chip：
-// 選了單一源就在結果上方給一顆「篩選」按鈕 → sheet；「全部」模式各源照預設跑。
+// 搜尋頁面：包含左側來源清單（含結果計數）與右側漫畫網格，支援個別來源自訂篩選。
 
 import { AbortController, Button, Divider, HStack, Image, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, useEffect, useRef, useObservable, useState } from "scripting"
 
@@ -48,21 +44,15 @@ export function SearchScreen() {
   const [draft, setDraft] = useState<SearchOptionValue[]>([])
   /** 正在重跑篩選的那個源。 */
   const [rerunning, setRerunning] = useState<string | null>(null)
-  // 搜尋框的展開狀態交給系統（tabViewSearchActivation），這裡只綁著讓系統回報狀態。
-  // 注意 **不要**把它設成 false ——那是「取消搜尋」，iOS 會把 tab 切回上一個。
-  // 若之後需要「只收鍵盤」，用全域的 Keyboard.hide()。
+  // 搜尋框展開狀態由系統綁定（勿手動設為 false，否則將觸發取消並切換分頁）
   const presented = useObservable(false)
 
   /**
-   * 這一輪搜尋的 epoch。每次 run 換一個 id＋一個 `AbortController`：
-   * 換關鍵字或離開畫面時舊的一輪被作廢（回來的結果與進度一律丟掉）並被取消（在飛的請求真的中止）。
-   * 以前只有 `running` 布林，連跑兩次搜尋時舊結果回來會蓋掉新的。
+   * 搜尋輪次管理（epoch + AbortController）：新關鍵字或離開畫面時作廢舊輪次並中止請求。
    */
   const runRef = useRef({ id: 0, controller: null as AbortController | null })
 
-  // 安裝／移除／啟用來源都由庫的單一訂閱通知（不再自己 reloadRegistry 或 subscribeSources）。
-  // 語言是第二個訂閱源：側邊欄、篩選 sheet 與空狀態的字都在 render 時取自 `t()`，
-  // 換語言要重繪才算數（子元件跟著這個畫面重繪，不必各自訂閱）。
+  // 訂閱來源異動與語言切換
   useSubscription(library.onChange, subscribeLocale)
   const sources = library.sources()
 

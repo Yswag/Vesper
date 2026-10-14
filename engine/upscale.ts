@@ -1,9 +1,5 @@
-// ONNX ACNet 超解析度服務：利用 Headless WebViewController 執行輕量 21KB anime4k_acnet.onnx。
-//
-// 特點：
-// 1. 純神經網絡 2x 超分辨率重建（針對單通道 Y 亮度推論）。
-// 2. 漸進式增強：原圖先見，算好後無縫換圖。
-// 3. 具備防重入與 session 快取，關閉閱讀器自動 dispose。
+// ONNX ACNet 超解析度服務：透過 Headless WebViewController 執行 anime4k_acnet.onnx 2x 亮度重建。
+// 採串行隊列防重入、LRU session 記憶體快取，並於閱讀器退出時釋放資源。
 
 import { Script } from "scripting"
 import { join, readBytes } from "./fs"
@@ -13,8 +9,7 @@ let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
 let currentPort = 0
 
-// Session 記憶體快取（LRU 控制，最多保留 6 張超分圖）。存的是**推論輸出回來的 JPEG 位元組**，
-// 不是解碼後的 `UIImage`：呼叫端要的是「可以寫成檔案給 Canvas 畫」的東西，而且點陣每張 25～35MB、位元組只有幾百 KB。
+// Session 記憶體快取（LRU 上限 6 張，儲存 JPEG 原始位元組避免點陣常駐消耗）。
 const MAX_UPSCALE_CACHE_SIZE = 6
 const sessionCache = new Map<string, Data>()
 
@@ -43,9 +38,7 @@ function setCachedUpscaleData(key: string, data: Data): void {
 }
 
 /**
- * 任務串行互斥隊列（避免並發請求覆蓋圖片發生串音）。
- * 所有對 WebViewController 的操作（推論、重置、換話清理）必須排入同一個隊列，
- * 嚴禁在推論執行途中外部直接 dispose，否則會引發 iOS WebKit 原生 EXC_BAD_ACCESS 閃退。
+ * 任務串行互斥隊列：防範推論並發與執行中提前 dispose 引發 WebKit EXC_BAD_ACCESS。
  */
 let queuePromise = Promise.resolve<any>(null)
 
@@ -89,10 +82,8 @@ const canvas = document.getElementById("c");
 let session = null;
 
 ort.env.wasm.wasmPaths = "http://127.0.0.1:${port}/";
-// 這個頁面是由 loopback 送出、帶 COOP/COEP 的（見 ensureServer），所以 crossOriginIsolated 成立、
-// SharedArrayBuffer 可用，numThreads 才真的有效。跟硬體走：超過實體核心數會退化（oversubscription），
-// 實測甜蜜點就是核心數（這台 4 核：2→4 再快 6%，6/8 反而退化）；上限 8 只是天花板，
-// 因為執行緒越多、session 建立越貴（要 spawn worker），而且沒有 8 核以上的資料。
+// 透過 loopback 提供 COOP/COEP 以啟用 crossOriginIsolated 與 SharedArrayBuffer；
+// 執行緒數以實體核心數為準（上限 8）。
 ort.env.wasm.numThreads = Math.min(8, navigator.hardwareConcurrency || 2);
 
 window.initSession = async function() {
@@ -238,10 +229,7 @@ window.exportJpegBlob = async function(uploadUrl) {
 let activeSourceData: Data | null = null
 let uploadedBuffer: ArrayBuffer | null = null
 
-/**
- * 帶標頭的靜態回應（`HttpResponse.raw` 的 body 只收 Data）。
- * 同源資源一律聲明 `Cross-Origin-Resource-Policy`：頁面本身帶 COEP: require-corp。
- */
+/** 帶有 CORP 與 MIME 標頭的本地 HTTP 回應。 */
 function staticResponse(bytes: Uint8Array, contentType: string, extraHeaders: Record<string, string> = {}): HttpResponse {
   return HttpResponse.raw(200, "OK", {
     headers: {
@@ -259,9 +247,7 @@ async function ensureServer(): Promise<number> {
   const server = new HttpServer()
 
   const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
-  // 副檔名刻意是 `.txt`：`.js` 會被專案的型別服務收進 program，這支 540KB 的 minified JS
-  // 會讓它只載入部分檔案，整個專案噴幾百條假錯。這裡是讀位元組、再由 loopback 以
-  // `text/javascript` 送出，檔名不影響執行（送出的 URL 是下面那條 registerHandler 決定的）。
+  // 採 .txt 副檔名避免大體積 minified JS 觸發型別服務解析異常，執行時以 text/javascript 提供
   const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js.txt")
   const wasmThreadedPath = join(Script.directory, "assets/acnet/ort-wasm-simd-threaded.wasm")
   const wasmFallbackPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
@@ -278,9 +264,7 @@ async function ensureServer(): Promise<number> {
     throw new Error("ACNet 資源檔案丟失 (請確認 assets/acnet 目錄完整)")
   }
 
-  // 頁面必須由本機伺服器送出才帶得到 COOP/COEP：少了它們就沒有 crossOriginIsolated，
-  // ort.env.wasm.numThreads 會被 ORT 忽略（退回單執行緒，實測整頁慢 30%）。
-  // port 只有 start() 之後才知道，所以 HTML 在 handler 裡才組（那時 currentPort 已經指派）。
+  // 頁面需透過 loopback 提供 COOP/COEP 標頭以啟用多執行緒 WASM 推論
   server.registerHandler("/", () =>
     staticResponse(new TextEncoder().encode(buildACNetHTML(currentPort)), "text/html; charset=utf-8", {
       "Cross-Origin-Opener-Policy": "same-origin",
@@ -309,8 +293,7 @@ async function ensureServer(): Promise<number> {
 }
 
 /**
- * 確保 WebViewController 超分執行個體就緒。
- * ⚠️ 必須僅在 queuePromise 串行隊列內部調用，嚴格保證不發生並發重入與狀態撕裂。
+ * 確保 WebViewController 超分執行個體就緒（僅於 queuePromise 隊列內調用）。
  */
 async function ensureEngine(): Promise<void> {
   if (controllerInstance) return
@@ -406,10 +389,7 @@ async function executeInference(
   return outData
 }
 
-/**
- * 檢查圖像尺寸是否在 ACNet 安全推論範圍內。
- * 避免長條漫或極大原圖 2x 放大產生數千萬像素張量超出 WebAssembly 32-bit 與 GPU 配額。
- */
+/** 檢查圖像尺寸是否在 ACNet 安全推論像素範圍內（防止 GPU/WASM 顯存溢出）。 */
 export function isSafeForUpscale(width: number, height: number): boolean {
   if (width <= 0 || height <= 0) return false
   if (width >= 1920 || height >= 2560) return false
@@ -417,10 +397,7 @@ export function isSafeForUpscale(width: number, height: number): boolean {
 }
 
 /**
- * 對給定的原始圖像 Data 執行真實 ACNet ONNX 神經網路 2x 超解析度。
- *
- * 回傳的是**推論輸出的圖檔位元組**（引擎內部就是 JPEG：WebView 算完 → `exportJpegBlob` → POST 回 app）。
- * 呼叫端自己決定要不要寫成檔案、怎麼顯示。
+ * 對原始圖像 Data 執行 ACNet ONNX 2x 神經網路超解析度，返回 JPEG 格式位元組。
  */
 export async function sharpenImage(
   key: string,

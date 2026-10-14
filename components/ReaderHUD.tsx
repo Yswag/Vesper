@@ -371,7 +371,7 @@ export function ReaderHUD({
                       systemName={favorite ? "heart.fill" : "heart"}
                       font={15}
                       fontWeight="medium"
-                      // 高度只取 32：這一列原本只有一顆 caption2 的文字（~16pt），44 會讓整個面板多長 28pt。
+                      // 高度取 32 配合緊湊進度膠囊面板高度
                       frame={{ width: 44, height: 32 }}
                       foregroundStyle={favorite ? "systemRed" : "white"}
                     />

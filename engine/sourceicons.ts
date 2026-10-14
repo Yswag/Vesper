@@ -1,18 +1,6 @@
-// 漫畫源網站 Favicon / Icon 快取管理
-//
-// 策略：
-// 1. 本地磁碟快取位於 `appDataRoot()/cache/source-icons/<key>.bin`。
-// 2. 啟動或渲染時，若已有快取檔案，直接使用 `UIImage.fromFile` 載入；
-//    若無快取，背景排程靜默抓取，不阻塞列表與首字圓徽章渲染。
-// 3. 網址解析優先級：
-//    - 針對知名來源提供精確的官方站台/API 網域對照表（KNWON_SOURCE_DOMAINS）；
-//    - 若不在對照表中，依序嘗試源宣告的 `account.registerWebsite`、`account.loginWithWebview.url`、
-//      `instance.baseUrl`、`instance.url` 等 host；
-// 4. 圖標來源嘗試順序：
-//    - Google Favicon API (`https://www.google.com/s2/favicons?domain=...&sz=64`) 回傳標準 PNG，最穩且支援高解析度。
-//    - 若失敗則嘗試 DuckDuckGo Favicon (`https://icons.duckduckgo.com/ip3/...ico`)。
-//    - 若再失敗則嘗試站台根路徑直接抓取 (`https://<domain>/favicon.ico`)。
-// 5. 抓回後以 UIImage 驗證可解碼才寫入磁碟，避免快取到錯誤頁或壞檔；若全部嘗試皆失敗，退回首字文字圓徽章。
+// 漫畫源網站 Favicon / Icon 快取管理模組。
+// 本地快取位於 cache/source-icons/<key>.bin。
+// 依 KNOWN_SOURCE_DOMAINS 或來源宣告網域，透過 Google/DuckDuckGo Favicon 服務或根路徑靜默抓取。
 
 import { fetch } from "scripting"
 import { appDataRoot, ensureDir, exists, join, remove, writeBytes } from "./fs"

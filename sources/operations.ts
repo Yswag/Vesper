@@ -59,11 +59,7 @@ async function requireInstance(source: InstalledSource): Promise<any> {
 
 // ---------------------------------------------------------------- 登入過期自動重登
 
-/**
- * 這個錯誤是不是「登入過期」訊號。上游契約是源 `throw "Login expired"`。
- * 比對時大小寫不敏感、去掉所有空白（源有時 throw 字串而不是 Error）。
- * 只認這一個訊號：網站掛了、找不到作品等一律不觸發重登。
- */
+/** 判定錯誤是否為登入過期訊號（大小寫不敏感，去除空白比對 loginexpired）。 */
 function isLoginExpired(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "")
   return message.toLowerCase().replace(/\s+/g, "").includes("loginexpired")
@@ -81,11 +77,7 @@ export interface SourceScope {
 }
 
 /**
- * 把一次源呼叫包上「登入過期 → 重登一次 → 重試一次」（套用到所有源操作）。
- *
- * 只重試一次：重登成功才重試。重登不了時——有登入紀錄但沒有憑證可重登的源
- * （只能瀏覽器登入的 nhentai / manga_dex）給看得懂的訊息；未登入的源、
- * 以及重登本身失敗的，都照舊丟出原本的錯誤。
+ * 為來源操作包裝登入過期自動重登機制（僅重試一次，未登入或重登失敗拋出原始錯誤）。
  */
 async function withRelogin<T>(
   source: InstalledSource,
@@ -103,24 +95,14 @@ async function withRelogin<T>(
   }
 }
 
-/**
- * 源操作失敗的日誌。**取消不算失敗**：被 abort 的呼叫不留紀錄，
- * 否則 LogScreen 會被「使用者自己按了返回」洗版（見 engine/scope.ts）。
- * 分類（`sources/category.ts`）也用同一支，兩邊的判定才會一致。
- */
+/** 記錄來源操作失敗日誌（主動 abort 的取消請求不記錄）。 */
 export function logFailure(scope: string, message: string, error: unknown): void {
   if (isAbortError(error)) return
   log("error", scope, message, error)
 }
 
 /**
- * 把一次源呼叫包上 scope 與「登入過期 → 重登一次 → 重試一次」。
- *
- * 順序是刻意的：**重登在外、scope 在內**。重登本身不可取消（`reloginSource` 沒有 signal 可收），
- * 不讓 scope 漏進去；而重登後的**重試**仍在同一個 scope 裡。
- *
- * scope 也只包住「源的這一次呼叫」：`ensureSourceReady` 的 init 等待在它之外——那是每源一個
- * 共用 promise，取消只能「不再等」，不能真的殺掉（見 `sources/registry.ts`）。
+ * 為來源呼叫包裝取消作用域與自動重登。
  */
 function callSource<T>(
   source: InstalledSource,
@@ -244,8 +226,7 @@ export async function loadCategorySections(
   if (target.page === "category") {
     const module = instance.categoryComics
     if (typeof module?.load !== "function") throw new Error(t("sources.unsupported.category"))
-    // `param` 要傳 **null**（不是空字串）給沒帶 param 的目標：源寫的是 `param ?? 'c'`（picacg），
-    // 空字串會讓它拼出 `?page=1&=大濕推薦&s=dd` 這種壞 URL → 站方 400。上游的 Dart 也是 String?（null）。
+    // 未帶 param 傳 null，避免拼接出無效 query 參數
     raw = await callSource(source, scope, () =>
       module.load(
         target.attributes.category ?? "",
@@ -371,12 +352,11 @@ export async function loadDetail(source: InstalledSource, comicId: string, scope
     title: String(raw?.title ?? t("sources.untitled")),
     cover: resolveUrl(source.meta?.url, raw?.cover) || undefined,
     description: raw?.description ?? undefined,
-    // 源給的分數與 subId 以前被這裡吃掉；原封不動帶出來（stars 只讀顯示、subId 留言要用）。
+    // 星等與 subId 原樣導出
     stars: normalizeStars(raw?.stars),
     subId: raw?.subId != null ? String(raw.subId) : undefined,
     tags: normalizeTags(raw?.tags),
-    // 單章漫畫（例如 hitomi）沒有 chapters：這裡就合成一章，epId = comicId，
-    // 讓呼叫端不必各自記得補（否則每一頁都要重寫一次這個判斷）。
+    // 單章漫畫（無 chapters）自動合成單一章節（epId = comicId）
     chapters: resolveChapters(raw?.chapters, comicId),
     updateTime: raw?.updateTime ?? undefined,
     uploadTime: raw?.uploadTime ?? undefined,
@@ -406,9 +386,7 @@ export async function loadChapterImages(
 }
 
 /**
- * 閱讀器開一章要的頁面清單。下載過的章直接從離線層拿（沒有網路也開得起來），
- * 其他章照舊問源；問不到但離線層有東西時退回離線。
- * 兩條路的清單都是 `loadEp` 那一次的產物（下載時就記在 manifest 裡），所以頁數與頁碼對得上。
+ * 開啟章節圖片清單（優先取離線 manifest 清單，離線無檔案時由來源線上加載）。
  */
 export async function openChapterImages(
   source: InstalledSource,
@@ -451,11 +429,7 @@ export interface CommentPage {
   maxPage?: number
 }
 
-/**
- * 有沒有下一頁。**只有「比目前頁大」的 maxPage 才算數**：
- * mxs 硬編 1（永遠單頁）、manhuaren 有留言時回 null、沒留言時回「目前頁」（方向相反），
- * 都不能當成「還有更多」；否則使用者會看到一顆按了沒反應的按鈕。
- */
+/** 是否還有下一頁留言（僅當 maxPage 數值大於當前頁時為 true）。 */
 export function hasMoreComments(maxPage: number | undefined, page: number): boolean {
   return typeof maxPage === "number" && Number.isFinite(maxPage) && maxPage > page
 }
@@ -492,10 +466,7 @@ function normalizeComments(raw: unknown): SourceComment[] {
   return out
 }
 
-/**
- * 讀一頁留言。`subId` 用詳情帶回來的原值（沒有就是 null）；多數源忽略它，
- * 但 manhuaren / copy_manga 靠它。留言不落地，每次都要重新讀。
- */
+/** 讀取一頁留言（留言不落地快取）。 */
 export async function loadComments(
   source: InstalledSource,
   comicId: string,

@@ -1,18 +1,5 @@
-// 正文取圖管線：記憶體、不落地、可取消。
-//
-// 為什麼不落地（與 `engine/imagecache.ts` 的縮圖快取分家）：正文看過短時間不會重看，長期佔著磁碟
-// （jm 這種一頁 1.7–1.8MB 的尤其明顯）。兩邊語意各自單純，就不必用「有沒有 modifyImage」之類的
-// 啟發式去猜一張圖是正文還是縮圖。縮圖（封面／頭像／留言圖）仍然走磁碟那條，一個字都沒改。
-//
-// 取圖的那一步是共用的 `fetchProcessedImage`（網路 → onResponse → modifyImage），只有「寫檔」被
-// 拆掉換成「存進記憶體」——所以不會出現「圖抓到了但沒後處理」。
-//
-// 值存的是**編碼位元組**，不是 `UIImage`：一張 1600×2400 解碼後約 15MB，存 20 張會爆；
-// 解碼留給畫面 mount 的時候做（實測 5–42ms）。
-//
-// **一份快取＝一次閱讀**：這裡是工廠，閱讀 session 與下載管線各拿自己的一份（`createPageCache()`）。
-// 於是「誰的快取屬於誰、誰被放掉」是型別上的事實，不必靠 `dispose({ clearCache: false })` 這種
-// 逃逸旗標去補救全域狀態，也不會出現「換話把下載剛抓好的頁清掉」。
+// 正文取圖管線：記憶體 LRU 快取、不落地、請求去重與生命週期隔離。
+// 快取儲存原始編碼位元組以節省記憶體，並在換話／退出時透過原子 generation 序號隔離清理。
 
 import type { AbortSignal } from "scripting"
 
@@ -31,7 +18,7 @@ function labelOf(url: string): string {
   return url.length > 40 ? "…" + url.slice(-40) : url
 }
 
-/** 跟舊的磁碟快取同一個鍵：URL + `modifyImage`（不含 sourceKey、不含圖片種類）。 */
+/** 快取鍵：URL + modifyImage 雜湊。 */
 function keyOf(url: string, modifyImage: string | undefined): string {
   return Convert.hexEncode(Convert.md5(Convert.encodeUtf8(url + "\n" + (modifyImage ?? ""))))
 }
@@ -48,18 +35,9 @@ export interface PageImageRequest {
   retry?: SourceCallRetry
 }
 
-/**
- * 一份正文的記憶體快取。**實例就是生命週期**：閱讀 session 換話／退出＝放掉那一份，
- * 下載管線那一份不受影響（反過來也一樣）。
- */
+/** 正文記憶體快取介面（每個閱讀 session 獨立持有實例）。 */
 export interface PageCache {
-  /**
-   * 一頁正文的位元組：記憶體 LRU → 網路。
-   * 離線層不在這裡——已下載的章節由 `engine/offline.ts` 先處理掉（它才是知道「這一頁有沒有下載」的地方）。
-   *
-   * **失敗不進 LRU**：抓圖失敗就原樣往上丟，下一次會重抓（不會把失敗記成一個空快取）。
-   * `signal` 只影響網路那一步。
-   */
+  /** 取得一頁正文位元組（記憶體 LRU ➔ 網路）。失敗不存入 LRU，支援 signal 取消。 */
   bytes(request: PageImageRequest, signal?: AbortSignal): Promise<Uint8Array>
   /** 放掉整份（換話／退出）。清掉之後，**在飛的請求完成時不會回寫**。 */
   clear(): void
@@ -70,24 +48,10 @@ export function createPageCache(): PageCache {
   const pages = new Map<string, Uint8Array>()
   let bytesInCache = 0
 
-  /**
-   * 同一個鍵正在抓的那一個請求。
-   *
-   * 預取（往前 3）與畫面（ChapterImage 要當前那一頁）常常同時要同一張圖——沒有這一層就是同一個
-   * URL 發兩次。共用 promise 在正文這條路上安全：一份快取只有一個 `AbortController`，
-   * 取消是「整批」的（`dispose()`），所以不會出現「有人偷偷 abort 掉別人」——那正是舊的
-   * `cachedImagePath` 不能拿來 abort 的原因。
-   *
-   * 記 promise 本身（不只記存在）：`clear()` 之後同一頁可以再起一個新請求，
-   * 舊的那個收尾時不能把新的這筆去重紀錄刪掉。
-   */
+  /** 進行中的取圖請求映射表（避免同頁並發重複請求）。 */
   const inflight = new Map<string, Promise<Uint8Array>>()
 
-  /**
-   * 世代序號：`clear()` 就加一。每一個請求出發時記下自己屬於哪一代，
-   * 回來時對不上就不寫進快取——**這就是 `clear()` 的原子性**（沒有這一步，
-   * 一個沒有 signal 的在飛請求會在清掉之後把位元組塞回來，等於沒清到）。
-   */
+  /** 世代序號：clear() 時遞增，避免過期請求完成後錯誤回寫已釋放的快取。 */
   let generation = 0
 
   function take(key: string): Uint8Array | undefined {

@@ -1,18 +1,5 @@
-// 源的載入指示（`UI.showLoading` / `UI.cancelLoading`）的狀態。
-//
-// 為什麼不是 modal：載入指示只是「告訴使用者正在做事」，用 `Navigation.present` 會蓋掉整個畫面
-// ——一行字塞滿一頁，能看但很醜。這裡跟 toast 一樣：模組層級狀態 + App 樹裡的浮動視圖
-// （`app/LoadingHUD.tsx`，掛在 App 的 TabView overlay 上）。
-//
-// 慣例照上游文件：
-//   - `onCancel` 是**使用者按取消**時的回呼；源傳 null 代表這個指示不可取消。
-//   - 源自己呼叫 `cancelLoading(id)` 只是收起來，**不會**跑 `onCancel`。
-//
-// 存活上限（`LOADING_TTL_MS`）：一個指示最多活 90 秒就自己收掉。
-// 為什麼要：源呼叫 `showLoading()` 之後漏呼叫 `cancelLoading()` 是會真的發生的（真實源有），
-// 那時指示會永遠留在 `active` 裡——使用者一直看到轉圈，陣列也無界成長。
-// 為什麼是 90 秒：這些源最慢的一次請求（含瀏覽器登入流程）也在幾十秒內，超過 90 秒還活著
-// 幾乎一定是漏收了；比這短則會誤殺還在跑的正常載入。
+// 來源載入指示（UI.showLoading / UI.cancelLoading）狀態管理。
+// 採全域通知搭配 Floating HUD 呈現。每個指示具備預設 90 秒 TTL 兜底機制，防止來源漏呼叫 cancelLoading 導致指示常駐。
 
 import { createEmitter } from "../engine/emitter"
 
@@ -81,9 +68,7 @@ function scheduleExpiry(id: number, ttlMs: number) {
   expiries.set(id, handle)
 }
 
-// ⚠️ Scripting 的 setTimeout 回傳 number，而且**第一個一定是 0**（falsy）——所以這裡只能比
-// `undefined`／`Map.get` 的缺值，寫成 `if (handle) clearTimeout(handle)` 會漏掉那一個
-// （實測見 dev/probe-emitter.ts）。
+// ⚠️ setTimeout 回傳值可為 0（falsy），比對需檢查是否為 undefined
 function clearExpiry(id: number) {
   const handle = expiries.get(id)
   if (handle === undefined) return
@@ -91,10 +76,7 @@ function clearExpiry(id: number) {
   clearTimeout(handle)
 }
 
-/**
- * 使用者按了取消：跑那個指示的 `onCancel`（源自己的清理）再收起來。
- * 一次只處理最上面那一個——實務上（mxs）同時只會有一個。
- */
+/** 使用者點擊取消：執行來源的 onCancel 回調後關閉指示。 */
 export function cancelLoadingFromUser(id: number) {
   const entry = active.find(item => item.id === id)
   if (!entry) return

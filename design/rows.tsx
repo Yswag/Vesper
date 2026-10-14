@@ -1,7 +1,5 @@
-// 列：設定頁與清單頁的每一列都走這裡。
-//
-// 整列可點一律用 onTapGesture + frame(maxWidth: infinity)，不是 Button 包 label ——
-// Button 的命中區只有 label 本身的尺寸（設定頁的列就是一個選項，整列都該能按）。
+// 通用清單與設定項目列元件庫。
+// 點擊事件一律採 onTapGesture 與全寬容器，保持整列觸控範圍。
 
 import { HStack, Image, Picker, Spacer, Text, TextField, Toggle, VStack, ZStack, type Color } from "scripting"
 
@@ -12,9 +10,7 @@ import { t } from "../i18n"
 export const rowSeparatorInset = 52
 
 /**
- * 圖示徽章：
- * - 支援無背景單色風格（如 monochrome minimal），相容深色/淺色語意色（secondaryLabel / tintColor / red 等）。
- * - 若有傳入 background，則呈現柔和微透光背景徽章。
+ * 圖示徽章：支援單色透明風格或傳入 background 之微透光膠囊背景。
  */
 export function IconBadge({
   icon,
@@ -191,10 +187,7 @@ export function FieldRow({
   )
 }
 
-/**
- * 有標題的輸入列（表單用）。標題在欄位上方 —— 帳號、網址、關鍵字這類值都很長，
- * 標題放左邊會把欄位擠成一小條。`multiline` 給貼原始碼那種大區塊用。
- */
+/** 帶有獨立頂部標籤的文字輸入列（適合較長字串如 URL 或多行原始碼）。 */
 export function TextInputRow({
   icon,
   iconColor,
@@ -280,11 +273,7 @@ export function SelectRow({
 export type ActionTone = "default" | "destructive"
 
 /**
- * 卡片裡的動作列。整列可點（執行中與停用時不給 onTap），
- * `busy` 把圖示換成漏斗並改寫標題。
- *
- * 刻意不用 `glassProminent`：那個在卡片裡會被拉成一整塊填滿的色塊
- * （預覽環境沒玻璃時是純白），而設定頁的動作本來就是一列文字，列比色塊好。
+ * 操作動作列（支援 busy 等候與 destructive 危險樣式）。
  */
 export function ActionRow({
   icon,

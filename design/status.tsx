@@ -1,7 +1,4 @@
-// 狀態顯示：狀態橫幅（成功 / 進行中 / 失敗）與空狀態。
-//
-// 這兩個原本每一頁各刻一份，顏色與留白都不一樣；現在口氣（tone）由呼叫端的狀態種類
-// （`StatusKind`）決定、或由一次性的橫幅直接指定，實際的底色、圖示、字重收在這裡。
+// 通用狀態元件：包含狀態橫幅（NoticeBanner）、載入指示（PageLoading）、頁尾（ListFooter）與空狀態（EmptyState）。
 
 import { HStack, Image, ProgressView, Spacer, Text, VStack, type Color } from "scripting"
 
@@ -10,10 +7,7 @@ import { cardBackgroundSubtle, cardShape } from "./tokens"
 
 export type NoticeTone = "info" | "success" | "pending" | "error"
 
-/**
- * 一則狀態的**種類**（不是文案）：畫面只靠它判斷要不要顯示、該是什麼口氣，
- * 要顯示的字在 render 時才算。顯示字串不准當程式邏輯（哨兵值、`===`、`startsWith`）。
- */
+/** 業務狀態分類。 */
 export type StatusKind = "loading" | "error" | "empty" | "ready"
 
 /**
@@ -32,7 +26,7 @@ const STATUS_TONE: Record<StatusKind, NoticeTone> = {
   ready: "success",
 }
 
-/** 種類 → 口氣。查表，**不看文字**：loading 是進行中、error 是錯誤，empty／ready 都是完成。 */
+/** 依業務狀態取得對應視覺語調。 */
 export function statusTone(kind: StatusKind): NoticeTone {
   return STATUS_TONE[kind]
 }
@@ -117,10 +111,7 @@ export function PageLoading({ text = t("common.loading") }: { text?: string }) {
   )
 }
 
-/**
- * 捲到底的頁尾：下一頁還在載入，或已經到底了。
- * 這兩段原本在探索／排行／分類三頁各刻一次（連文字都一樣）。
- */
+/** 列表底部的加載中或已加載完畢提示。 */
 export function ListFooter({ loading, text = t("common.loadingMore") }: { loading: boolean; text?: string }) {
   if (!loading) {
     return (

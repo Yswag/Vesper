@@ -1,10 +1,5 @@
-// ComicLibrary：UI 與 source／offline／download／書架之間的唯一 domain seam。
-//
-// 畫面只認得這裡的 domain value（來源描述、ComicPage、ChapterSession、下載狀態），
-// 不碰 registry、operations、raw `InstalledSource`、offline key 或縮圖快取路徑。
-// 不 import JSX，也不擁有下載排程、manifest 格式或 HTML parsing。
-// 四個內部依賴（Sources / Offline / Downloads / Shelf）暫時不抽 port ——
-// 只有 production adapter 一個實作者時，seam 還不成立（Phase 2 再加 in-memory adapter）。
+// ComicLibrary：UI 與 source／offline／download／書架之間的領域中介層（domain seam）。
+// 集中提供 UI 所需的 domain model（ComicPage、ChapterSession、下載狀態等），不洩露底層實例細節。
 
 import { AbortController, type AbortSignal } from "scripting"
 
@@ -133,15 +128,11 @@ export interface ChapterSession {
   readonly pageCount: number
   readonly offline: OfflineStatus
   /**
-   * 這一頁的圖片鍵；契約（ticket 05 的 reader 與 download 都吃這一份）：
-   * 頁索引 0 起算、連續無洞；鍵是源 `loadEp` 正規化清單的第 `index` 項
-   * （`openChapterImages` 的產物，已下載的章優先吃離線層記下的清單）。
-   * 離線 manifest 與下載的 `savePage` 都用同一組 (index, key)。越界就拋。
+   * 圖片鍵清單中索引對應的鍵值（0 起算）。離線 manifest 與下載共用此鍵。
    */
   imageKey(index: number): string
   /**
-   * 這一頁的圖片（就是 `imageKey(index)` 那一張）：離線（讀本機檔）→ 記憶體 LRU → 網路，
-   * 回來的是**位元組**（正文不落地）。越界就抛。
+   * 取得指定索引的圖片原始位元組（離線 ➔ 記憶體 LRU ➔ 網路）。
    */
   pageImage(index: number): Promise<Uint8Array>
   /**
@@ -161,30 +152,19 @@ export interface ChapterSession {
    */
   warm(page: number): void
   /**
-   * 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求（同一個 controller 也管 `pageImage`）
-   * + 放掉**自己那一份**正文記憶體快取。
-   *
-   * 那一份快取只屬於這一話，所以不需要旗標：過期 session（連按兩話時舊的那一個才回來）
-   * 被 dispose 時也碰不到當前那一話的位元組——那是另一份實例。
+   * 換話或離開閱讀器：取消請求、清空預取佇列並釋放快取與暫存檔案。
    */
   dispose(): void
 }
 
-/**
- * 一頁可以直接畫的東西。定義在 `engine/pagefiles.ts`（那裡說明為什麼不給 `UIImage`、
- * 以及這些檔案的生命週期）。這裡原樣轉出去，畫面照樣只從 `app/comic` 拿型別。
- */
+/** 一頁可直接交給 Canvas 渲染的路徑與寬高比。 */
 export type { PageRender }
 
 export interface ResumePoint {
   chapter: ChapterRef
   /** 領先可見頁，0 起算；已 clamp 到合法範圍。 */
   page: number
-  /**
-   * 這一筆上次是**在離線模式讀的**（`Progress.offline` 原樣帶出）。
-   * 續讀要不要真的走離線還要看那一話還在不在下載裡——判定在 `screens/shared/offlineSession` 的
-   * `canResumeOffline`（畫面端才有離線層的查詢權；這裡只負責把旗標帶出來）。
-   */
+  /** 上次閱讀是否在離線模式。 */
   offline: boolean
 }
 
@@ -263,9 +243,7 @@ export interface ComicLibrary {
   comic(ref: ComicRef): Promise<ComicPage>
   chapter(ref: ChapterRef): Promise<ChapterSession>
   /**
-   * 續讀點：沒讀過回 null；越界的進度會 clamp 到合法頁索引。
-   * 同步（書架本來就是記憶體內的同步查詢），畫面才能在 render 期間直接讀、
-   * 不必把「每次重繪重讀」變成快照（見 app/useSubscription.ts 的語意）。
+   * 取得續讀進度點（未讀回傳 null，越界自動 clamp）。
    */
   resume(ref: ComicRef): ResumePoint | null
   /** 留言一頁（不落地、不快取：每次進來重新讀）。 */
@@ -306,12 +284,7 @@ function handleOf(key: string): { source: InstalledSource; handle: SourceHandle 
 }
 
 /**
- * 源的 domain 描述；沒載入成功時只剩名字與版本（能力一律當沒有）。
- *
- * 算一份要 `openSource()` + 重新解析 `search.optionList` + 能力旗標，而 `sources()`／
- * `source(key)` 是**在 render 期間**被呼叫的（搜尋頁、瀏覽頁、書架的每張歷史卡、Bangumi 詳情）：
- * 30 個源的宣告每重繪就要重算一次。所以算過的留著，以 `InstalledSource` 物件為鍵
- * （註冊中心重載會換新物件）；revision 一對不上就整份丟掉，涵蓋「沒換物件但狀態變了」的重登。
+ * 漫畫源描述快取：依 revision 與 InstalledSource 快取 domain 描述，避免 render 重繪頻繁重新解析。
  */
 let infoCacheRevision = -1
 let infoCache = new WeakMap<InstalledSource, ComicSourceInfo>()
@@ -421,8 +394,7 @@ export function createComicLibrary(): ComicLibrary {
     chapter: async ref => {
       const { source, handle } = handleOf(ref.sourceKey)
       const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
-      // 詳情只用來補標題。已下載的章在離線層就有頁面清單，斷網時詳情拿不到也要開得起來，
-      // 所以那條路上把詳情的失敗收掉（標題退回 epId）；沒有離線檔時詳情照舊是必要條件。
+      // 詳情補全標題；已下載章節若詳情網路失敗退回以 epId 呈現。
       const offlineBefore = statusOf(key)
       const detailPromise = handle.detail(ref.comicId)
       const [detail, imageKeys] = await Promise.all([
@@ -430,8 +402,7 @@ export function createComicLibrary(): ComicLibrary {
         handle.chapter(ref.comicId, ref.epId),
       ])
       const chapter = detail?.chapters.find(entry => entry.id === ref.epId)
-      // 一個 session 一個取消範圍＋一條預取佇列＋**一份**正文記憶體快取（都是這一話的財產）；
-      // 換話／離開時整組放掉（dispose）。下載管線那一份是另一個實例，互不影響。
+      // 一個 session 包含獨立取消範圍、預取佇列與正文記憶體快取，生命週期隨 session dispose 釋放。
       const controller = new AbortController()
       const pageCache = createPageCache()
       /** 這一頁的圖片鍵；越界就拋（`imageKey` 與 `pageImage` 共用同一個守衛）。 */

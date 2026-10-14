@@ -1,36 +1,12 @@
-// 閱讀器：沉浸式全螢幕漫畫閱讀器（精準還原專用漫畫 App UI）。
+// 閱讀器：沉浸式全螢幕漫畫閱讀器。
 //
-// 1. 滿版全螢幕純黑畫布（fill.canvas），隱藏 TabBar、NavigationBar 與狀態列（全程隱藏，避免開關推擠）。
-// 2. 全螢幕 HUD Overlay：
-//    - 上／下工具列與遮罩都**恆在**，用 `offset` / `opacity` 收放。
-//    - 動畫靠 `animation={{animation, value: hudVisible.value}}`（屬性動畫），
-//      不用 `Transition` + `withAnimation`——那條路徑在這塊 overlay 上實測會退化成淡入淡出。
-//    - 隱藏時靠 `allowsHitTesting` 擋觸控（`opacity=0` 不會停掉命中測試）。
-//    - 目錄＝原生 iOS 半屏 Bottom Sheet（presentationDetents）；閱讀設定＝右上角齒輪的系統 `Menu`。
-//      両者都不自刻浮層：外觀、開關、點外面收起全交給系統。
-//
-// 閱讀模式（齒輪的閱讀設定可切，存於 `library/readerSettings.ts`）：
-//   - 畫廊：一張圖一頁，撐滿畫布，翻頁吸附（scrollTargetBehavior="paging"）。
-//   - 連續：沿著軸向平滑流動（縱向＝webtoon 寬度撐滿；橫向＝以畫布高度為準）。
-//   方向：左到右／右到左（橫向，RTL 用 layoutDirection 鏡像）／上到下（縱向）。
-//   兩種模式都以 `onScrollTargetVisibilityChange` 取「領先可見頁」寫回閱讀進度；
-//   `initialPage` 用 `scrollPosition`（綁 `useObservable`）還原到該頁。
-//
-// 換話是**就地換**（只改 `currentEpId`，不推新 route）：推新頁的話每換一話就多疊一層，
-// 一次看很多話之後返回要連點很多次才回得到詳情頁。
-//
-// 離線模式（`offlineMode`）：整條路只讀離線 manifest（`createOfflineSession`），不碰源也不發請求；
-// 目錄只列「下載完」的章。離線書架與下載頁的閱讀入口走這條。
-// 閱讀進度會一併記下 `offline` 旗標，續讀（歷史卡／首頁續讀卡）才知道要走離線（見 ResumeReaderScreen）。
-//
-// 翻頁手勢（閱讀設定可關，**只作用在橫向閱讀方向**）：畫布分三區——左右各 1/4＝上一頁／下一頁、中間 1/2＝HUD；
-// 翻頁是滑過去的（`withAnimation` + `scrollPos`，見 TURN_ANIM）。
-// 由右到左（rtl）時左右鏡像（下一頁在左邊）；由上到下（ttb）不做點擊翻頁，整頁點擊＝切 HUD。
-// 「頁」＝圖片索引，跟底欄頁碼同一個口徑。
-//
-// 底欄另有頁碼拖曳列（Slider）：拖曳中只動頁碼、放開才跳頁；逐格拉會連續觸發圖片載入。
-// 頁碼列的右緣是收藏（與詳情頁同一顆愛心，寫的是本地書架）。
-// 跳頁後到捲動落定前要擋掉可見集合回報，否則舊回報會把頁碼彈回去（`scrubTarget`）。
+// 架構與手勢約定：
+// 1. 純黑畫布（fill.canvas），隱藏 TabBar、NavigationBar 與狀態列。
+// 2. 全螢幕 HUD Overlay：以 offset / opacity 屬性動畫收放；目錄走原生 Bottom Sheet，設定走系統 Menu。
+// 3. 閱讀模式：畫廊（分頁吸附）與連續（平滑捲動）；方向支援橫向（LTR/RTL）與縱向（TTB）。
+// 4. 進度追蹤：以 onScrollTargetVisibilityChange 領先可見頁為準，就地換話不堆疊 route。
+// 5. 離線模式：讀離線 manifest 與本地檔，不發起網路請求。
+// 6. 翻頁分區：橫向模式左右 1/4 翻頁、中間 1/2 切換 HUD（手勢採 global 座標系）。
 
 import {
   Button,
@@ -78,14 +54,7 @@ import { createOfflineSession, isOfflineReadable } from "./offlineSession"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
-/**
- * 單擊翻頁的滑動動畫。
- *
- * 只有「`withAnimation` 包住 `scrollPos.setValue`」這條路會有動畫；
- * 直接 setValue 是瞬間跳頁，而 `ScrollViewReader` 的 `proxy.scrollTo` 在這塊
- * lazy 內容上會捲不動（實測卡在同一頁），所以不走它。
- * 曲線試過 spring 0.3／0.22／0.15 與 easeOut 0.2，最後留短彈實 0.15（翻起來比較有「翻頁」感）。
- */
+/** 單擊翻頁的滑動動畫（需以 withAnimation 包覆 scrollPos.setValue）。 */
 const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
 
 /** 量到就回報（放在 `background` 的 `GeometryReader` 裡，不影響版面）。 */
@@ -235,25 +204,15 @@ function ReaderContent({
   const entryRestore = entryPage.current !== undefined && entryPage.current > 0 ? entryPage.current : null
   const restoringEntry = currentEpId === entryEpId.current && entryRestore !== null
   const [leadingPage, setLeadingPage] = useState<number | null>(restoringEntry ? entryRestore : null)
-  // 還原捲動完成前忽略可見集合回報：第一次排版會先落在頂端並回報第 1 頁，
-  // 那個過期值會把存好的頁碼蓋掉。
+  // 還原捲動完成前忽略可見集合回報，避免頂端初次回報覆蓋進度
   const restored = useRef(!restoringEntry)
-  // 還原用：可程式化捲動的雙向綁定。設值可重複生效（{value,onChanged} 那個寫法只喫第一次、且 onChanged 不回報）。
   const scrollPos = useObservable("0")
-  // 頁碼拖曳列：綁 Observable（{value,onChanged} 那個寫法會多繞一次 React 更新，拖起來會頓）。
-  // 拖曳中是唯一值來源；沒拖曳時由 effect 同步成實際閱讀位置。
   const scrubValue = useObservable(0)
   const [scrubbing, setScrubbing] = useState(false)
-  // 非 null＝正在等捲動走到該頁，期間忽略可見集合回報。
+  // 非 null 期間忽略可見回報（等候捲動到達目標頁）
   const scrubTarget = useRef<number | null>(null)
-  // 動畫翻頁的目標頁（語意同 scrubTarget）：動畫途中會經過中間頁，
-  // 那些回報會把頁碼往回拉一格再跳回來，所以先擋掉。
   const turnTarget = useRef<number | null>(null)
-  // 三個兜底閘門的計時器 handle（還原 800ms、拖曳與翻頁各 600ms）。
-  // 這三個都要能被清掉：換話是同一層 route 就地換、離開閱讀器也只是這個畫面消失，
-  // 計時器不會自己停——不收回來就會跑過這一話，後人也不該以為這種寫法可以照抄。
-  // ⚠️ 比 `null`，不能寫 `if (timer)`：這個 runtime 的 setTimeout 回傳 number，
-  // 而且**第一個一定是 0**（falsy），那一個用真假值判斷會清不掉。
+  // 閘門計時器 handle（⚠️ runtime setTimeout 返回值可為 0，比對需為 !== null）
   const restoreTimer = useRef<number | null>(null)
   const scrubTimer = useRef<number | null>(null)
   const turnTimer = useRef<number | null>(null)
@@ -276,10 +235,8 @@ function ReaderContent({
   const index = currentGroupChapters.findIndex(chapter => chapter.id === currentEpId)
   const previous = index > 0 ? currentGroupChapters[index - 1] : undefined
   const next = index >= 0 && index < currentGroupChapters.length - 1 ? currentGroupChapters[index + 1] : undefined
-  // 章節連標題都沒有時的替代字是**我們的文案**（會出現在 HUD 與章末卡片），所以進字典；
-  // 在 render 時求值，換語言下一次 render 就跟著換。
+  // 章節預設標題在 render 時求值以支援語言切換
   const title = (index >= 0 ? currentGroupChapters[index]?.title : chapters.find(c => c.id === currentEpId)?.title) || t("reader.chapterFallback", { n: Math.max(1, index + 1) })
-  // 「頁」＝圖片索引；頁數由 session 給（下載過的章就是離線 manifest 的張數）。
   const pageCount = session?.pageCount ?? 0
 
   useEffect(() => {
@@ -426,10 +383,7 @@ function ReaderContent({
   }
 
   /**
-   * 翻一頁（頁＝圖片索引，跟底欄頁碼同口徑）：把領先可見頁往前／後推一格，
-   * 用 `scrollPos` 捲過去。畫廊與連續都一樣——連續模式就是「跳到上／下一張圖的頂端」。
-   * 順手樂觀更新 `leadingPage`，連點時下一擊才是從新位置算；`turnTarget` 則擋掉
-   * 動畫途中那些過期的可見集合回報。
+   * 翻一頁（往前後推一格並以 scrollPos 捲動，翻頁中忽略過期可見回報）。
    */
   function turnPage(delta: 1 | -1) {
     if (pageCount === 0 || leadingPage === null) return
@@ -438,8 +392,7 @@ function ReaderContent({
     turnTarget.current = target
     setLeadingPage(target)
     void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
-    // 兜底：單張圖那種不必捲動的情形不會有回報，別讓閘門永遠關著。
-    // 先清上一次的兜底（連點翻頁會各排一個，舊的不該留著），再排這次的。
+    // 兜底計時器：防範無位移時回報中斷導致閘門常閉
     clearGate(turnTimer)
     turnTimer.current = setTimeout(() => {
       turnTimer.current = null
@@ -448,11 +401,8 @@ function ReaderContent({
   }
 
   /**
-   * 畫布點擊：三區翻頁（左／中／右）；沒開分區、或閱讀方向是上到下連續模式時，整頁點擊＝切 HUD。
-   *
-   * 座標空間契約：手勢必須宣告為 `coordinateSpace: "global"`（見 ScrollView:onTapGesture）。
-   * 原因是若宣告為 "local"，ScrollView 回傳的是內容絕對座標（Content Offset），橫向或縱向
-   * 捲動過第 1 頁後 location 會累計位移達數百至數千點，導致判定永遠漂出中間區。
+   * 畫布點擊：三區翻頁與 HUD 切換。
+   * 手勢採 global 座標空間，避免 local 座標隨捲動累積漂移。
    */
   function handleCanvasTap(location: Point) {
     // 縱向畫廊模式：支援上 1/4 上一頁、下 1/4 下一頁、中 1/2 切 HUD
@@ -488,8 +438,7 @@ function ReaderContent({
   const paginated = settings.mode === "gallery"
 
   const axes = readerAxis(settings.direction)
-  // 畫布尺寸要量「盒子自己」：`GeometryReader(ignoresSafeArea:)` 的 `size` 是安全區盒（少上下安全區），
-  // 拿它當頁面框會讓每頁短一節（縱向畫廊的最後一頁還因此被壓在底部）。差異見 dev/probe-canvas-box.tsx。
+  // 畫布尺寸需量測外框自身尺寸以避免忽略安全區時的高度落差
   const [canvasBox, setCanvasBox] = useState<{ width: number; height: number } | null>(null)
   const pageSize = canvasBox ?? viewport
 
@@ -513,18 +462,7 @@ function ReaderContent({
     }
   }
 
-  // 每一頁的排版：畫廊＝一張圖一頁、撐滿螢幕；橫向連續＝以畫布高度為準；縱向連續＝寬度撐滿。
-  // 縮放只做在**畫廊模式**（單頁、錨點算得準）。
-  // 連續模式不做：畫布在 ScrollView 裡拿不到捲動位移（`ScrollProps` 沒有 scroll offset API），
-  // 手勢座標是畫布座標 → 算不出「點在畫布的哪裡」→ 錨點一定偏；試過的替代寫法也都會
-  // 踩到引擎的手勢仲裁限制（見 components/ZoomableView 檔頭）。
-  // 這一疊頁面只在「這一話、頁數、版面形狀、畫布尺寸」真的變了才重建。
-  // （左到右／右到左的鏡像是 ScrollView 的 environment，不在頁面本身，所以 rtl 不是 dep。）
-  // 不包起來的話，每一次重繪都會重建 N 個 element——捲動時 `leadingPage` 一直變，
-  // 目錄／HUD 開關、收藏也都會讓這個元件重繪（200 頁的章節＝200 個，畫廊模式還各多一層 ZoomableView）。
-  // deps 只放純值：`pageSize`（＝`canvasBox ?? viewport`）這個物件每次 render 都是新的，包了等於沒包，
-  // 所以拆成 width／height；`session` 是 state（一話一份），只會在換話／重開時變。
-  // 換話要整棵重建是刻意的：`currentEpId` 同時是 ScrollView 的 key 與縮放的 resetToken（換話＝從頭讀）。
+  // 頁面列表記憶化：縮放僅限畫廊模式（單頁錨點明確）；deps 取純值避免因物件重建引發整批元件重算。
   const pages = useMemo(
     () =>
       session
@@ -678,9 +616,9 @@ function ReaderContent({
           scrollTargetBehavior={
             paginated
               ? vertical
-                ? "viewAlignedLimitAlwaysByOne" // 縱向畫廊：iOS 原生嚴格單頁吸附，一次手勢只翻一頁，絕不停在半中間！
-                : "paging"                      // 橫向畫廊：標準 paging
-              : undefined                       // 連續模式：自由平滑流動
+                ? "viewAlignedLimitAlwaysByOne" // 縱向畫廊：單頁吸附
+                : "paging"
+              : undefined                       // 連續模式：平滑流動
           }
           scrollPosition={{ value: scrollPos, anchor: "topLeading" }}
           onScrollTargetVisibilityChange={{
@@ -706,15 +644,13 @@ function ReaderContent({
             },
           }}
           environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
-          // ⚠️ 必須為 global：若為 local，ScrollView 翻過第 1 頁後 location 會包含累計滾動位移，導致點擊區域判定完全漂移
+          // 座標系必須宣告為 global，避免 local 包含累計滾動位移導致點擊分區漂移
           onTapGesture={{ count: 1, coordinateSpace: "global", perform: handleCanvasTap }}
           onScrollGeometryChange={{
             of: "geometry",
             onChanged: (_, geo) => {
               if (!next) return
-              // 防誤觸守衛：必須已滾動或閱讀至章節末尾附近，才允許觸發 overscroll
-              // 1. 若內容長度不足一屏（短章節或單圖），必須確實滾動過末端；
-              // 2. 畫廊或連續模式下，可見頁碼必須在最後 1~2 頁之內（避免開頭或中間大幅彈動誤觸）
+              // 防誤觸守衛：僅在接近章末（最後 1~2 頁或確實滾至末端）時允許觸發 overscroll
               if (pageCount > 0 && leadingPage !== null && leadingPage < lastPage - 1) {
                 if (pullProgress > 0) {
                   setPullProgress(0)

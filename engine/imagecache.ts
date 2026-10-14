@@ -1,14 +1,6 @@
-// 縮圖磁碟快取（封面／頭像／留言圖）。**正文不在這裡**——正文走 `engine/pageimages.ts`
-// 的記憶體管線（看過短時間不會重看，不該長期佔著磁碟）。
-//
-// 為什麼不直接用 <Image imageUrl>：它不能帶 Referer / Cookie，而漫畫站的圖幾乎都會擋。
-// 所以一律由我們自己抓位元組，存成本地檔案再顯示——順便就是快取。
-//
-// 來源要求的兩段後處理都在這條路上：onResponse（改寫位元組，例如 ccc 的 AES）與
-// modifyImage（重排圖片，例如 jm 的條帶）。合成器由 UI 層注入——engine 不碰 UI 框架；
-// 沒注入時遇到 modifyImage 就明確失敗，而不是默默顯示未處理的圖。
-//
-// 清理由 `clearImageCache()`（設定頁的「清除縮圖快取」）負責。
+// 縮圖磁碟快取（封面／頭像／留言圖）。
+// 負責縮圖抓取、onResponse 與 modifyImage 後處理及磁碟快取管理。
+// 正文圖片走記憶體管線（engine/pageimages.ts），不在此落地。
 
 import type { AbortSignal } from "scripting"
 
@@ -40,10 +32,7 @@ function hashKey(value: string): string {
   return Convert.hexEncode(Convert.md5(Convert.encodeUtf8(value)))
 }
 
-/**
- * 快取鍵要含 modifyImage 的內容：同一張圖在不同 epId 下的重排參數可能不同，源更新也會改腳本。
- * 只用 URL 當鍵的話，「圖錯了但快取住了」會很難追。
- */
+/** 快取鍵包含 URL 與 modifyImage 腳本，避免後處理參數變更時命中錯誤快取。 */
 function cachePath(spec: ImageRequestSpec): string {
   return join(cacheDir(), hashKey(spec.url + "\n" + (spec.modifyImage ?? "")) + ".bin")
 }
@@ -71,11 +60,7 @@ export function toCacheSpec(request: ImageRequest): ImageRequestSpec {
 }
 
 /**
- * 網路 → `onResponse` → `modifyImage`：源的兩段後處理都在這裡，**不碰磁碟**。
- *
- * 兩個消費端共用（舊的磁碟快取、正文的記憶體管線 `pageimages.ts`），
- * 所以「圖抓到了但後處理沒跑」不可能發生——後處理是這支函式的一部分，拆不掉。
- * `signal` 只有真的有給才生效（不給＝不可取消，舊路徑行為不變）。
+ * 抓取圖片並依序套用 onResponse 與 modifyImage 後處理（不觸及磁碟快取）。
  */
 export async function fetchProcessedImage(
   spec: ImageRequestSpec,
@@ -106,7 +91,7 @@ export async function fetchProcessedImage(
   return bytes
 }
 
-/** 跟 Venera 一樣：重試上限，但因為 onLoadFailed 是一次性的，通常只會用到一次。 */
+/** 請求重試上限。 */
 const RETRY_LIMIT = 5
 
 /** 跑源的 onLoadFailed 並把結果正規化；不是普通物件（含 null）就當作放棄。 */
@@ -116,7 +101,6 @@ async function askRetry(handler: () => unknown, fallbackUrl: string): Promise<Im
     if (!result || typeof result !== "object" || Array.isArray(result)) return null
     return normalizeImageConfig(fallbackUrl, result)
   } catch (error) {
-    // Venera 會讓 onLoadFailed 的錯直接往外傳；我們記一筆然後回報原本的錯誤，比較好追。
     log("warning", "image", "onLoadFailed 丟錯", error)
     return null
   }
@@ -300,26 +284,16 @@ export async function autoCleanImageCache(): Promise<{ removedCount: number; fre
   }
 }
 
-/** 舊版的圖片快取（正文與縮圖混在同一個目錄、鍵不含種類）。 */
 const PURGE_FLAG = "vesper.imagecache.purged-legacy"
 
-/**
- * 一次性清空舊的圖片快取。
- *
- * 那一版正文也寫在這裡（鍵不含圖片種類），分不出哪些檔案是正文——沒必要寫遷移邏輯，
- * 整個目錄清掉讓縮圖自己重建。**只做一次**（旗標記在 Storage），啟動時呼叫。
- */
+/** 一次性清理舊版混合正文的快取目錄（以 Storage 旗標標記只執行一次）。 */
 export function purgeLegacyImageCacheOnce(): void {
   if (kv.contains(PURGE_FLAG)) return
   remove(cacheDir())
   kv.set(PURGE_FLAG, true)
 }
 
-/**
- * 縮圖快取目錄裡有幾個檔案；讀不到回 `null`。
- *
- * **回數字不回字串**：這裡是 engine，不該產生給人看的文案 —— 那句話由畫面用 `t()` 組。
- */
+/** 取得縮圖快取檔案總數，讀取失敗回傳 null。 */
 export function cacheFileCount(): number | null {
   try {
     const dir = cacheDir()

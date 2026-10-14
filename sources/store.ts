@@ -1,12 +1,5 @@
-// 源的落地儲存。一源一檔，加上一份 index.json 記錄 metadata 與啟用狀態：
-//
-//   <documents>/Vesper/sources/index.json     { version, sources: StoredSource[] }
-//   <documents>/Vesper/sources/<key>.js       源的原始碼（原封不動）
-//
-// 放 documents（Files app 看得到）而不是 App Group，是為了之後接 iCloud 同步時
-// 只要把 appDataRoot() 換成 iCloudDocumentsDirectory 就好。
-//
-// 沒有檔案授權時退回 Storage KV，App 仍可用，但 UI 會顯示警告。
+// 漫畫來源本地儲存模組：儲存 index.json 與各源獨立 .js 原始檔。
+// 若未獲檔案系統授權則自動退守 Storage KV 備援機制。
 
 import { appDataRoot, ensureDir, exists, fileAccess, hasFileAccess, join, readText, remove, writeText } from "../engine/fs"
 import { kv } from "../engine/storage"
@@ -77,7 +70,7 @@ function writeIndex(list: StoredSource[]) {
   writeText(indexPath(), JSON.stringify(payload, null, 2))
 }
 
-/** 第一次拿到檔案授權時，把舊的 KV 資料搬過來（一次性）。 */
+/** 獲得檔案授權時將 KV 舊資料單向遷移至磁碟檔案（一次性）。 */
 function migrateFromKvIfNeeded() {
   if (exists(indexPath())) return
   const legacy = kv.get(KV_META_KEY)

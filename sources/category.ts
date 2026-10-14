@@ -1,13 +1,5 @@
-// 源的「分類頁」宣告（`instance.category.parts`）→ UI 可以直接畫的 chips，
-// 以及 `categoryComics.optionList`／`optionLoader` → 每個分類自己的篩選列。
-//
-// 三種 part：
-//   fixed  ：`categories[]` 與 `categoryParams[]` 一一對應；兩者長度可以不一致，
-//            項目也可以是 `{label, target}`（hcomic），或整個用運算式算出來（happy / comick）。
-//   random ：同 fixed，但只隨機挑 `randomNumber` 個（nhentai 的標籤）。
-//   dynamic：`loader()` 回 `[{label, target}]`，可能 async、可能丟錯（komga 沒同步過書庫就回空）。
-//
-// 一律讀沙箱求值後的 instance：靜態解析原始碼會漏掉 `Object.keys(...)` 這類寫法。
+// 來源分類頁解析：將 category.parts 解析為 UI 分類 chips（支援 fixed/random/dynamic），
+// 並透過 categoryComics.optionList 或 optionLoader 讀取專屬篩選列。
 
 import { normalizeJumpTarget, type JumpTarget } from "../engine/adapt"
 import { t } from "../i18n"
@@ -93,12 +85,8 @@ function randomIndexes(total: number, count: number): number[] {
     .sort((a, b) => a - b)
 }
 
-// ---------------------------------------------------------------- 篩選列
-//
-// 源在 `categoryComics.optionList` 宣告「這個分類有哪些篩選列」（happy / ccc / manhuaren 有列名，
-// copy_manga 用 showWhen 把排行專用的兩列隔開）。**列順序就是 `load` 收到 `options` 的順序**，
-// 沒宣告時才輪到 `optionLoader(category, param)`（1.5.0 起，動態、可能 async）。
-// 值的解析（含 `-` 的切法）與列的正規化在 `options.ts`，三個地方共用。
+// ---------------------------------------------------------------- 篩選列解析
+// 依據 categoryComics.optionList 或 optionLoader 動態加載當前分類適用的篩選列。
 
 export type CategoryOption = OptionItem
 export type CategoryOptionRow = OptionRow
@@ -113,8 +101,7 @@ function optionRowVisible(row: Record<string, any>, category: string): boolean {
 }
 
 /**
- * 這個分類有哪些篩選列。抓不到（源沒宣告、loader 丟錯）就回空陣列 —— 篩選列不是必需的，
- * 但對 copy_manga 這種「load 會讀 options[0]」的源來說，少送就是 210。
+ * 載入指定分類項目的篩選列清單（未宣告或載入失敗時回傳空陣列）。
  */
 export async function loadCategoryOptionRows(
   source: InstalledSource,

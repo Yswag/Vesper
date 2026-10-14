@@ -1,10 +1,4 @@
-// 離線閱讀的 ChapterSession：整條路只讀離線 manifest 與本機檔案。
-//
-// 為什麼不沿用 ComicLibrary 的 chapter()：那條路進來會先 requireSource 再問一次詳情，
-// 飛航模式下不該有任何碰源的機會。這一話能不能讀，進來之前就由離線狀態決定了。
-// 因此這裡不 import sources/*，也不發任何請求：頁面清單與位元組都來自引擎的離線層。
-//
-// 另外收了 `canResumeOffline`：續讀入口與歷史卡的標籤共用這一條判定（只讀離線層，也一樣不碰源）。
+// 離線閱讀 ChapterSession：完全依賴本機離線 manifest 與已下載檔案，不發起網路請求。
 
 import type { ChapterSession, PageRender } from "../../app/comic"
 import { readBytes } from "../../engine/fs"
@@ -21,21 +15,14 @@ export function isOfflineReadable(key: OfflineKey): boolean {
 }
 
 /**
- * 續讀時要走離線嗎：**上次是在離線模式讀的**（書架上的 `Progress.offline`），而且那一話還在下載裡。
- *
- * 只看「有沒有下載」是不夠的：線上看過的作品只要下載過就會被拉進離線（目錄只剩已下載的章，是退化）。
- * 反過來，下載被刪掉就別再走離線——退回線上那條路（源還在的話）。
- * 歷史卡（顯示什麼標籤）與續讀入口（真的走哪條路）共用這一條，顯示與行為才不會不一致。
+ * 判斷續讀是否走離線模式（上次以離線閱讀且該章節仍保留於本機）。
  */
 export function canResumeOffline(key: OfflineKey, offline: boolean | undefined): boolean {
   return offline === true && isOfflineReadable(key)
 }
 
 /**
- * 用離線 manifest 開一個閱讀 session。
- *
- * 沒下載完的章不該走到這裡（呼叫端已先篩過）；真的走到了就讓 `pageImage` 在缺的那一頁拋錯，
- * ChapterImage 會把訊息顯示出來，不會崩潰。
+ * 透過離線 manifest 建立閱讀會話。
  */
 export function createOfflineSession(key: OfflineKey): ChapterSession {
   const chapter = chapterOf(key)
@@ -51,8 +38,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
 
   let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
 
-  // 超分圖要寫檔（它是記憶體裡的位元組）；原圖不必——離線的原圖本來就是磁碟上的檔，
-  // 直接把那個路徑交給 Canvas 就是零複製。
+  // 原圖直接採用本地磁碟檔案路徑；超分圖產生後寫入 session 暫存目錄供 Canvas 渲染
   const renderDir = openRenderDir(key.epId)
   let disposed = false
 

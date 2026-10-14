@@ -1,7 +1,5 @@
-// 源的執行期註冊中心：把盤上的源載進沙箱、快取實例、對 UI 廣播變動。
-//
-// 單一真相源是 store（Storage）。這裡只是「載入後的即時視圖」，不持有第二份資料，
-// 避免出現「註冊中心有一份、盤上又有一份」的同步問題。
+// 來源執行期註冊中心：載入漫畫源沙箱實例，管理生命週期並對外廣播變更。
+// 單一真相源為 Storage（store.ts）。
 
 import { clearCookies } from "../engine/cookies"
 import { clearCredentials, loadCredentials, saveCredentials } from "../engine/credentials"
@@ -34,9 +32,7 @@ export interface InstalledSource {
 let current: InstalledSource[] = []
 
 /**
- * 「載入後的視圖」換過幾次。`app/comic.ts` 拿它當源描述快取的版本號：數字一變，
- * 那邊留著的描述就整份作廢。`reloadRegistry()` 會換掉全部源物件（物件本身就能當版本），
- * 但 `reloginSource()` 刻意**不**重建註冊中心（見該函式），它改的是登入狀態，所以也要推一格。
+ * 來源視圖版本號：在 reloadRegistry 或更新登入狀態時遞增，供外部快取判定失效。
  */
 let revision = 0
 
@@ -45,7 +41,6 @@ export function sourcesRevision(): number {
   return revision
 }
 
-/** 訂閱者出事要看得到（以前是 "訂閱者拋錯 " 記一筆 log，行為照舊）。 */
 const bus = createEmitter({
   onListenerError: error => log("error", "sources", "訂閱者拋錯", error),
 })
@@ -101,8 +96,7 @@ export function reloadRegistry() {
         })
       )
       const { defaults, specs } = extractSettings(loaded.instance)
-      // 回填：settings 是後來才開始存的，舊資料沒有，這裡自動補預設值並寫回，
-      // 不需要使用者重新安裝。
+      // 回填：自動補齊宣告的預設設定值
       const merged = mergeSettings(defaults, entry.settings)
       if (JSON.stringify(merged) !== JSON.stringify(entry.settings ?? {})) {
         store.updateSettings(entry.key, merged)
@@ -131,11 +125,7 @@ export function setSourceEnabled(key: string, enabled: boolean) {
 }
 
 /**
- * 拖曳排序：把已安裝的源換成新的先後順序。
- *
- * 刻意**不呼叫 `reloadRegistry()`**：順序只是視圖的排列，源的實例（已 eval 的沙箱）完全不受影響，
- * 重建一次就是把每個源重新 eval。也**不推 `revision`**：源自己的描述（名稱／能力／optionList）
- * 沒變，推一格會讓 `app/comic.ts` 那份描述快取整份作廢、每一頁重算。這裡只要把 `current` 排成同一個順序再廣播。
+ * 拖曳排序：更新已安裝來源的順序並廣播變更（不重建沙箱實例與 revision）。
  */
 export function reorderSources(keys: string[]): boolean {
   if (!store.reorderSources(keys)) return false
@@ -155,23 +145,10 @@ export function reorderSources(keys: string[]): boolean {
   return true
 }
 
-/**
- * 呼叫每個源的 init()（Venera 在安裝/重載時會呼叫，最多等 15 秒）。
- * 有些源會在這裡先把網域清單、token、預設設定準備好，沒跑的話第一個請求就會壞掉
- * （例如 mxs 的 URL 是 init 準備的，不跑就送空網址）。
- */
-/** 已經跑過 init() 的源（以 key 記；重載清空）。 */
 const initTasks = new Map<string, Promise<void>>()
 
 /**
- * 確保某個源的 init() 跑過。**按需觸發**，不在開場對所有源跑。
- *
- * 為什麼不開場全跑：你可能裝了 30 個源只用 3 個；開場會被最慢的那個綁住；
- * 而且一個源的 init 寫壞（例如 comic_walker 的無限重試迴圈）就會拖垮整個 App，
- * 就算你根本不用它。改成「要用之前才 init」。
- *
- * **不可取消**：這是每源一個共用的 promise（同一個源的所有呼叫端共用同一個），取消只能「不再等」，
- * 不能真的殺掉已經在跑的 `init()`（取消的範圍只包住源的呼叫，見 `engine/scope.ts`）。
+ * 確保來源的 init() 異步初始化已執行（按需觸發，共用 Promise 不重複發起）。
  */
 export function ensureSourceReady(key: string): Promise<void> {
   const existing = initTasks.get(key)
@@ -232,8 +209,7 @@ export interface InstallResult {
 }
 
 /**
- * 從單一源的原始碼安裝。`expectedKey` 有值時會驗證源宣告的 key 相符
- * （Venera 更新時就是這樣擋「把一個源換成另一個源」）。
+ * 從單一來源原始碼安裝或更新。
  */
 export function installSourceCode(code: string, origin: string | null, expectedKey?: string): InstallResult {
   const probe = loadSource(code, createHostContext("probe", { settings: {} }))
@@ -276,12 +252,7 @@ export interface ImportReport {
 }
 
 /**
- * 安裝一個倉庫索引裡的全部條目。
- * `catalogUrl` 是索引本身的 URL，用來解析相對路徑；貼上純文字時為 null，
- * 那種情況下只接受帶絶對 url 的條目（跟 Venera 要求補「原始來源列表地址」同理）。
- *
- * 撞 key 照 Q33：同批只留第一個，其餘進 skipped 讓 UI 告知使用者
- * （venera-configs 的 copy_manga 就是兩個變體共用一個 key）。
+ * 安裝倉庫索引中的來源條目（同批若有同 key 條目僅安裝首項）。
  */
 export async function installCatalog(entries: CatalogEntry[], catalogUrl: string | null): Promise<ImportReport> {
   const installed: InstallResult[] = []
@@ -479,11 +450,7 @@ export async function loginWithPassword(key: string, account: string, password: 
 }
 
 /**
- * Cookie 欄位登入：源宣告 `fields` 與一個 `validate(values)`，值只交給源自己判斷。
- *
- * 跟 Venera 一樣，**宿主不代寫 cookie**：源的 `validate` 需要 cookie 就會自己呼叫
- * `Network.setCookies`（mycomic 的 cf_clearance、ehentai 的 ipb_* 都是這樣寫的）。
- * 而且源宣告的 `url` 欄位是「更新網址」（jsdelivr），拿它當 cookie 網域本來就是錯的。
+ * Cookie 欄位登入：由來源的 validate(values) 進行校驗與 cookie 注入。
  */
 export async function loginWithCookies(key: string, values: string[]): Promise<void> {
   const source = findSource(key)
@@ -562,13 +529,7 @@ function syncStoredAccount(source: InstalledSource) {
 }
 
 /**
- * 登入過期時，用存好的憑證再登入一次（憑證在 Keychain，`engine/credentials.ts`）。
- *
- * 刻意**不重建註冊中心**：`reloadRegistry()` 會把全部源重載，而且會換掉進行中操作
- * 持有的實例（換掉之後重試就會用到沒登入的舊實例）。這裡直接重跑源自己的
- * `account.login` / `loginWithCookies.validate`，登入狀態就落在同一個實例上。
- *
- * 只能瀏覽器登入（`loginWithWebview`）的源沒有存下憑證 → `no-credentials`。
+ * 登入過期時以既有憑證重試登入（直接在既有實例上執行，不重建沙箱）。
  */
 export async function reloginSource(source: InstalledSource): Promise<ReloginOutcome> {
   const account = source.instance?.account

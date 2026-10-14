@@ -1,22 +1,10 @@
-// 可縮放的內容容器：捏合縮放（1–maxZoom）、放大後拖曳平移（夾在圖片邊緣）、
-// 雙擊以「點到的位置」為錨點縮放。
+// 可縮放內容容器：支援捏合縮放（1–maxZoom）、雙擊錨點縮放與放大後平移拖曳。
 //
-// 給兩種地方用：封面的原圖檢視器（`CoverViewerScreen`）與閱讀器的漫畫頁。
-//
-// 四個關鍵設計（都是踩過坑才定下來的）：
-// ① **手勢物件只建一次**（`useMemo(..., [])`），callback 讀 `useRef` 的最新值。
-//    在 render 裡重建 GestureInfo 會讓引擎重新接管手勢、`onChanged` 反覆進來，
-//    值被反覆相乘（輕輕捏就爆大）並把 App 卡死閃退。
-// ② 手勢值當**累積量**：手勢開始時記下 `startZoom`/`startPan`，之後一律用
-//    `start * value` 算絕對值（不是累加增量）——這樣第一個取樣就生效、跟手不延遲。
-// ③ **`onZoomChange` 只在手勢結束時通知**：如果每次縮放都通知，父層會在捏合進行中
-//    改 `scrollDisabled` → 外層 ScrollView 重建 → 手勢被打斷（症狀：第一次捏合卡在一半，
-//    第二次才正常）。
-// ④ **沒放大時不掛拖曳手勢**（`simultaneousGesture` 給 undefined）：外層 ScrollView
-//    才能正常捲動／翻頁；放大後才接管拖曳做平移（父層同時 `scrollDisabled`）。
-//
-// `contentSize` 給了就用（例：畫廊＝整個 viewport）；沒給就自己量（hug 內容，
-// 用 background 的 GeometryReader）——縱向連續的頁高量不到，就是靠這個拿到真實尺寸。
+// 手勢實作防護原則：
+// 1. 手勢物件以 useMemo 保持單一實例，回調透過 useRef 讀取最新狀態，防範重複宣告引發崩潰。
+// 2. 縮放與平移採累積量絕對值計算，提升跟手流暢度。
+// 3. onZoomChange 僅在手勢結束（onEnded）時觸發，防範進行中改變父層捲動屬性導致手勢中斷。
+// 4. 未放大狀態不掛載拖曳手勢，避免阻斷外層 ScrollView 滑動與翻頁。
 
 import {
   DragGesture,
@@ -75,8 +63,7 @@ export function ZoomableView({
   const [measuredContent, setMeasuredContent] = useState({ width: 0, height: 0 })
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  // 拖曳手勢要不要掛上：**只在手勢結束時更新**（捏合期間接法必須固定，否則會被引擎重新接管）。
-  // 未放大時不掛 → 外層 ScrollView 的捲動／翻頁才不會被擋掉。
+  // 拖曳手勢掛載狀態：僅在手勢結束時更新；未放大時不掛載以保留外層 ScrollView 捲動能力
   const [dragEnabled, setDragEnabled] = useState(false)
   const latest = useRef({
     zoom: 1,
@@ -95,7 +82,7 @@ export function ZoomableView({
   latest.current.content = content
 
   const clampZoom = (value: number) => Math.min(maxZoom, Math.max(1, value))
-  /** 平移夾在「放大後多出來的部分」之內 → 圖片邊緣最多貼齊畫面邊緣，不會拖出空白。 */
+  /** 將平移量限制在溢出邊界內，防止拖出內容空白區域。 */
   const clampPan = (value: { x: number; y: number }, atZoom: number) => {
     if (!shouldClamp) return value
     const maxX = Math.max(0, (content.width * atZoom - viewport.width) / 2)

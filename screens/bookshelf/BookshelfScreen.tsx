@@ -138,8 +138,7 @@ export function BookshelfScreen() {
 /** 閱讀歷史卡片：小封面 + 標題／來源·話數／頁數·時間，右側箭頭。 */
 export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: () => void }) {
   const source = comicLibrary().source(entry.sourceKey)
-  // 這筆點下去會不會走離線（上次是離線讀的 + 那一話還在下載裡）：標籤與能不能點都看它。
-  // 沒下載的、或下載被刪掉的，就退回原本「要源才進得去」那條。
+  // 判斷是否可走離線續讀；若無離線則退回線上來源開啟
   const offline = canResumeOffline(
     { sourceKey: entry.sourceKey, comicId: entry.comicId, epId: entry.epId },
     entry.offline

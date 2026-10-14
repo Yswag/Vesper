@@ -53,18 +53,8 @@ export function SourceListScreen() {
   const rows: SourceRow[] = sources.map(source => ({ id: source.stored.key, source }))
 
   /**
-   * 拖曳排序：**拖曳中不動資料、也不動顯示順序**，放手才寫入（包動畫）。
-   *
-   * 為什麼不放更多：
-   *   · 邊拖邊寫 → 引擎的 hover 判定回饋到自己（相鄰的列一直抖、卡片間隙亂跳）。
-   *   · 拖曳中換「顯示順序」（讓空格跟著跑）也會抖，而且引擎放手後不一定把 `dragging`
-   *     清成 null，拿起的那一格就會一直留著洞。⇒ 兩個都不要。
-   *
-   * 留下來的三件事（實機收斂）：① 拿起的那列留空（讀引擎寫的 `dragging`）
-   * ② 拖曳中只把算好的順序存起來（不碰畫面）③ 放手才寫入、包動畫。
-   *
-   * `onMove` 的索引是相對**這輪開始**的順序、同一輪會叫很多次 → 一輪只取一次快照；
-   * `newOffset` 是**搬走前**的座標 → 往下搬要扣掉落在它前面的被搬列。
+   * 拖曳排序機制：拖曳過程中僅以 Y 軸 offset 模擬位置挪動，
+   * 待使用者放手後才以動畫將最終順序持久化寫入 store。
    */
   const dragSnapshot = useRef<SourceRow[] | null>(null)
   const lastActiveId = useRef<string | null>(null)
@@ -165,20 +155,17 @@ export function SourceListScreen() {
               onMove={handleMove}
               builder={(row, index) => {
                 const isLifted = activeDraggingKey !== null && row.id === activeDraggingKey
-                // 計算位移：拿起項原本在 fromIndex，現在目標要插在 targetIndex
+                // 計算視覺位移：將中間項目往上或往下挪出一個空位
                 const fromIndex = activeDraggingKey !== null ? rows.findIndex(r => r.id === activeDraggingKey) : -1
                 let offsetY = 0
                 if (targetIndex !== null && fromIndex >= 0) {
                   if (isLifted) {
-                    // 拿起來的透明空格，視覺上直接位移到 targetIndex 的位置
                     offsetY = (targetIndex - fromIndex) * ROW_HEIGHT
                   } else if (fromIndex < targetIndex) {
-                    // 往下拖：介於 (fromIndex, targetIndex] 之間的列往上挪出位置
                     if (index > fromIndex && index <= targetIndex) {
                       offsetY = -ROW_HEIGHT
                     }
                   } else if (fromIndex > targetIndex) {
-                    // 往上拖：介於 [targetIndex, fromIndex) 之間的列往下挪出位置
                     if (index >= targetIndex && index < fromIndex) {
                       offsetY = ROW_HEIGHT
                     }

@@ -1,13 +1,5 @@
-// Venera 的 modifyImage：源給一段 JS 字串，宿主把解碼後的圖交給它重排。
-//
-// 契約以 venera 本體的 assets/init.js 為準：Image 的 7 個成員**全部同步**、越界直接拋錯（不裁切）。
-// 因為契約是同步的，這裡不可能跟宿主要一張渲染好的圖，所以 Image 只是「貼圖清單」——
-// 哪張來源圖的哪個矩形要貼到輸出的哪裡；真正的合成由 UI 層注入的 compositor 做（engine 不碰 UI）。
-//
-// 沙箱只給 Image 與無害的標準物件：源的 modifyImage 是一段資料，不是我們信任的程式碼。
-//
-// 註：33 個真實源裡只有 jm 用 modifyImage，而 jm 只用 empty / fillImageRangeAt / width / height。
-// 其餘成員照契約實作，但沒有真實案例可驗，只有自寫的合成測試在顧。
+// 圖像後處理（modifyImage）沙箱：執行來源自訂的 JavaScript 圖片重排演算法。
+// 內部紀錄 ImageOp 貼圖操作序列，最終由 UI 注入的 ImageCompositor 進行合成輸出。
 
 import { sandboxView } from "./globals"
 

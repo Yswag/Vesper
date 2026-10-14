@@ -1,14 +1,6 @@
-// 離線下載的「背景時間」與「退出接手」。
-//
-// 兩件事綁在一起，因為它們是同一個狀態機：下載中我們向系統要背景時間（`BackgroundKeeper`
-// 是佇列語意，每個 `keepAlive()` 都要配對自己的 `stopKeepAlive()`，漏掉會一直掛著）；
-// 這段時間裡使用者按退出就改成縮小，等佇列空了、而他還在縮小時才自己結束。
-//
-// 縮小失敗（使用者開了多視窗模式，或環境不支援最小化）不直接退出：先問使用者要不要繼續下載
-// ——直接放手會讓她白白斷掉已經在跑的下載。
-//
-// 系統 API 一律由外部注入，所以在 `dev/` 的探針裡可以整套換成假的（不真的縮小、不真的結束）。
-// 定位是「盡量」不是「保證」：系統仍可能砍掉 App，所以「從中斷處補下載」是必要的。
+// 離線下載背景工作與退出攔截管理。
+// 下載中透過 BackgroundKeeper 申請背景執行時間；使用者退出時優先最小化，
+// 無法最小化時提示確認，確保背景下載任務完整性。
 
 import { Script } from "scripting"
 import { t } from "../i18n"
@@ -48,7 +40,7 @@ export type ExitOutcome = "proceed" | "handled"
 export interface OfflineSession {
   /** 重新評估「該不該持有背景時間、該不該自動結束」。什麼都沒變時不會重複要求。 */
   reconcile(): Promise<void>
-  /** 退出關卡：我們接手（縮小，或縮不下去但使用者選了繼續下載）就回 "handled"，否則讓原本的流程走。 */
+  /** 退出攔截：接手處理（縮小或確認繼續下載）回傳 "handled"，放行退出回傳 "proceed"。 */
   requestExit(): Promise<ExitOutcome>
   /** 使用者自己回到 App：取消待辦的自動結束。 */
   userReturned(): void
@@ -119,8 +111,7 @@ export function createOfflineSession(deps: OfflineSessionDeps): OfflineSession {
       handoff = true
       return "handled"
     }
-    // 縮不下去＝可能是多視窗模式：問使用者。繼續下載＝接手（不退出，跟縮小成功同一條路）；
-    // 仍要退出＝放手讓原本的流程走（真正的退出在外層）。
+    // 無法最小化時彈窗確認：使用者若選擇繼續下載則接手攔截，否則放行退出
     const keepDownloading = await askContinueDownloading()
     return keepDownloading ? "handled" : "proceed"
   }
@@ -165,11 +156,7 @@ export function realOfflineRuntime(): OfflineSessionRuntime {
   }
 }
 
-/**
- * 真的對話框：縮不下去時問「要繼續下載還是退出」。
- * 調用 iOS 系統原生 Dialog.confirm，乾淨且符合原生 Alert 規範。
- * 返回 true 代表「繼續下載」，false 代表「仍要退出」。
- */
+/** 彈出原生對話框確認是否在退出時保持下載。 */
 export async function realConfirmContinueDownloading(): Promise<boolean> {
   const ok = await Dialog.confirm({
     title: t("common.exitBlockedTitle"),

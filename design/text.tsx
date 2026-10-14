@@ -1,9 +1,4 @@
-// 文字角色。同一種角色只有一個寫法 —— 原本 caption2+tertiaryLabel 與 caption+secondaryLabel
-// 在十幾個地方各寫一次，看不出差別，卻又每個地方都不太一樣。
-//
-// 兩個角色：
-//   Footnote = 卡下、清單尾、頁尾的註解（最輕）
-//   Caption  = 卡片副標、狀態行（比 Footnote 明顯）
+// 文字角色規範：統一 Footnote（最輕次要說明）與 Caption（副標題/狀態行）的字級與語意色。
 
 import { Text } from "scripting"
 

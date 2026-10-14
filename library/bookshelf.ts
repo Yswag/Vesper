@@ -1,9 +1,5 @@
-// 書架（收藏）與閱讀進度。
-//
-// 存成一個 JSON 檔 `<documents>/Vesper/library.json`：單檔、好備份、好除錯、之後接 iCloud
-// 也只改路徑。寫入去抖 500ms，並在退出前 flush（見 app/lifecycle.ts 的 onBeforeExit）。
-//
-// 一條規則：**源被刪除時不清書架**。紀錄留著並標記「源已移除」，否則刪一個源會清掉半個書架。
+// 書架收藏與閱讀進度持久化模組。
+// 儲存於 library.json（去抖 500ms 寫入，退出前 flush，無檔案權限時退守 KV）。
 
 import { createEmitter } from "../engine/emitter"
 import { appDataRoot, hasFileAccess, join, readText, writeText } from "../engine/fs"
@@ -24,14 +20,11 @@ export interface Progress {
   cover?: string
   epId: string
   epTitle: string
-  /** 上次讀到的領先可見頁（0 起算）。舊資料沒有這個欄位。 */
+  /** 上次閱讀到的領先可見頁（0 起算）。 */
   page?: number
-  /** 讀到的那一話總共幾頁（畫格數）。舊資料沒有這個欄位。 */
+  /** 當前章節總頁數。 */
   pageCount?: number
-  /**
-   * 這一筆是在**離線模式**讀的（離線書架／下載頁那兩個入口進來的）。
-   * 續讀時靠它決定走離線還是走源（`canResumeOffline`）；線上讀不寫這個欄位（＝蓋掉）。
-   */
+  /** 是否於離線模式下閱讀。 */
   offline?: boolean
   updatedAt: number
 }
@@ -51,23 +44,13 @@ let cache: Library | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
 
 /**
- * 變更訂閱：畫面（詳情/首頁/書架）靠它即時重繪，不必等重新進入。
- *
- * 去抖 250ms：連續模式滑動時領先頁會一直變，合併成一次通知，不要拖著首頁/書架一直重繪。
- * （毫秒數是這裡決定的；`notifyNow()` 就是這個去抖的例外。）
+ * 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。
  */
 const bus = createEmitter({ debounceMs: 250 })
 
 export const subscribeLibrary = bus.subscribe
 
-/**
- * 立刻通知，不等去抖。
- *
- * 給收藏這種「低頻、且使用者期待馬上看到」的變更用：
- * 閱讀時進度會不停地送出通知把去抖計時器一直往後推，
- * 若收藏也走去抖，就可能拖到使用者已經離開這一頁才生效。
- * 快取已經同步更新，所以這裡順手取消待送出的通知也不會掉資料。
- */
+/** 即時通知變更（用於收藏等需要即時反饋的操作）。 */
 function notifyNow() {
   bus.cancelPending()
   bus.emit()
