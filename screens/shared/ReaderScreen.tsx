@@ -88,6 +88,20 @@ import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
  */
 const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
 
+/** 量到就回報（放在 `background` 的 `GeometryReader` 裡，不影響版面）。 */
+function BoxReporter({
+  size,
+  onSize,
+}: {
+  size: { width: number; height: number }
+  onSize: (size: { width: number; height: number }) => void
+}) {
+  useEffect(() => {
+    onSize({ width: size.width, height: size.height })
+  }, [size.width, size.height])
+  return null
+}
+
 export interface ChapterRef {
   id: string
   title: string
@@ -443,7 +457,7 @@ function ReaderContent({
   function handleCanvasTap(location: Point) {
     // 縱向畫廊模式：支援上 1/4 上一頁、下 1/4 下一頁、中 1/2 切 HUD
     if (vertical && paginated && settings.tapZones) {
-      const vQuarter = viewport.height / 4
+      const vQuarter = pageSize.height / 4
       if (location.y > vQuarter && location.y < vQuarter * 3) {
         toggleHUD()
         return
@@ -459,7 +473,7 @@ function ReaderContent({
     }
 
     // 橫向分區＝左右各 1/4 翻頁、中間 1/2 切 HUD。
-    const quarter = viewport.width / 4
+    const quarter = pageSize.width / 4
     if (location.x > quarter && location.x < quarter * 3) {
       toggleHUD()
       return
@@ -474,8 +488,17 @@ function ReaderContent({
   const paginated = settings.mode === "gallery"
 
   const axes = readerAxis(settings.direction)
-  // Paging and tap zones share the actual full-bleed viewport.
-  const pageSize = viewport
+  // 畫布尺寸要量「盒子自己」：`GeometryReader(ignoresSafeArea:)` 的 `size` 是安全區盒（少上下安全區），
+  // 拿它當頁面框會讓每頁短一節（縱向畫廊的最後一頁還因此被壓在底部）。差異見 dev/probe-canvas-box.tsx。
+  const [canvasBox, setCanvasBox] = useState<{ width: number; height: number } | null>(null)
+  const pageSize = canvasBox ?? viewport
+
+  /** 只在真的變了才換 state（背景的 GeometryReader 每次 render 都會回報）。 */
+  function reportCanvasBox(size: { width: number; height: number }) {
+    setCanvasBox(previous =>
+      previous && previous.width === size.width && previous.height === size.height ? previous : size
+    )
+  }
 
   const [renderGeneration, setRenderGeneration] = useState(0)
 
@@ -499,7 +522,7 @@ function ReaderContent({
   // （左到右／右到左的鏡像是 ScrollView 的 environment，不在頁面本身，所以 rtl 不是 dep。）
   // 不包起來的話，每一次重繪都會重建 N 個 element——捲動時 `leadingPage` 一直變，
   // 目錄／HUD 開關、收藏也都會讓這個元件重繪（200 頁的章節＝200 個，畫廊模式還各多一層 ZoomableView）。
-  // deps 只放純值：`pageSize`（＝`viewport`）這個物件每次 render 都是新的，包了等於沒包，
+  // deps 只放純值：`pageSize`（＝`canvasBox ?? viewport`）這個物件每次 render 都是新的，包了等於沒包，
   // 所以拆成 width／height；`session` 是 state（一話一份），只會在換話／重開時變。
   // 換話要整棵重建是刻意的：`currentEpId` 同時是 ScrollView 的 key 與縮放的 resetToken（換話＝從頭讀）。
   const pages = useMemo(
@@ -548,7 +571,7 @@ function ReaderContent({
             )
           })
         : [],
-    [session, pageCount, paginated, vertical, currentEpId, viewport.width, viewport.height, renderGeneration],
+    [session, pageCount, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration],
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
@@ -631,7 +654,21 @@ function ReaderContent({
         ),
       }}
     >
-      <ZStack alignment="top" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ZStack
+        alignment="top"
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        // 量畫布盒子（見 pageSize）。
+        background={
+          <GeometryReader>
+            {geometry => (
+              <BoxReporter
+                size={{ width: geometry.size.width, height: geometry.size.height }}
+                onSize={reportCanvasBox}
+              />
+            )}
+          </GeometryReader>
+        }
+      >
 
         {/* 1. 漫畫閱讀畫布（依閱讀模式／方向切換排版） */}
         <ScrollView
