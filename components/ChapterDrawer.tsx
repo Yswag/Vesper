@@ -107,7 +107,7 @@ export function ChapterDrawer({
             scrollProxyRef.current?.scrollTo(currentEpId, "center")
           }}
         >
-          <HStack spacing={4} frame={{ minHeight: 44 }}>
+          <HStack spacing={4} frame={{ minHeight: 44 }} contentShape="rect">
             <Image
               systemName="scope"
               font={11}
@@ -126,7 +126,7 @@ export function ChapterDrawer({
           accessibilityLabel={reversed ? t("reader.sortAscending") : t("reader.sortDescending")}
           action={() => setReversed(r => !r)}
         >
-          <HStack spacing={4} frame={{ minHeight: 44 }}>
+          <HStack spacing={4} frame={{ minHeight: 44 }} contentShape="rect">
             <Image
               systemName="arrow.up.arrow.down"
               font={11}
@@ -148,6 +148,7 @@ export function ChapterDrawer({
           <Image
             systemName="xmark"
             frame={{ width: 44, height: 44 }}
+            contentShape="rect"
             font={15}
             fontWeight="medium"
             foregroundStyle="secondaryLabel"
@@ -175,6 +176,7 @@ export function ChapterDrawer({
                       padding={{ horizontal: 12, vertical: 6 }}
                       background={isCurrent ? "accentColor" : "rgba(255, 255, 255, 0.08)"}
                       clipShape={rect(radius.chip)}
+                      contentShape={rect(radius.chip)}
                     >
                       <Text
                         font="caption"
@@ -219,16 +221,18 @@ export function ChapterDrawer({
             scrollProxyRef.current = proxy
             const list = reversed ? [...displayChapters].reverse() : displayChapters
             return (
-              <VStack spacing={8} padding={{ horizontal: 16, vertical: 12 }}>
+              <VStack spacing={8} padding={{ horizontal: 16, vertical: 12 }} frame={{ maxWidth: "infinity" }}>
                 {list.map((ch: ChapterItem) => {
                   const isCurrent = ch.id === currentEpId
                   return (
-                    <ZStack key={ch.id} tag={ch.id} alignment="center">
+                    <ZStack key={ch.id} tag={ch.id} alignment="center" frame={{ maxWidth: "infinity" }}>
                       <HStack
                         alignment="center"
                         padding={{ horizontal: 14, vertical: 11 }}
                         background={isCurrent ? fill.highlight : "clear"}
                         clipShape={rect(radius.thumb)}
+                        contentShape={rect(radius.thumb)}
+                        frame={{ maxWidth: "infinity" }}
                         onTapGesture={() => onSelectChapter(ch.id)}
                       >
                         <Image

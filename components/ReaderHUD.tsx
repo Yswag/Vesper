@@ -409,7 +409,7 @@ function ChapterLink({
       buttonStyle="plain"
       accessibilityLabel={t("reader.chapterLinkLabel", { label, title: chapter.title })}
     >
-      <HStack frame={{ minHeight: 44 }} spacing={5} alignment="center">
+      <HStack frame={{ minHeight: 44 }} spacing={5} alignment="center" contentShape="rect">
         {systemImage && !isTrailingIcon ? (
           <Image systemName={systemImage} font={11} foregroundStyle="white" />
         ) : null}
