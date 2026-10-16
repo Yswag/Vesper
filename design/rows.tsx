@@ -1,5 +1,6 @@
 // 通用清單與設定項目列元件庫。
 // 點擊事件一律採 onTapGesture 與全寬容器，保持整列觸控範圍。
+// ⚠️ 有 onTapGesture 的列要配 `contentShape="rect"`，不然 Spacer 那段不算內容、點不到。
 
 import { HStack, Image, Picker, Spacer, Text, TextField, Toggle, VStack, ZStack, type Color } from "scripting"
 
@@ -78,6 +79,7 @@ export function IconRow({
       padding={rowPadding}
       alignment="center"
       frame={{ maxWidth: "infinity" }}
+      contentShape="rect"
       onTapGesture={onTap}
     >
       <IconBadge icon={icon} color={iconColor} background={iconBackground} />
@@ -126,6 +128,7 @@ export function OptionRow({ title, checked, onTap }: { title: string; checked: b
       padding={rowPadding}
       alignment="center"
       frame={{ maxWidth: "infinity" }}
+      contentShape="rect"
       onTapGesture={onTap}
     >
       <Text font="body" fontWeight={checked ? "medium" : "regular"} foregroundStyle={checked ? "tintColor" : "label"}>
