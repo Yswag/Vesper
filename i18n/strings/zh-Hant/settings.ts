@@ -257,4 +257,17 @@ export default {
     batchSummary: "完成：成功 {installed} 個，跳過 {skipped} 個{failed}",
     batchSummaryFailed: "，失敗 {failed} 個",
   },
+
+  /** 核心依賴（cheerio／crypto-js）的狀態與就地修復。 */
+  deps: {
+    title: "核心依賴",
+    installed: "已安裝",
+    missing: "未安裝",
+    checking: "檢查中…",
+    timing: "檢查耗時 {ms} ms",
+    installing: "正在重新安裝…",
+    installDone: "重新安裝完成",
+    installFailed: "安裝失敗，請確認網路連線後再試。",
+    footnote: "源一直顯示「依賴未安裝」時，在這裡重新安裝就會恢復。",
+  },
 }

@@ -45,4 +45,7 @@ export default {
 
   preparingEnv: "Preparing reader environment…",
   installingCoreDeps: "Installing required core dependencies (cheerio, crypto-js) on first launch, please wait…",
+  depsInstallFailed: "Failed to install core dependencies. Check your connection and try again.",
+  depsRetryInstall: "Retry install",
+  depsMissing: "Core dependency {name} is missing. Reinstall it in Settings → Core dependencies, then try again.",
 }

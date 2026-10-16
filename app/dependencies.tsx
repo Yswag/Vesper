@@ -1,4 +1,4 @@
-import { ProgressView, Text, VStack } from "scripting"
+import { Button, ProgressView, Text, VStack } from "scripting"
 import { neutral } from "../design/tokens"
 import { t } from "../i18n"
 
@@ -7,6 +7,14 @@ declare const require: {
   resolve?: (id: string) => string
 }
 declare const Shell: { run(cmd: string, options?: any): Promise<any> }
+
+/** 源的解析與加密都得靠它們。 */
+export const CORE_DEPENDENCIES = ["cheerio", "crypto-js"]
+
+export interface DependencyStatus {
+  name: string
+  installed: boolean
+}
 
 let verified = false
 
@@ -21,15 +29,41 @@ let verified = false
  */
 export function areDependenciesInstalled(): boolean {
   if (verified) return true
-  try {
-    if (typeof require.resolve === "function") {
-      require.resolve("cheerio")
-      require.resolve("crypto-js")
-    } else {
-      require("cheerio")
-      require("crypto-js")
-    }
+  if (CORE_DEPENDENCIES.every(canResolve)) {
     verified = true
+    return true
+  }
+  return false
+}
+
+/**
+ * 單一套件的狀態。載入是同步的，所以逐項跑（讓畫面在兩者之間有機會重繪）。
+ */
+export function checkDependency(name: string, deep = false): DependencyStatus {
+  return { name, installed: deep ? canLoad(name) : canResolve(name) }
+}
+
+/**
+ * 逐套件的狀態。`deep` ＝真的 `require` 一次；只找路徑（`require.resolve`）看不出半殘的
+ * node_modules（檔案在、子依賴缺）。
+ */
+export function checkDependencies(deep = false): DependencyStatus[] {
+  return CORE_DEPENDENCIES.map(name => checkDependency(name, deep))
+}
+
+function canResolve(id: string): boolean {
+  try {
+    if (typeof require.resolve === "function") require.resolve(id)
+    else require(id)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function canLoad(id: string): boolean {
+  try {
+    require(id)
     return true
   } catch {
     return false
@@ -52,16 +86,33 @@ export function PreparingView() {
 }
 
 /**
- * 確保依賴完整安裝。
+ * 安裝失敗的畫面。不進主畫面：沒有依賴的話每個源都會爆，而重試請求救不了。
  */
+export function InstallFailedView({ onRetry }: { onRetry: () => void }) {
+  return (
+    <VStack alignment="center" spacing={16} padding={32} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <Text font="headline" fontWeight="bold" multilineTextAlignment="center">
+        {t("common.depsInstallFailed")}
+      </Text>
+      <Button
+        title={t("common.depsRetryInstall")}
+        systemImage="arrow.clockwise"
+        action={onRetry}
+        buttonStyle="glassProminent"
+      />
+    </VStack>
+  )
+}
+
+/** 確保安裝完成。回傳是否真的載得起來（呼叫端要看這個值）。 */
 export async function installMissingDependencies(): Promise<boolean> {
   try {
     await Shell.run("npm install cheerio@^1.2.0 crypto-js@^4.2.0")
-    verified = true
-    return true
   } catch (error) {
     console.error("Failed to install dependencies:", error)
     return false
   }
+  verified = checkDependencies(true).every(dep => dep.installed)
+  return verified
 }
 

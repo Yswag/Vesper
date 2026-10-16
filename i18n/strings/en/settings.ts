@@ -249,4 +249,17 @@ export default {
     batchSummary: "Done: {installed} installed, {skipped} skipped{failed}",
     batchSummaryFailed: ", {failed} failed",
   },
+
+  /** Core dependencies (cheerio / crypto-js): status and in-place repair. */
+  deps: {
+    title: "Core dependencies",
+    installed: "Installed",
+    missing: "Not installed",
+    checking: "Checking…",
+    timing: "Checked in {ms} ms",
+    installing: "Reinstalling…",
+    installDone: "Reinstall complete",
+    installFailed: "Install failed. Check your connection and try again.",
+    footnote: "If sources keep reporting a missing dependency, reinstalling here fixes it.",
+  },
 }

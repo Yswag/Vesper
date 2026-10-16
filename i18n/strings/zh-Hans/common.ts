@@ -44,4 +44,7 @@ export default {
 
   preparingEnv: "正在准备阅读器环境…",
   installingCoreDeps: "初次启动正在安装必要核心依赖 (cheerio, crypto-js)，请稍候数秒…",
+  depsInstallFailed: "核心依赖安装失败。请确认网络连接后重试。",
+  depsRetryInstall: "重试安装",
+  depsMissing: "核心依赖 {name} 未安装。请到「设置 → 核心依赖」重新安装后再试。",
 }

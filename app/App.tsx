@@ -16,7 +16,12 @@
 
 import { NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
-import { areDependenciesInstalled, installMissingDependencies, PreparingView } from "./dependencies"
+import {
+  InstallFailedView,
+  PreparingView,
+  areDependenciesInstalled,
+  installMissingDependencies,
+} from "./dependencies"
 import { PageBackground } from "./theme"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
@@ -30,6 +35,9 @@ import { BrowseScreen } from "../screens/browse/BrowseScreen"
 import { HomeScreen } from "../screens/home/HomeScreen"
 import { SearchScreen } from "../screens/search/SearchScreen"
 import { SettingsScreen } from "../screens/settings/SettingsScreen"
+
+/** 依賴狀態。 */
+type DepsState = "installing" | "failed" | "ready"
 
 /** 分頁編號 → 畫面。順序要跟 app/sections.ts 的 SECTIONS 一致（切換分類的選單照它畫）。 */
 function sectionScreen(index: number): VirtualNode {
@@ -48,19 +56,23 @@ function sectionScreen(index: number): VirtualNode {
 }
 
 export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
-  const [depsReady, setDepsReady] = useState(() => areDependenciesInstalled())
+  // 安裝失敗不放行：沒有依賴的話每個源、每張圖都會爆。
+  const [depsState, setDepsState] = useState<DepsState>(() => (areDependenciesInstalled() ? "ready" : "installing"))
   const selection = useObservable<number>(0)
   const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
 
   useEffect(() => {
-    if (!depsReady) {
-      void installMissingDependencies().then(() => {
-        setDepsReady(true)
-      })
+    if (depsState !== "installing") return
+    let cancelled = false
+    void installMissingDependencies().then(ok => {
+      if (!cancelled) setDepsState(ok ? "ready" : "failed")
+    })
+    return () => {
+      cancelled = true
     }
-  }, [depsReady])
+  }, [depsState])
 
   // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
   // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。
@@ -102,11 +114,15 @@ export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
     ),
   }
 
-  if (!depsReady) {
+  if (depsState !== "ready") {
     return (
       <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageBackground />
-        <PreparingView />
+        {depsState === "installing" ? (
+          <PreparingView />
+        ) : (
+          <InstallFailedView onRetry={() => setDepsState("installing")} />
+        )}
       </ZStack>
     )
   }

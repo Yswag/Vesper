@@ -241,4 +241,17 @@ export default {
     batchSummary: "完成：成功 {installed} 个，跳过 {skipped} 个{failed}",
     batchSummaryFailed: "，失败 {failed} 个",
   },
+
+  /** 核心依赖（cheerio／crypto-js）的状态与就地修复。 */
+  deps: {
+    title: "核心依赖",
+    installed: "已安装",
+    missing: "未安装",
+    checking: "检查中…",
+    timing: "检查耗时 {ms} ms",
+    installing: "正在重新安装…",
+    installDone: "重新安装完成",
+    installFailed: "安装失败，请确认网络连接后再试。",
+    footnote: "源一直显示「依赖未安装」时，在这里重新安装就会恢复。",
+  },
 }

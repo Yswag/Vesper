@@ -5,6 +5,8 @@
 // `.innerHTML`、`.children`、`.nodes`、`.parent`、`.classNames`、`.id`、`.localName`、
 // `.previousElementSibling`、`.nextElementSibling`；node 有 `.text`、`.type`、`.toElement()`。
 
+import { t } from "../i18n"
+
 declare const require: (id: string) => any
 
 let _cheerio: any = null
@@ -13,7 +15,7 @@ function getCheerio(): any {
     try {
       _cheerio = require("cheerio")
     } catch {
-      throw new Error("cheerio 尚未安裝，請等待依賴準備完成。")
+      throw new Error(t("common.depsMissing", { name: "cheerio" }))
     }
   }
   return _cheerio

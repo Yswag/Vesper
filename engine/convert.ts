@@ -3,6 +3,7 @@
 
 declare const require: (id: string) => any
 
+import { t } from "../i18n"
 import { log } from "./log"
 
 let _CryptoJS: any = null
@@ -11,7 +12,7 @@ function getCryptoJS(): any {
     try {
       _CryptoJS = require("crypto-js")
     } catch {
-      throw new Error("crypto-js 尚未安裝，請等待依賴準備完成。")
+      throw new Error(t("common.depsMissing", { name: "crypto-js" }))
     }
   }
   return _CryptoJS
