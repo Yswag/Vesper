@@ -1,0 +1,54 @@
+name: Notify parent on version change
+
+# 只有在 script.json 的 version 欄位變動時,才通知 Scripting 重打包
+on:
+  push:
+    branches: [main]
+    paths:
+      - script.json
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compare script.json version
+        id: ver
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          current="$(jq -r '.version // empty' script.json)"
+
+          prev=""
+          if [ -n "$BEFORE" ] \
+             && [ "$BEFORE" != "0000000000000000000000000000000000000000" ] \
+             && git cat-file -e "${BEFORE}:script.json" 2>/dev/null; then
+            prev="$(git show "${BEFORE}:script.json" | jq -r '.version // empty')"
+          fi
+
+          echo "prev=[$prev]  current=[$current]"
+
+          if [ -n "$current" ] && [ "$current" != "$prev" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: repository_dispatch to Scripting
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -sf -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/Yswag/Scripting/dispatches \
+            -d '{"event_type":"submodule-update","client_payload":{"submodule":"Vesper"}}'
+          echo "已通知 Scripting 重打包 Vesper"
