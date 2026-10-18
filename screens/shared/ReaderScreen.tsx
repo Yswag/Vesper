@@ -212,6 +212,11 @@ function ReaderContent({
   // 非 null 期間忽略可見回報（等候捲動到達目標頁）
   const scrubTarget = useRef<number | null>(null)
   const turnTarget = useRef<number | null>(null)
+  // 畫面上的實際位移（點）：畫廊模式的頁碼與翻頁基準看它。
+  // 可見集合回報會過期（跳頁後會停在舊的頁、重排後不更新），拿它算目標就會單擊翻兩頁。
+  const scrollOffset = useRef({ x: 0, y: 0 })
+  // 頁框大小另外留一份（位移換算要用最新值，不能靠回呼當下那個 render 的閉包）
+  const pageSizeRef = useRef({ width: 0, height: 0 })
   // 閘門計時器 handle（⚠️ runtime setTimeout 返回值可為 0，比對需為 !== null）
   const restoreTimer = useRef<number | null>(null)
   const scrubTimer = useRef<number | null>(null)
@@ -383,12 +388,45 @@ function ReaderContent({
   }
 
   /**
+   * 畫廊模式下畫面上的頁：每頁框固定，位移就是頁長的整數倍（LTR／RTL／縱向實測都是）。
+   * 連續模式沒有固定頁長，回 null 讓呼叫端退回可見集合回報的頁碼。
+   */
+  function displayedPage(): number | null {
+    if (!paginated || pageCount === 0) return null
+    const stride = vertical ? pageSizeRef.current.height : pageSizeRef.current.width
+    if (!(stride > 0)) return null
+    const offset = vertical ? scrollOffset.current.y : scrollOffset.current.x
+    return Math.min(Math.max(Math.round(Math.abs(offset) / stride), 0), pageCount - 1)
+  }
+
+  /** 要看哪一頁來算目標：自己剛下的目標（動畫還在飛）／還原中的目標／畫面上的實際位置。 */
+  function turnBase(): number | null {
+    const commanded = turnTarget.current ?? scrubTarget.current
+    if (commanded !== null) return commanded
+    if (!restored.current) return leadingPage
+    return displayedPage() ?? leadingPage
+  }
+
+  /**
+   * 畫廊：把實際位移換算出的頁碼寫回 state（翻頁／拖曳／還原途中不搶）。
+   * 回報那一頭照舊當備援：位移取樣沒到時，頁碼還是跟著回報走。
+   */
+  function syncPageFromGeometry() {
+    if (!restored.current || turnTarget.current !== null || scrubTarget.current !== null) return
+    const page = displayedPage()
+    if (page === null) return
+    setLeadingPage(previous => (previous === page ? previous : page))
+  }
+
+  /**
    * 翻一頁（往前後推一格並以 scrollPos 捲動，翻頁中忽略過期可見回報）。
    */
   function turnPage(delta: 1 | -1) {
-    if (pageCount === 0 || leadingPage === null) return
-    const target = Math.min(Math.max(leadingPage + delta, 0), pageCount - 1)
-    if (target === leadingPage) return
+    if (pageCount === 0) return
+    const base = turnBase()
+    if (base === null) return
+    const target = Math.min(Math.max(base + delta, 0), pageCount - 1)
+    if (target === base) return
     turnTarget.current = target
     setLeadingPage(target)
     void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
@@ -441,6 +479,7 @@ function ReaderContent({
   // 畫布尺寸需量測外框自身尺寸以避免忽略安全區時的高度落差
   const [canvasBox, setCanvasBox] = useState<{ width: number; height: number } | null>(null)
   const pageSize = canvasBox ?? viewport
+  pageSizeRef.current = pageSize
 
   /** 只在真的變了才換 state（背景的 GeometryReader 每次 render 都會回報）。 */
   function reportCanvasBox(size: { width: number; height: number }) {
@@ -649,6 +688,9 @@ function ReaderContent({
           onScrollGeometryChange={{
             of: "geometry",
             onChanged: (_, geo) => {
+              // 記下實際位移：畫廊模式的頁碼與翻頁基準都是從這裡換算的
+              scrollOffset.current = { x: geo.contentOffset.x, y: geo.contentOffset.y }
+              syncPageFromGeometry()
               if (!next) return
               // 防誤觸守衛：僅在接近章末（最後 1~2 頁或確實滾至末端）時允許觸發 overscroll
               if (pageCount > 0 && leadingPage !== null && leadingPage < lastPage - 1) {
@@ -699,6 +741,11 @@ function ReaderContent({
           onScrollPhaseChange={(oldPhase, newPhase) => {
             if (newPhase === "interacting" || newPhase === "tracking") {
               isInteractingRef.current = true
+            }
+            // 人自己出手＝我們剛下的目標已經不是真相，放掉讓翻頁基準回到畫面上的實際位置
+            if (newPhase === "interacting") {
+              turnTarget.current = null
+              scrubTarget.current = null
             }
             if (
               isInteractingRef.current &&
