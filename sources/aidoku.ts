@@ -1,0 +1,969 @@
+// Aidoku 源（WASM）：把源的四段查詢映射成 Vesper 既有的型別。
+//
+// 宿主只有一個 worker、一次只載一份源，所以每個橋接呼叫都排隊，而且呼叫前先確認
+// worker 裡載的就是這一份（多個 Aidoku 源同時搜尋時才不會互相蓋掉）。
+// 宿主這一層壞掉（頁面死、worker 掛、逾時）就重建一次再重試；再失敗就把源標成不可用。
+// 失敗一律包成「源出錯」：畫面要能分辨是源壞了，不是網路壞了。
+
+import type { ComicListItem, ComicListPage } from "../engine/adapt"
+import { normalizeTags } from "../engine/adapt"
+import {
+  callAidoku,
+  hasImageProcessorAidoku,
+  initializeAidokuSource,
+  isAidokuHostError,
+  loadAidokuPackage,
+  loadedAidokuSourceKey,
+  processAidokuPageImage,
+  resetAidokuHost,
+  runAidokuExclusive,
+  type AidokuPackage,
+  type AidokuPageImageRequest,
+} from "../engine/aidoku/host"
+import { appDataRoot, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
+import type { ImageRequest, ImageResponseInfo } from "../engine/images"
+import type { SourceCapabilities, SourceMeta } from "../engine/loader"
+import { log } from "../engine/log"
+import { unzip } from "../engine/zip"
+import { t } from "../i18n"
+import type { StoredSource } from "./store"
+import type { ComicDetail, ExploreEntry } from "./operations"
+import type { InstalledSource } from "./registry"
+
+const PREFIX = "aidoku:"
+
+/** 章節與頁面清單在真實源上可能很慢；其他呼叫維持宿主的 15s 預設。 */
+const SLOW_CALL_TIMEOUT_MS = 30_000
+
+export function keyOf(sourceId: string): string {
+  return PREFIX + sourceId
+}
+
+export function isAidoku(source: InstalledSource): boolean {
+  return source.stored.kind === "aidoku"
+}
+
+function idOf(key: string): string {
+  return key.startsWith(PREFIX) ? key.slice(PREFIX.length) : key
+}
+
+// ---------------------------------------------------------------- 磁碟上的源
+
+/** `sources/aidoku/<id>/`（內含 `Payload/` 與 `installed.json`）。 */
+export function dirOf(key: string): string {
+  return join(appDataRoot(), "sources", "aidoku", idOf(key))
+}
+
+function payloadDir(key: string): string {
+  return join(dirOf(key), "Payload")
+}
+
+/** `installed.json`：安裝來源、版本、時間、啟用狀態、圖示、使用者改過的設定。 */
+interface InstallRecord {
+  origin?: string | null
+  version?: string
+  installedAt?: number
+  enabled?: boolean
+  /** 倉庫索引給的圖示網址（沒有就是 null）。 */
+  iconUrl?: string | null
+  /**
+   * 使用者改過的設定值：**只存改過的 key**，沒有的 key 由 schema 的預設（安裝的新版本或
+   * 源改預設）決定。全部灌進來的話，源換了預設我們就蓋不掉。
+   */
+  settings?: Record<string, unknown>
+}
+
+function readJson(path: string): any {
+  const raw = readText(path)
+  if (raw == null) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function installedOf(key: string): InstallRecord {
+  return readJson(join(dirOf(key), "installed.json")) ?? {}
+}
+
+function writeInstalled(key: string, record: InstallRecord): void {
+  writeText(join(dirOf(key), "installed.json"), JSON.stringify(record, null, 2))
+}
+
+/**
+ * 顯示用的圖示：安裝時解出來的 `Payload/icon.png` 優先（沒網路也看得到），
+ * 沒有才退回倉庫索引的網址。
+ */
+function iconOf(key: string, installed: InstallRecord): string | undefined {
+  const local = join(payloadDir(key), "icon.png")
+  if (exists(local)) return local
+  return typeof installed.iconUrl === "string" && installed.iconUrl ? installed.iconUrl : undefined
+}
+
+/** 讀 manifest（不讀 wasm 的位元組；載入時才讀）。 */
+function manifestOf(key: string): any {
+  const manifest = readJson(join(payloadDir(key), "source.json"))
+  if (!manifest || !exists(join(payloadDir(key), "main.wasm"))) throw new Error(t("sources.aidoku.missing"))
+  // runtime 的 `extractAix` 會補上這兩個：從 `.aix` 解開的檔案要自己補。
+  const info = manifest.info ?? {}
+  if (!Array.isArray(info.languages)) {
+    const language = info.lang ?? String(info.id ?? "").split(".")[0]
+    info.languages = language ? [language] : []
+  }
+  if (!manifest.filters) {
+    const filters = readJson(join(payloadDir(key), "filters.json"))
+    if (filters) manifest.filters = filters
+  }
+  return manifest
+}
+
+/** 載入用的一整包。 */
+function readPayload(key: string): AidokuPackage {
+  const manifest = manifestOf(key)
+  const wasm = readBytes(join(payloadDir(key), "main.wasm"))
+  if (!wasm) throw new Error(t("sources.aidoku.missing"))
+  return {
+    manifest,
+    settingsJson: readJson(join(payloadDir(key), "settings.json")) ?? undefined,
+    settings: settingsOf(key),
+    wasm,
+  }
+}
+
+function metaOf(manifest: any, key: string): SourceMeta {
+  const info = manifest?.info ?? {}
+  return {
+    // Aidoku 源沒有 class，這個欄位只給「載入紀錄」用。
+    className: "",
+    key,
+    name: String(info.name ?? key),
+    version: String(info.version ?? ""),
+    minAppVersion: "",
+    url: Array.isArray(info.urls) && info.urls.length > 0 ? String(info.urls[0]) : "",
+  }
+}
+
+function capabilitiesOf(): SourceCapabilities {
+  return {
+    search: true,
+    explore: true,
+    category: false,
+    categoryComics: false,
+    comic: true,
+    account: false,
+    favorites: false,
+    settings: false,
+    comments: false,
+    sendComment: false,
+    archive: false,
+    starRating: false,
+    // 圖片請求一律經過 `modifyImageRequest`（宿主側），所以永遠是 true。
+    modifyImage: true,
+    loginWithPassword: false,
+    loginWithWebview: false,
+    loginWithCookies: false,
+    translation: false,
+  }
+}
+
+/** 磁碟上有哪些 Aidoku 源（registry 用；不碰網路、不載 wasm）。 */
+export function installedSources(): InstalledSource[] {
+  const root = join(appDataRoot(), "sources", "aidoku")
+  return listDir(root).map(sourceId => {
+    const key = keyOf(sourceId)
+    const installed = installedOf(key)
+    let meta: SourceMeta | undefined
+    let error: string | undefined
+    try {
+      meta = metaOf(manifestOf(key), key)
+    } catch (failure) {
+      error = failure instanceof Error ? failure.message : String(failure)
+    }
+    const stored: StoredSource = {
+      key,
+      kind: "aidoku",
+      name: meta?.name ?? sourceId,
+      version: meta?.version ?? String(installed.version ?? ""),
+      minAppVersion: "",
+      homeUrl: meta?.url ?? "",
+      origin: installed.origin ?? null,
+      installedAt: installed.installedAt ?? 0,
+      updatedAt: installed.installedAt ?? 0,
+      enabled: installed.enabled !== false,
+      iconUrl: iconOf(key, installed),
+      settings: settingsOf(key),
+    }
+    return {
+      stored,
+      enabled: stored.enabled,
+      meta,
+      capabilities: capabilitiesOf(),
+      error,
+      settingsSpec: settingsSpecOf(key),
+    }
+  })
+}
+
+export interface InstallInfo {
+  /** 來源索引網址（從倉庫裝的才有）。 */
+  origin?: string | null
+  /** 倉庫條目的 key；有給就檢查包裡的 id 與它一致（下載前擋掉裝錯的檔）。 */
+  expectedKey?: string
+  /** 倉庫索引給的圖示網址（`.aix` 沒帶 `Payload/icon.png` 時顯示用）。 */
+  iconUrl?: string | null
+}
+
+/**
+ * 把 `.aix` 解到 `sources/aidoku/<id>/`：`Payload/` 內的檔案 ＋ `installed.json`。
+ * 舊的 `Payload/` 先清掉，重裝／更新不會留著上一個版本的檔案。
+ */
+export function install(aix: Uint8Array, info: InstallInfo = {}): StoredSource {
+  const files = new Map(unzip(aix).map(entry => [entry.name, entry.bytes]))
+  const sourceJson = files.get("Payload/source.json")
+  const wasm = files.get("Payload/main.wasm")
+  if (!sourceJson || !wasm) throw new Error(t("sources.aidoku.invalidPackage"))
+
+  const text = new TextDecoder().decode(sourceJson)
+  let manifest: any
+  try {
+    manifest = JSON.parse(text)
+  } catch {
+    throw new Error(t("sources.aidoku.invalidPackage"))
+  }
+  const sourceId = String(manifest?.info?.id ?? "")
+  if (!sourceId) throw new Error(t("sources.aidoku.invalidPackage"))
+
+  const key = keyOf(sourceId)
+  if (info.expectedKey && key !== info.expectedKey) {
+    throw new Error(t("sources.catalog.keyMismatch", { expected: info.expectedKey, actual: key }))
+  }
+
+  const dir = payloadDir(key)
+  remove(dir)
+  writeText(join(dir, "source.json"), text)
+  writeBytes(join(dir, "main.wasm"), wasm)
+  for (const name of ["settings.json", "filters.json", "icon.png"]) {
+    const bytes = files.get(`Payload/${name}`)
+    if (bytes) writeBytes(join(dir, name), bytes)
+  }
+
+  const previous = installedOf(key)
+  const iconUrl = info.iconUrl ?? previous.iconUrl ?? null
+  const stored: StoredSource = {
+    key,
+    kind: "aidoku",
+    name: String(manifest.info.name ?? sourceId),
+    version: String(manifest.info.version ?? ""),
+    minAppVersion: "",
+    homeUrl: Array.isArray(manifest.info.urls) && manifest.info.urls.length > 0 ? String(manifest.info.urls[0]) : "",
+    origin: info.origin ?? previous.origin ?? null,
+    installedAt: previous.installedAt ?? Date.now(),
+    updatedAt: Date.now(),
+    enabled: previous.enabled !== false,
+    iconUrl: iconOf(key, { iconUrl }) ?? undefined,
+  }
+  const settings = previous.settings
+  writeInstalled(key, {
+    origin: stored.origin,
+    version: stored.version,
+    installedAt: stored.installedAt,
+    enabled: stored.enabled,
+    iconUrl,
+    ...(settings && Object.keys(settings).length > 0 ? { settings } : {}),
+  })
+  log("info", "aidoku", `已安裝 ${stored.name} (${key}) v${stored.version}`)
+  clearFailure(key)
+  forgetLoaded(key)
+  return stored
+}
+
+/** 停用／啟用（寫回 `installed.json`；`registry.setSourceEnabled` 會走這裡）。 */
+export function setEnabled(key: string, enabled: boolean): void {
+  if (!exists(dirOf(key))) return
+  writeInstalled(key, { ...installedOf(key), enabled })
+  clearFailure(key)
+}
+
+/** 移除：整包檔案删掉（`registry.uninstallSource` 會走這裡）。 */
+export function uninstall(key: string): void {
+  remove(dirOf(key))
+  clearFailure(key)
+  listings.delete(key)
+  forgetLoaded(key)
+  log("info", "aidoku", `已移除 ${key}`)
+}
+
+// ---------------------------------------------------------------- 設定
+
+/** 一個設定項在畫面上要用哪一種列。 */
+export type AidokuSettingControl =
+  | "select"
+  | "multi"
+  | "switch"
+  | "text"
+  | "slider"
+  | "stepper"
+  | "login"
+  | "unsupported"
+
+export interface AidokuSettingOption {
+  value: string
+  text: string
+}
+
+export interface AidokuSettingItem {
+  /** schema 原樣：UI 不認得的欄位（`keyboardType`、`notification`…）照留。 */
+  raw: Record<string, unknown>
+  key: string
+  /** schema 的 `type`。 */
+  type: string
+  title: string
+  subtitle?: string
+  placeholder?: string
+  secure: boolean
+  control: AidokuSettingControl
+  options: AidokuSettingOption[]
+  /** 值是陣列（`multi-select` / `multi-single-select`）。 */
+  multiple: boolean
+  min?: number
+  max?: number
+  step?: number
+  default?: unknown
+  /** 源宣告改完要刷新什麼（`content` / `listings` / `settings`）；目前一律重載，見 `setSetting`。 */
+  refreshes: string[]
+  /** `login` 的登入方式（`basic`／`webview`）。 */
+  method?: string
+  /** `login`（webview）要開的登入網址。 */
+  url?: string
+  /** `login`（webview）要收的 localStorage 鍵；空陣列＝不讀 localStorage。 */
+  localStorageKeys: string[]
+  /** `login` 的帳號是 email（只是鍵盤提示）。 */
+  useEmail: boolean
+  /** `login` 登出按鈕的字（源給的）。 */
+  logoutTitle?: string
+  /** 不支援的種類：登入、清單編輯、動作按鈕。 */
+  unsupported?: "login" | "list" | "action"
+}
+
+export interface AidokuSettingGroup {
+  title: string
+  footer?: string
+  /** 來自 `page`：畫面上攤平成一個 Section，不做巢狀子頁。 */
+  fromPage: boolean
+  items: AidokuSettingItem[]
+}
+
+export interface AidokuSettingsSpec {
+  groups: AidokuSettingGroup[]
+  /** schema 的預設值（key → default）：沒改過的 key 用這裡。 */
+  defaults: Record<string, unknown>
+  /** 設定的項數（源詳情顯示用）。 */
+  count: number
+}
+
+function recordOf(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+}
+
+function textOf(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function numberOf(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function controlOf(type: string, method: string | undefined): AidokuSettingControl {
+  if (type === "select" || type === "picker" || type === "segment") return "select"
+  if (type === "multi-select" || type === "multi-single-select") return "multi"
+  if (type === "switch") return "switch"
+  if (type === "text") return "text"
+  if (type === "slider") return "slider"
+  if (type === "stepper") return "stepper"
+  if (type === "login") return method === "basic" || method === "webview" ? "login" : "unsupported"
+  return "unsupported"
+}
+
+function unsupportedOf(type: string, method: string | undefined): AidokuSettingItem["unsupported"] {
+  if (type === "login") return method === "basic" || method === "webview" ? undefined : "login"
+  if (type === "editable-list") return "list"
+  if (type === "button") return "action"
+  return undefined
+}
+
+function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
+  const type = textOf(node.type)
+  if (!type) return null
+  const values = Array.isArray(node.values) ? node.values.map(value => String(value ?? "")) : []
+  const titles = Array.isArray(node.titles) ? node.titles.map(value => String(value ?? "")) : []
+  const key = textOf(node.key)
+  const method = textOf(node.method) || undefined
+  const control = controlOf(type, method)
+  // `button` 沒有 key、也沒有值：留成唯讀列，不然整組會少一格。
+  if (!key && control !== "unsupported") return null
+  return {
+    raw: node,
+    key,
+    type,
+    title: textOf(node.title) || key,
+    subtitle: textOf(node.subtitle) || undefined,
+    placeholder: textOf(node.placeholder) || undefined,
+    secure: node.secure === true,
+    control,
+    options: values.map((value, index) => ({ value, text: titles[index] || value })),
+    multiple: control === "multi",
+    min: numberOf(node.min),
+    max: numberOf(node.max),
+    step: numberOf(node.step),
+    default: node.default,
+    refreshes: Array.isArray(node.refreshes) ? node.refreshes.map(String) : [],
+    method,
+    url: textOf(node.url) || undefined,
+    localStorageKeys: Array.isArray(node.localStorageKeys) ? node.localStorageKeys.map(String).filter(Boolean) : [],
+    useEmail: node.useEmail === true,
+    logoutTitle: textOf(node.logoutTitle) || undefined,
+    unsupported: unsupportedOf(type, method),
+  }
+}
+
+/** 一層 items：group / page 直接攤平（不再往下分頁）。 */
+function itemsOf(nodes: unknown): AidokuSettingItem[] {
+  const out: AidokuSettingItem[] = []
+  for (const value of Array.isArray(nodes) ? nodes : []) {
+    const node = recordOf(value)
+    if (!node) continue
+    if (node.type === "group" || node.type === "page") {
+      out.push(...itemsOf(node.items))
+      continue
+    }
+    const item = itemOf(node)
+    if (item) out.push(item)
+  }
+  return out
+}
+
+/** `settings.json` 的 schema → 畫面用的 spec（保留順序與原欄位）。 */
+export function parseSettingsSpec(schema: unknown): AidokuSettingsSpec {
+  const groups: AidokuSettingGroup[] = []
+  const defaults: Record<string, unknown> = {}
+  let count = 0
+  /** 沒有 group 的欄位：合成一組（標題空字串＝不顯示小標題）。 */
+  let loose: AidokuSettingItem[] | null = null
+
+  for (const value of Array.isArray(schema) ? schema : []) {
+    const node = recordOf(value)
+    if (!node) continue
+    const type = textOf(node.type)
+    if (type === "group" || type === "page") {
+      const items = itemsOf(node.items)
+      if (items.length === 0) continue
+      groups.push({
+        title: textOf(node.title),
+        footer: textOf(node.footer) || undefined,
+        fromPage: type === "page",
+        items,
+      })
+      loose = null
+      continue
+    }
+    const item = itemOf(node)
+    if (!item) continue
+    if (!loose) {
+      loose = []
+      groups.push({ title: "", fromPage: false, items: loose })
+    }
+    loose.push(item)
+  }
+
+  for (const group of groups) {
+    for (const item of group.items) {
+      count += 1
+      if (item.key && item.default !== undefined && item.control !== "unsupported") {
+        defaults[item.key] = item.default
+      }
+    }
+  }
+  return { groups, defaults, count }
+}
+
+/** 讀 `Payload/settings.json` 轉成 spec；沒有這個檔（或壞掉）就是空的。 */
+export function settingsSpecOf(key: string): AidokuSettingsSpec {
+  return parseSettingsSpec(readJson(join(payloadDir(key), "settings.json")))
+}
+
+/** 使用者改過的值（只含改過的 key）。 */
+export function settingsOf(key: string): Record<string, unknown> {
+  const settings = installedOf(key).settings
+  return settings && typeof settings === "object" ? settings : {}
+}
+
+/**
+ * 寫一個設定值，讓源下次呼叫時重載。
+ *
+ * 源的 `refreshes` 有細粒度（`content` / `listings` / `settings`），這裡一律當成
+ * 「重載源 ＋ 丟掉 listings 快取」：對 Aidoku 源來說重載很便宜（下次呼叫才真的做），
+ * 而漏刷新的代價（清單還用舊設定）比多重載一次明顯得多。
+ */
+export function setSetting(key: string, id: string, value: unknown): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  if (value === undefined) delete settings[id]
+  else settings[id] = value
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/**
+ * `method: "basic"` 的登入：只是往源的設定寫三個鍵，源自己用 `defaults.get(...)` 讀。
+ * 宿主不驗證帳密（Aidoku 的 wasm 源都是宿主直接寫），所以寫完就算登入。
+ */
+export function loginBasic(key: string, settingKey: string, username: string, password: string): void {
+  if (!exists(dirOf(key))) return
+  const settings = {
+    ...settingsOf(key),
+    [`${settingKey}.username`]: username,
+    [`${settingKey}.password`]: password,
+    [settingKey]: "logged_in",
+  }
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** webview 登入收集到的資料：只含要寫進源設定的部分。 */
+export interface AidokuWebLoginData {
+  cookies: Array<{ name: string; value: string }>
+  /** 只含源指定要收的鍵；沒指定就是空的。 */
+  localStorage: Record<string, string>
+}
+
+/**
+ * `method: "webview"` 的登入：把 cookie 寫成同序的 `.keys`／`.values`，
+ * localStorage 寫成 `.ls.<名>`，最後把狀態設成 `logged_in`。
+ */
+export function loginWebview(key: string, settingKey: string, data: AidokuWebLoginData): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  // 同一個登入項底下舊的 localStorage 先清掉，不讓上一次的憑證混進這次。
+  for (const name of Object.keys(settings)) {
+    if (name.startsWith(`${settingKey}.ls.`)) delete settings[name]
+  }
+  const cookies = (data.cookies ?? []).filter(cookie => typeof cookie?.name === "string" && cookie.name.length > 0)
+  settings[`${settingKey}.keys`] = cookies.map(cookie => cookie.name)
+  settings[`${settingKey}.values`] = cookies.map(cookie => String(cookie.value ?? ""))
+  const storage = Object.entries(data.localStorage ?? {}).filter(([name]) => name.length > 0)
+  for (const [name, value] of storage) settings[`${settingKey}.ls.${name}`] = String(value)
+  // 什麼都沒收到就不標成已登入（上游同樣不把空 cookie 當登入）。
+  if (cookies.length > 0 || storage.length > 0) settings[settingKey] = "logged_in"
+  else delete settings[settingKey]
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** 登出 webview 登入：把 cookie、localStorage 與狀態鍵全部拿掉。 */
+export function logoutWebview(key: string, settingKey: string): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  delete settings[`${settingKey}.username`]
+  delete settings[`${settingKey}.password`]
+  delete settings[`${settingKey}.keys`]
+  delete settings[`${settingKey}.values`]
+  for (const name of Object.keys(settings)) {
+    if (name.startsWith(`${settingKey}.ls.`)) delete settings[name]
+  }
+  delete settings[settingKey]
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** 登出 basic 登入：把寫進去的三個鍵拿掉。 */
+export function logoutBasic(key: string, settingKey: string): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  delete settings[`${settingKey}.username`]
+  delete settings[`${settingKey}.password`]
+  delete settings[settingKey]
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** 全部回復成 schema 的預設值（把改過的 key 整個拿掉）。 */
+export function resetSettings(key: string): void {
+  if (!exists(dirOf(key))) return
+  const { settings: _removed, ...rest } = installedOf(key)
+  writeInstalled(key, rest)
+  forgetLoaded(key)
+}
+
+// ---------------------------------------------------------------- 橋
+
+/** 源已經被判定不可用（自癒也救不回來）：後續呼叫直接失敗，不再碰宿主。 */
+class AidokuUnavailableError extends Error {}
+
+/** 載入／初始化失敗（宿主或源自己的錯）：值得先重建宿主再試一次。 */
+class SourceLoadError extends Error {}
+
+/** 源級失敗原因（記憶體；重啟 App、重新安裝或重新啟用就會清掉）。 */
+const failures = new Map<string, string>()
+
+/** 載入時問到的「需要圖片後處理」（解密／解拼）：只有載入過才知道。 */
+const imageProcessors = new Map<string, boolean>()
+
+let stateListener: (() => void) | null = null
+
+/** registry 用它廣播變更（不反向 import registry，避免循環）。 */
+export function setStateListener(listener: (() => void) | null): void {
+  stateListener = listener
+}
+
+/** 這個源需不需要圖片後處理；還沒載入過就是 false。 */
+export function needsImageProcessing(key: string): boolean {
+  return imageProcessors.get(key) === true
+}
+
+/** 載入後問一次 `hasImageProcessor`；結果改變才通知畫面。 */
+async function rememberImageProcessor(key: string): Promise<void> {
+  const previous = imageProcessors.get(key)
+  const flag = await hasImageProcessorAidoku()
+  if (flag === previous) return
+  imageProcessors.set(key, flag)
+  stateListener?.()
+}
+
+/** 這個源現在為什麼不可用；正常的話是 undefined。 */
+export function failureOf(key: string): string | undefined {
+  return failures.get(key)
+}
+
+/** 重新嘗試這個源（重新安裝／啟用時用）。 */
+export function clearFailure(key: string): void {
+  if (failures.delete(key)) stateListener?.()
+}
+
+function markFailure(key: string, reason: string): void {
+  failures.set(key, reason)
+  log("error", "aidoku", `${key} 已標記為不可用：${reason}`)
+  stateListener?.()
+}
+
+function messageOf(failure: unknown): string {
+  return failure instanceof Error ? failure.message : String(failure ?? "")
+}
+
+/** 給使用者看的一行原因：宿主層的技術字換成人話，源自己的錯誤原樣保留。 */
+function userMessageOf(failure: unknown): string {
+  const message = messageOf(failure)
+  if (/timed out|timeout/i.test(message)) return t("sources.aidoku.timeout")
+  if (/did not become ready|failed to load|worker failed|failed to start/i.test(message)) {
+    return t("sources.aidoku.initFailed")
+  }
+  return message
+}
+
+function assertAvailable(key: string): void {
+  const reason = failures.get(key)
+  if (reason) throw new AidokuUnavailableError(t("sources.aidoku.unavailable", { reason }))
+}
+
+let initializedKey: string | null = null
+
+/** 檔案被換掉／删掉了：宿主還載著這一份的話就丟掉，下次用到時重載新檔。 */
+function forgetLoaded(key: string): void {
+  listings.delete(key)
+  imageProcessors.delete(key)
+  if (loadedAidokuSourceKey() !== key) return
+  resetAidokuHost()
+  initializedKey = null
+}
+
+async function initializeGuarded(): Promise<void> {
+  try {
+    await initializeAidokuSource()
+  } catch (failure) {
+    throw new SourceLoadError(messageOf(failure))
+  }
+}
+
+/** 確定 worker 裡載著這一份源（而且初始化過）。 */
+async function ensureLoaded(source: InstalledSource): Promise<void> {
+  const key = source.stored.key
+  if (loadedAidokuSourceKey() === key) {
+    if (initializedKey === key) return
+    await initializeGuarded()
+    initializedKey = key
+    return
+  }
+  // 檔案不在／壞掉是源自己的問題，重建宿主也沒用。
+  const payload = readPayload(key)
+  const started = Date.now()
+  try {
+    await loadAidokuPackage(payload, key)
+  } catch (failure) {
+    throw new SourceLoadError(messageOf(failure))
+  }
+  await initializeGuarded()
+  initializedKey = key
+  await rememberImageProcessor(key)
+  log("info", "aidoku", `${key} 已載入（${Date.now() - started}ms）`)
+}
+
+function shouldHeal(failure: unknown): boolean {
+  return isAidokuHostError(failure) || failure instanceof SourceLoadError
+}
+
+/**
+ * 一次原子操作：確保載著這份源 → 跑 task。
+ * 宿主這一層壞掉就重建一次、重載、再試一次；第二次仍失敗預設標記源不可用，
+ * 但 `markOnFailure=false` 的路徑（例如單張圖處理失敗）只把錯誤丟出去。
+ */
+function withHealing<T>(source: InstalledSource, step: string, task: () => Promise<T>, markOnFailure = true): Promise<T> {
+  const key = source.stored.key
+  return runAidokuExclusive(async () => {
+    assertAvailable(key)
+    try {
+      await ensureLoaded(source)
+      return await task()
+    } catch (failure) {
+      if (!shouldHeal(failure)) throw failure
+      log("warning", "aidoku", `${key} 的 ${step} 失敗（${messageOf(failure)}），重建宿主後重試一次`)
+      resetAidokuHost()
+      initializedKey = null
+      try {
+        await ensureLoaded(source)
+        return await task()
+      } catch (retryFailure) {
+        if (markOnFailure) markFailure(key, userMessageOf(retryFailure))
+        throw retryFailure
+      }
+    }
+  })
+}
+
+/** `onResponse` 拿到的可能是 ArrayBuffer 或 Uint8Array。 */
+function toBytes(value: any): Uint8Array {
+  return value instanceof Uint8Array ? value : new Uint8Array(value)
+}
+
+/** 有 `process_page_image` 的源：抓回來的位元組先交給源處理。 */
+async function processPageImageBytes(
+  source: InstalledSource,
+  bytes: any,
+  request: AidokuPageImageRequest
+): Promise<Uint8Array> {
+  try {
+    return await withHealing(source, "processPageImage", () => processAidokuPageImage(toBytes(bytes), request), false)
+  } catch (failure) {
+    if (failure instanceof AidokuUnavailableError) throw failure
+    log("error", "aidoku", `${source.stored.key} 的頁面圖處理失敗`, failure)
+    throw new Error(t("sources.aidoku.failed", { message: userMessageOf(failure) }))
+  }
+}
+
+/** 一次源呼叫。`timeoutMs` 沒給就用宿主預設的 15s。 */
+function call(source: InstalledSource, method: string, args: unknown[] = [], timeoutMs?: number): Promise<any> {
+  return withHealing(source, method, () => callAidoku(method, args, timeoutMs))
+}
+
+/** 把失敗包成「源出錯」（畫面才不會把它當成網路問題）。 */
+async function ask<T>(step: string, task: () => Promise<T>): Promise<T> {
+  try {
+    return await task()
+  } catch (failure) {
+    if (failure instanceof AidokuUnavailableError) throw failure
+    log("error", "aidoku", `${step} 失敗`, failure)
+    throw new Error(t("sources.aidoku.failed", { message: userMessageOf(failure) }))
+  }
+}
+
+// ---------------------------------------------------------------- 映射
+
+function names(raw: unknown): string {
+  return Array.isArray(raw)
+    ? raw
+        .map(value => String(value ?? "").trim())
+        .filter(value => value.length > 0)
+        .join(", ")
+    : ""
+}
+
+function toComicItem(raw: any): ComicListItem | null {
+  const id = raw?.key ?? raw?.id
+  if (id == null || id === "") return null
+  return {
+    id: String(id),
+    title: String(raw.title ?? raw.name ?? t("common.untitled")),
+    subtitle: names(raw.authors) || undefined,
+    cover: typeof raw.cover === "string" && raw.cover ? raw.cover : undefined,
+    tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+    description: typeof raw.description === "string" && raw.description ? raw.description : undefined,
+  }
+}
+
+function toListPage(raw: any, page: number): ComicListPage {
+  const entries: any[] = Array.isArray(raw?.entries) ? raw.entries : []
+  return {
+    comics: entries.map(toComicItem).filter((item): item is ComicListItem => item !== null),
+    maxPage: raw?.hasNextPage === true ? page + 1 : page,
+  }
+}
+
+function toChapter(raw: any): { group: string; id: string; title: string } | null {
+  const key = raw?.key ?? raw?.id
+  if (key == null || key === "") return null
+  const id = String(key)
+  const title = typeof raw.title === "string" ? raw.title.trim() : ""
+  const number = raw.chapterNumber
+  return {
+    group: "",
+    id,
+    title: title || (typeof number === "number" && number > 0 ? t("sources.aidoku.chapter", { n: number }) : id),
+  }
+}
+
+/** 搜尋（第一頁；翻頁由 hasNextPage 轉成 maxPage）。 */
+export function search(source: InstalledSource, keyword: string, page = 1): Promise<ComicListPage> {
+  return ask("search", async () => toListPage(await call(source, "getSearchMangaList", [keyword, page, []]), page))
+}
+
+/** 詳情＋章節：`getMangaDetails` 之後立刻補 `getChapterList`（章節就在詳情裡）。 */
+export function detail(source: InstalledSource, comicId: string): Promise<ComicDetail> {
+  return ask("detail", async () => {
+    const raw = await call(source, "getMangaDetails", [{ key: comicId, id: comicId }], SLOW_CALL_TIMEOUT_MS)
+    const mangaId = String(raw?.key ?? raw?.id ?? comicId)
+    const chapters = await call(source, "getChapterList", [{ key: mangaId, id: mangaId }], SLOW_CALL_TIMEOUT_MS)
+    return {
+      id: comicId,
+      title: String(raw?.title ?? t("sources.untitled")),
+      cover: typeof raw?.cover === "string" && raw.cover ? raw.cover : undefined,
+      description: typeof raw?.description === "string" && raw.description ? raw.description : undefined,
+      tags: normalizeTags(raw?.tags),
+      chapters: (Array.isArray(chapters) ? chapters : [])
+        .map(toChapter)
+        .filter((chapter): chapter is { group: string; id: string; title: string } => chapter !== null),
+      uploader: names(raw?.authors) || undefined,
+      url: typeof raw?.url === "string" && raw.url ? raw.url : undefined,
+    }
+  })
+}
+
+/** 章節的頁面清單（回圖片的原始網址，取圖前會再問 `modifyImageRequest`）。 */
+export async function pages(source: InstalledSource, comicId: string, epId: string): Promise<string[]> {
+  const urls = await ask("pages", async () => {
+    const raw = await call(
+      source,
+      "getPageList",
+      [{ key: comicId, id: comicId }, { key: epId, id: epId, mangaId: comicId }],
+      SLOW_CALL_TIMEOUT_MS
+    )
+    return (Array.isArray(raw) ? raw : [])
+      .map((page: any) => String(page?.url ?? ""))
+      .filter((url: string) => url.length > 0)
+  })
+  if (urls.length === 0) throw new Error(t("sources.emptyChapter"))
+  return urls
+}
+
+/** 圖片的請求：URL 與 header（UA／cookie／Referer）都由源的 `modifyImageRequest` 決定。 */
+export function imageRequest(source: InstalledSource, url: string, chapterId?: string): Promise<ImageRequest> {
+  return ask("image", async () => {
+    const raw = await call(source, "modifyImageRequest", [url, chapterId ?? null])
+    const headers: Record<string, string> = {}
+    if (raw?.headers && typeof raw.headers === "object") {
+      for (const [name, value] of Object.entries(raw.headers as Record<string, unknown>)) {
+        if (value != null) headers[name] = String(value)
+      }
+    }
+    const target = typeof raw?.url === "string" && raw.url ? raw.url : url
+    const request: ImageRequest = { url: target, method: "GET", data: null, headers }
+    // 只有真的有 hook 的源才多走一次處理（沒有的話連 onResponse 都不裝）。
+    if (needsImageProcessing(source.stored.key)) {
+      request.onResponse = (bytes: any, response?: ImageResponseInfo) =>
+        processPageImageBytes(source, bytes, {
+          url: target,
+          headers,
+          status: response?.status ?? 200,
+          responseHeaders: response?.headers ?? {},
+        })
+    }
+    return request
+  })
+}
+
+/** 正文取圖用的模組：`engine/images.ts` 的 `onImageLoad` 契約。 */
+export function comicModule(source: InstalledSource): {
+  onImageLoad(imageUrl: string, comicId: string, epId: string): Promise<ImageRequest>
+} {
+  return {
+    onImageLoad: (imageUrl: string, _comicId: string, epId: string) => imageRequest(source, imageUrl, epId),
+  }
+}
+
+// ---------------------------------------------------------------- listings
+
+/** `getListings()` 的原始條目（`explore()` 是同步的，所以先收在這裡）。 */
+const listings = new Map<string, any[]>()
+
+/** manifest 的靜態 `listings`。 */
+function staticListingsOf(key: string): any[] {
+  const staticListings = manifestOf(key)?.listings
+  return Array.isArray(staticListings) ? staticListings : []
+}
+
+/**
+ * 靜態（manifest）與動態（`getListings()`）合併，以 `id` 去重、先來的優先。
+ * 官方執行期也是 `[...staticListings, ...dynamicListings]`。
+ */
+export function mergeListings(staticListings: any[], dynamicListings: any[]): any[] {
+  const merged: any[] = []
+  const seen = new Set<string>()
+  for (const item of [...staticListings, ...dynamicListings]) {
+    if (!item || typeof item !== "object") continue
+    const id = item.id == null ? "" : String(item.id)
+    if (id) {
+      if (seen.has(id)) continue
+      seen.add(id)
+    }
+    merged.push(item)
+  }
+  return merged
+}
+
+/** 載入源並收下 listings（第一次用到時）。 */
+export function ready(source: InstalledSource): Promise<void> {
+  const key = source.stored.key
+  return ask("ready", () =>
+    withHealing(source, "getListings", async () => {
+      if (listings.has(key)) return
+      const staticListings = staticListingsOf(key)
+      let dynamicListings: any[] = []
+      try {
+        const raw = await callAidoku("getListings")
+        if (Array.isArray(raw)) dynamicListings = raw
+      } catch (failure) {
+        // 只有宿主層會真的丟錯（源自己的 get_listings 丟錯時 runtime 回空陣列）：
+        // manifest 已經有清單就照用，一個都沒有的話才把錯誤丟上去。
+        if (staticListings.length === 0) throw failure
+        log("warning", "aidoku", `${key} 的動態 listings 讀不到，只用 manifest 的`, failure)
+      }
+      listings.set(key, mergeListings(staticListings, dynamicListings))
+    })
+  )
+}
+
+export function explore(source: InstalledSource): ExploreEntry[] {
+  return (listings.get(source.stored.key) ?? []).map((item, index) => ({
+    index,
+    title: String(item?.name ?? item?.title ?? t("sources.exploreFallback", { n: index + 1 })),
+    type: "multiPageComicList",
+    supportsNext: true,
+  }))
+}
+
+/** 一個 listing 的一頁（`getMangaListForListing`）。 */
+export function listing(source: InstalledSource, index: number, page: number): Promise<ComicListPage> {
+  return ask("listing", async () => {
+    const item = listings.get(source.stored.key)?.[index]
+    if (!item) throw new Error(t("sources.unsupported.exploreIndex", { n: index + 1 }))
+    return toListPage(await call(source, "getMangaListForListing", [item, page]), page)
+  })
+}

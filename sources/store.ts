@@ -10,17 +10,24 @@ const KV_ENABLED_PREFIX = "venera:sourceEnabled:"
 
 export interface StoredSource {
   key: string
+  /** 源類型；沒寫就是 Venera（舊資料不必遷移）。Aidoku 源的檔案在 `sources/aidoku/<id>/`，不這裡。 */
+  kind?: "venera" | "aidoku"
   name: string
   version: string
   minAppVersion: string
   /** 源自己宣告的網站網址。 */
   homeUrl: string
+  /** 顯示用的圖示：本機解出來的檔案路徑，或倉庫索引的網址（可沒有）。 */
+  iconUrl?: string
   /** 安裝來源（倉庫 URL 或 null 表示手動貼上）。 */
   origin: string | null
   installedAt: number
   updatedAt: number
   enabled: boolean
-  /** 設定值（v1 只有源的預設值，唯讀；之後開放編輯就寫在這裡）。 */
+  /**
+   * 設定值。Venera：預設值＋使用者值（存 `index.json`）；Aidoku：只放使用者改過的 key
+   * （唯讀欄位，檔案在 `sources/aidoku/<id>/installed.json`）。
+   */
   settings?: Record<string, unknown>
   /** 登入狀態（憑證本體在 Keychain）。 */
   loggedIn?: boolean

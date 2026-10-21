@@ -106,12 +106,16 @@ export async function harvestCookies(controller: WebViewController, urls: string
  * 讀當前頁面的 localStorage 成 `{key: value}`。源的 `onLoginSuccess` 會用
  * `this.loadData("_localStorage")` 拿它（ccc 的 JWT 就是這樣來的）。
  * 讀不到（不同 origin、頁面已導航）就回空的，不拋錯。
+ *
+ * 給了 `keys` 就只讀那幾個鍵（其他鍵連碰都不碰）。
  */
-export async function dumpLocalStorage(controller: WebViewController): Promise<Record<string, string>> {
+export async function dumpLocalStorage(controller: WebViewController, keys?: string[]): Promise<Record<string, string>> {
   try {
-    const json = await controller.evaluateJavaScript<string>(
-      "return (() => { try { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k != null) o[k] = String(localStorage.getItem(k)); } return JSON.stringify(o); } catch (e) { return ''; } })()"
-    )
+    const script =
+      keys && keys.length > 0
+        ? `return (() => { try { const o = {}; const keys = ${JSON.stringify(keys)}; for (let i = 0; i < keys.length; i++) { const k = keys[i]; const v = localStorage.getItem(k); if (v) o[k] = String(v); } return JSON.stringify(o); } catch (e) { return ''; } })()`
+        : "return (() => { try { const o = {}; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k != null) o[k] = String(localStorage.getItem(k)); } return JSON.stringify(o); } catch (e) { return ''; } })()"
+    const json = await controller.evaluateJavaScript<string>(script)
     if (!json) return {}
     const parsed = JSON.parse(json) as unknown
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}

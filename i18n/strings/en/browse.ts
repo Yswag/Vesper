@@ -5,7 +5,8 @@ export default {
   manageSources: "Manage comic sources",
   enabledSources: "Enabled sources ({n})",
   emptyTitle: "No enabled sources",
-  emptyDetail: "Install and enable comic sources in Settings → Comic Sources.",
+  emptyDetail: "Install and enable comic sources in Settings → Comic Sources. Aidoku indexes can be added under Source repositories.",
+  pickSources: "Choose sources",
 
   source: "Source",
   explore: "Explore",
@@ -23,6 +24,9 @@ export default {
 
   hotPicks: "Popular picks",
   all: "All",
+
+  searchOnly: "This source only supports search",
+  goSearch: "Search",
 
   noCategories: "This source has no categories available",
   partError: "Couldn't load: {error}",

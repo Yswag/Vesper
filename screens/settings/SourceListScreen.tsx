@@ -3,13 +3,13 @@
 import { Divider, HStack, Image, NavigationLink, ReorderableForEach, Spacer, Text, VStack, useObservable, useEffect, useRef, useState } from "scripting"
 
 import { Card, CardGroup, GroupHeader, PageScroll } from "../../design/layout"
-import { Chevron, IconRow } from "../../design/rows"
+import { Chevron, IconRow, TagPill } from "../../design/rows"
 import { EmptyState, NoticeBanner } from "../../design/status"
 import { avatarSize, cardBackground, cardShape, dangerBadge, palette, rowPadding } from "../../design/tokens"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { appDataRoot, hasFileAccess } from "../../engine/fs"
 import { t } from "../../i18n"
-import { allSources, reloadRegistry, reorderSources, subscribeSources, type InstalledSource } from "../../sources/registry"
+import { allSources, reloadRegistry, reorderSources, sourceKindOf, subscribeSources, type InstalledSource } from "../../sources/registry"
 import { listRepositories, subscribeRepositories } from "../../sources/repository"
 import { RepositoryListScreen } from "./RepositoryListScreen"
 import { SourceDetailScreen } from "./SourceDetailScreen"
@@ -207,6 +207,7 @@ export function SourceListScreen() {
 function SourceCardRow({ source }: { source: InstalledSource }) {
   const meta = source.meta
   const name = meta?.name ?? source.stored.name
+  const kindLabel = t(sourceKindOf(source) === "aidoku" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")
 
   return (
     <HStack
@@ -215,15 +216,30 @@ function SourceCardRow({ source }: { source: InstalledSource }) {
       alignment="center"
       frame={{ maxWidth: "infinity" }}
     >
-      <SourceAvatar sourceKey={source.stored.key} name={name} size={avatarSize} instance={source.instance} />
+      <SourceAvatar
+        sourceKey={source.stored.key}
+        name={name}
+        size={avatarSize}
+        instance={source.instance}
+        iconUrl={source.stored.iconUrl}
+      />
 
-      <VStack alignment="leading" spacing={2}>
-        <Text font="body" fontWeight="medium" foregroundStyle="label">
-          {name}
-        </Text>
-        <Text font="caption2" foregroundStyle="secondaryLabel">
-          {source.stored.key} · v{meta?.version ?? source.stored.version}
-        </Text>
+      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <HStack spacing={6} alignment="center">
+          <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
+            {name}
+          </Text>
+          <TagPill text={kindLabel} />
+        </HStack>
+        <HStack spacing={4} alignment="center">
+          <Text
+            font="caption2"
+            foregroundStyle={source.error ? "systemRed" : "secondaryLabel"}
+            lineLimit={1}
+          >
+            {source.error ?? `${source.stored.key} · v${meta?.version ?? source.stored.version}`}
+          </Text>
+        </HStack>
       </VStack>
 
       <Spacer />

@@ -8,7 +8,7 @@ import { Convert } from "./convert"
 import { appDataRoot, ensureDir, exists, join, remove } from "./fs"
 import { fetchImageBytes } from "./http"
 import { runModifyImage, type ImageCompositor } from "./imageprocess"
-import { absoluteUrl, normalizeImageConfig, type ImageRequest } from "./images"
+import { absoluteUrl, normalizeImageConfig, type ImageRequest, type ImageResponseInfo } from "./images"
 import { log } from "./log"
 import { kv } from "./storage"
 import { getMaxAgeDays, getMaxSizeBytes } from "../app/cacheSetting"
@@ -41,7 +41,7 @@ export interface ImageRequestSpec {
   url: string
   headers: Record<string, string>
   /** 源用來改寫回應位元組（例如 ccc 用 AES-CBC 解密整張圖）。 */
-  onResponse?: (bytes: any) => any
+  onResponse?: (bytes: any, response?: ImageResponseInfo) => any
   /** 源用來重排圖片（Venera 的 Image API 腳本字串）。 */
   modifyImage?: string
   /** 抓圖失敗時叫一次，回一組新的設定（或 null 放棄）；Venera 的語意是一次性。 */
@@ -76,7 +76,7 @@ export async function fetchProcessedImage(
   // 但實務上源也會回 Uint8Array，兩種都要吃。
   let body: any = response.body
   if (typeof spec.onResponse === "function") {
-    const transformed = await spec.onResponse(body)
+    const transformed = await spec.onResponse(body, { status: response.status, headers: response.headers })
     if (transformed != null) body = transformed
   }
 

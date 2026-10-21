@@ -33,6 +33,20 @@ export default {
 
   verificationTitle: "请完成安全验证 ({name})",
 
+  aidoku: {
+    failed: "源出错：{message}",
+    missing: "源的档案不见了（请重新安装这个源）",
+    timeout: "源响应超时",
+    initFailed: "源初始化失败",
+    invalidPackage: "这不是有效的 Aidoku 源文件（.aix）",
+    chapter: "第 {n} 话",
+    unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
+
+    indexInvalid: "Aidoku 索引格式不对（要 { sources: [...] } 或 JSON 数组）",
+    indexBadId: "源 id 不合法：{id}",
+    indexBadEntry: "索引条目缺 name、version 或下载路径",
+  },
+
   login: {
     expired: "登录已过期，请重新登录",
     cancelled: "已取消登录",

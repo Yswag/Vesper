@@ -10,12 +10,15 @@ import { t } from "../../i18n"
 import {
   accountSpec,
   findSource,
+  hasAidokuSettings,
   reloadRegistry,
   setSourceEnabled,
+  sourceKindOf,
   uninstallSource,
   type InstalledSource,
 } from "../../sources/registry"
 import { getRepository, repositoryNameFor } from "../../sources/repository"
+import { AidokuSettingsScreen } from "./AidokuSettingsScreen"
 import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
 
@@ -76,6 +79,20 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
           </>
         ) : null}
 
+        {hasAidokuSettings(source) ? (
+          <>
+            <Divider padding={{ leading: rowSeparatorInset }} />
+            <NavigationLink destination={<AidokuSettingsScreen sourceKey={sourceKey} />}>
+              <IconRow
+                icon="slider.horizontal.3"
+                title={t("settings.sourceDetail.settingsRow")}
+                detail={t("settings.shared.countItems", { n: source.settingsSpec?.count ?? 0 })}
+                chevron
+              />
+            </NavigationLink>
+          </>
+        ) : null}
+
         {accountSpec(source) ? (
           <>
             <Divider padding={{ leading: rowSeparatorInset }} />
@@ -97,15 +114,20 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
 
       {/* 2. 基本資料 */}
       <CardGroup title={t("settings.sourceDetail.profile")}>
+        <InfoRow
+          label={t("settings.sourceDetail.kind")}
+          value={t(sourceKindOf(source) === "aidoku" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")}
+        />
+        <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.sourceDetail.name")} value={meta?.name ?? source.stored.name} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.sourceDetail.key")} value={source.stored.key} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.sourceDetail.version")} value={meta?.version ?? source.stored.version} />
         <Divider padding={{ leading: 16 }} />
-        <InfoRow label={t("settings.sourceDetail.minAppVersion")} value={meta?.minAppVersion ?? "—"} />
+        <InfoRow label={t("settings.sourceDetail.minAppVersion")} value={meta?.minAppVersion || "—"} />
         <Divider padding={{ leading: 16 }} />
-        <InfoRow label={t("settings.sourceDetail.updateUrl")} value={meta?.url ?? "—"} />
+        <InfoRow label={t("settings.sourceDetail.updateUrl")} value={meta?.url || "—"} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow
           label={t("settings.sourceDetail.origin")}

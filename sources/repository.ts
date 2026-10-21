@@ -2,6 +2,7 @@
 //
 //   <documents>/Vesper/sources/repositories.json   { version, repositories: StoredRepository[] }
 //
+// 倉庫有兩種：`venera`（Venera 的源清單）與 `aidoku-index`（Aidoku 的兩份索引 schema）。
 // 加入倉庫只保存索引（含快取），**不安裝任何源**；安裝由 registry 從快取的條目逐筆挑。
 // 索引快取在本地，所以沒網路也看得到清單。沒有檔案授權時退回 Storage KV（跟 store.ts 同樣策略）。
 
@@ -14,9 +15,13 @@ import type { CatalogEntry } from "./catalog"
 const KV_KEY = "venera:repositories"
 const INDEX_VERSION = 1
 
+export type RepositoryKind = "venera" | "aidoku-index"
+
 export interface StoredRepository {
   /** 索引 URL，同時是識別碼：同一個網址只會有一筆，再加入就是重新抓取。 */
   url: string
+  /** 索引格式；沒寫就是 venera（舊資料不必遷移）。 */
+  kind?: RepositoryKind
   /** 顯示名稱（由 URL 推導）。 */
   name: string
   addedAt: number
@@ -43,6 +48,11 @@ function indexPath(): string {
 
 function isValid(entry: unknown): entry is StoredRepository {
   return Boolean(entry) && typeof (entry as StoredRepository).url === "string"
+}
+
+/** 舊資料沒有 kind。 */
+export function kindOf(repository: StoredRepository): RepositoryKind {
+  return repository.kind === "aidoku-index" ? "aidoku-index" : "venera"
 }
 
 // ---------------------------------------------------------------- 讀寫

@@ -17,6 +17,7 @@ import {
   VStack,
   ZStack,
   useEffect,
+  useObservable,
   useRef,
   useState,
 } from "scripting"
@@ -64,6 +65,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   // 畫面自己訂閱語言：導覽列標題與下面的字都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
   const [entries, setEntries] = useState<ExploreEntry[]>([])
+  const [entriesLoading, setEntriesLoading] = useState(true)
   const [active, setActive] = useState(0)
   const [sections, setSections] = useState<ComicSection[]>([])
   const [activeSection, setActiveSection] = useState(0)
@@ -80,14 +82,41 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const [hits, setHits] = useState<ComicListItem[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState("")
+  /** 系統搜尋框的展開狀態：源沒有清單時，那顆「去搜尋」要把它打開。 */
+  const searchPresented = useObservable(false)
   /**
    * 這一輪搜尋的 epoch（跟 SearchScreen 同一套）：每次重跑換一個 id＋一個 controller。
    * 換關鍵字、清空或離開畫面時舊的一輪作廢（回來的東西一律丟掉），在飛的請求真的被中止。
    */
   const searchRun = useRef({ id: 0, controller: null as AbortController | null })
+  /** 這一輪 listings 的 epoch：換源或重試時舊的一輪作廢。 */
+  const entryRun = useRef(0)
+
+  /** 讀這一源的探索分類。Aidoku 要先讓源把 listings 載進來，所以整段是非同步的。 */
+  async function loadEntries() {
+    const id = ++entryRun.current
+    const current = () => entryRun.current === id
+    setEntriesLoading(true)
+    setErrorText("")
+    try {
+      const list = await library.explore(sourceKey)
+      if (current()) setEntries(list)
+    } catch (error) {
+      if (!current()) return
+      setEntries([])
+      setErrorText(error instanceof Error ? error.message : String(error))
+      setStatus("error")
+    } finally {
+      if (current()) setEntriesLoading(false)
+    }
+  }
 
   useEffect(() => {
-    setEntries(library.explore(sourceKey))
+    setEntries([])
+    void loadEntries()
+    return () => {
+      entryRun.current++
+    }
   }, [sourceKey])
 
   useEffect(() => {
@@ -295,6 +324,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
           prompt: t("browse.searchInSource", { name: navTitle }),
           value: keyword,
           onChanged: handleKeyword,
+          presented: searchPresented,
         }}
         // 送出（鍵盤的搜尋鍵）才真的打這個源。
         onSubmit={{ triggers: "search", action: submitSearch }}
@@ -314,13 +344,24 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         <ScrollView scrollContentBackground="hidden" scrollDismissesKeyboard="interactively">
           {chipRow}
 
+          {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
+          {entries.length === 0 ? (
+            entriesLoading ? (
+              <PageLoading />
+            ) : errorText ? (
+              <MessageBlock text={errorText} onRetry={() => void loadEntries()} />
+            ) : (
+              <SearchOnlyBlock onSearch={() => searchPresented.setValue(true)} />
+            )
+          ) : null}
+
           {/* 錯誤或狀態提示 */}
-          {message && sections.length === 0 ? (
+          {message && entries.length > 0 && sections.length === 0 ? (
             <MessageBlock text={message} onRetry={() => void loadFirst(entries[active])} />
           ) : null}
 
           {/* 載入初態 */}
-          {busy && sections.length === 0 ? <PageLoading /> : null}
+          {busy && entries.length > 0 && sections.length === 0 ? <PageLoading /> : null}
 
           {isMultiSection ? (
             /* 多區塊模式：垂直列表 + 橫向輪播 */
@@ -499,6 +540,16 @@ function MagazineSectionRow({
         </VStack>
       )}
     </NamespaceReader>
+  )
+}
+
+/** 這個源沒有探索清單：搜尋是唯一入口，直接把人帶去上面的搜尋框（重試沒有意義）。 */
+function SearchOnlyBlock({ onSearch }: { onSearch: () => void }) {
+  return (
+    <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>
+      <Text foregroundStyle="secondaryLabel">{t("browse.searchOnly")}</Text>
+      <Button title={t("browse.goSearch")} systemImage="magnifyingglass" action={onSearch} buttonStyle="glassProminent" />
+    </VStack>
   )
 }
 

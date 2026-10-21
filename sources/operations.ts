@@ -11,6 +11,7 @@ import { t } from "../i18n"
 import { collectItems, normalizeImages, normalizeListPage, normalizeListSections, normalizeTags, resolveChapters, type ComicListItem, type ComicListPage, type JumpTarget, type SectionPage } from "../engine/adapt"
 import type { SourceCallRetry } from "../engine/images"
 import { readChapterImageKeys } from "../engine/offline"
+import * as aidoku from "./aidoku"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
 import { ensureSourceReady, reloginSource, type ReloginOutcome } from "./registry"
@@ -318,6 +319,7 @@ export async function searchSource(
   options: SearchOptions = {},
   scope?: SourceScope
 ): Promise<ComicListPage> {
+  if (aidoku.isAidoku(source)) return await aidoku.search(source, keyword, options.page ?? 1)
   const instance = await requireInstance(source)
   const search = instance.search
   // ehentai 的 search 只有 loadNext（第一頁 = 沒有游標）；搜尋頁只取第一頁，所以這樣就夠。
@@ -342,6 +344,7 @@ export async function searchSource(
 }
 
 export async function loadDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
+  if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId)
   const instance = await requireInstance(source)
   if (!instance.comic?.loadInfo) throw new Error(t("sources.unsupported.detail"))
 
@@ -375,6 +378,12 @@ export async function loadChapterImages(
   epId: string,
   scope?: SourceScope
 ): Promise<string[]> {
+  if (aidoku.isAidoku(source)) {
+    const started = Date.now()
+    const images = await aidoku.pages(source, comicId, epId)
+    log("info", "reader", `${source.stored.key} 章節 ${epId} → ${images.length} 張 (${Date.now() - started}ms)`)
+    return images
+  }
   const instance = await requireInstance(source)
   if (!instance.comic?.loadEp) throw new Error(t("sources.unsupported.chapter"))
 

@@ -20,8 +20,10 @@ import {
   cardBackgroundStrong,
   cardGap,
   capsule,
+  fill,
   hairlineStroke,
   pageInsets,
+  palette,
   radius,
   rect,
   rowPadding,
@@ -71,12 +73,27 @@ export function BrowseScreen() {
 
             {/* 空狀態 */}
             {sources.length === 0 ? (
-              <EmptyState
-                icon="books.vertical"
-                title={t("browse.emptyTitle")}
-                detail={t("browse.emptyDetail")}
-                variant="page"
-              />
+              <VStack spacing={18} alignment="center" frame={{ maxWidth: "infinity" }}>
+                <EmptyState
+                  icon="books.vertical"
+                  title={t("browse.emptyTitle")}
+                  detail={t("browse.emptyDetail")}
+                  variant="page"
+                />
+                <NavigationLink destination={<SourceListScreen />} buttonStyle="plain">
+                  <HStack
+                    spacing={6}
+                    padding={{ horizontal: 16, vertical: 10 }}
+                    background={fill.selected}
+                    clipShape={capsule("circular")}
+                  >
+                    <Image systemName="plus" font="subheadline" fontWeight="semibold" foregroundStyle={palette.blue} />
+                    <Text font="subheadline" fontWeight="semibold" foregroundStyle={palette.blue}>
+                      {t("browse.pickSources")}
+                    </Text>
+                  </HStack>
+                </NavigationLink>
+              </VStack>
             ) : (
               /* 通透精緻來源卡片流：徹底摒棄 List 死黑，融入流光暗幕 */
               sources.map(source => (
@@ -117,7 +134,7 @@ function SourceCard({ source }: { source: ComicSourceInfo }) {
       alignment="center"
     >
       {/* 來源圖標徽章（優先顯示網站圖標，失敗則圓形文字徽章） */}
-      <SourceAvatar sourceKey={source.key} name={name} size={avatarSize} />
+      <SourceAvatar sourceKey={source.key} name={name} size={avatarSize} iconUrl={source.iconUrl} />
 
       {/* 來源資訊 */}
       <VStack alignment="leading" spacing={3}>
@@ -125,7 +142,7 @@ function SourceCard({ source }: { source: ComicSourceInfo }) {
           {name}
         </Text>
         <Text font="caption2" foregroundStyle="secondaryLabel">
-          {source.key}
+          {`${t(source.kind === "aidoku" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")} · ${source.key}`}
         </Text>
       </VStack>
 

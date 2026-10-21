@@ -11,6 +11,12 @@ export interface CatalogEntry {
   url?: string
   fileName?: string
   description?: string
+  /** Aidoku 索引才有：圖示（已對索引 base 解成絕對網址）。 */
+  iconUrl?: string
+  /** Aidoku 索引才有：源支援的語言。 */
+  languages?: string[]
+  /** Aidoku 索引才有：R18 標記（community 的 contentRating／zh-sources 的 nsfw）。 */
+  nsfw?: boolean
 }
 
 export interface CatalogParseResult {
@@ -76,7 +82,7 @@ export function resolveEntryUrl(entry: CatalogEntry, base: string): string {
   return resolveRelative(base, entry.fileName ?? "")
 }
 
-function resolveRelative(base: string, target: string): string {
+export function resolveRelative(base: string, target: string): string {
   if (/^https?:\/\//i.test(target)) return target
   if (target.startsWith("//")) return "https:" + target
   const trimmed = base.endsWith("/") ? base : base.replace(/[^/]*$/, "")
@@ -85,6 +91,11 @@ function resolveRelative(base: string, target: string): string {
 
 export function catalogBaseOf(url: string): string {
   return url.endsWith("/") ? url : url.replace(/[^/]*$/, "")
+}
+
+/** 目錄形式的索引網址（結尾 `/`）補上 `index.json`；Aidoku 的索引常以目錄網址分享。 */
+export function indexUrlOf(url: string): string {
+  return url.endsWith("/") ? url + "index.json" : url
 }
 
 /** `1.2.0` vs `1.10.0`：Venera 用自製規則（比前 3 段整數）。 */

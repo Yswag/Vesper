@@ -11,7 +11,8 @@ export default {
   /** `{n}` 是已啟用的來源數。 */
   enabledSources: "已啟用的來源 ({n})",
   emptyTitle: "沒有已啟用的源",
-  emptyDetail: "請到「設定 → 漫畫源」安裝並開啟漫畫來源。",
+  emptyDetail: "請到「設定 → 漫畫源」安裝並開啟漫畫來源；Aidoku 索引可在「源倉庫」加入。",
+  pickSources: "去挑源",
 
   /** 單一源的外殼：三個檢視的選單與它們的導覽列替代標題。 */
   source: "源",
@@ -36,6 +37,10 @@ export default {
   hotPicks: "熱門推薦",
   /** 大網格頁沒有標題可顯示時（從分類 chip 進來）的替代字。 */
   all: "全部",
+
+  /** 這個源沒有任何探索清單：搜尋是唯一入口。 */
+  searchOnly: "這個源只能搜尋",
+  goSearch: "去搜尋",
 
   /** 分類頁。 */
   noCategories: "這個源沒有可用的分類",

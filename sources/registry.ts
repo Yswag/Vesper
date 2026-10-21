@@ -11,11 +11,15 @@ import { extractSettings, loadSource, mergeSettings, type SettingSpec, type Sour
 import { t } from "../i18n"
 import { fetch } from "scripting"
 
-import { catalogBaseOf, compareVersion, parseCatalog, resolveEntryUrl, type CatalogEntry } from "./catalog"
+import { catalogBaseOf, compareVersion, indexUrlOf, parseCatalog, resolveEntryUrl, type CatalogEntry } from "./catalog"
+import * as aidoku from "./aidoku"
+import { aidokuIndexSchema, parseAidokuIndex } from "./aidokuIndex"
 import * as repositoryStore from "./repository"
-import type { StoredRepository } from "./repository"
+import type { RepositoryKind, StoredRepository } from "./repository"
 import * as store from "./store"
 import { runWebLogin } from "./webLogin"
+
+export type SourceKind = "venera" | "aidoku"
 
 export interface InstalledSource {
   stored: store.StoredSource
@@ -24,8 +28,10 @@ export interface InstalledSource {
   instance?: any
   meta?: SourceMeta
   capabilities?: SourceCapabilities
-  /** 源宣告的設定項（唯讀，供之後的設定 UI 用）。 */
+  /** Venera 源宣告的設定項。 */
   settingsSpecs?: SettingSpec[]
+  /** Aidoku 源的 `settings.json`（順序與原欄位都保留）；沒有這個檔就是空的。 */
+  settingsSpec?: aidoku.AidokuSettingsSpec
   error?: string
 }
 
@@ -44,6 +50,9 @@ export function sourcesRevision(): number {
 const bus = createEmitter({
   onListenerError: error => log("error", "sources", "訂閱者拋錯", error),
 })
+
+/** Aidoku 源在執行期被標成不可用時，讓畫面跟著更新。 */
+aidoku.setStateListener(() => bus.emit())
 
 function withTimeout<T>(task: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -64,63 +73,90 @@ function withTimeout<T>(task: Promise<T>, ms: number): Promise<T> {
 export const subscribeSources = bus.subscribe
 
 export function allSources(): InstalledSource[] {
-  return current
+  return current.map(withFailure)
+}
+
+/** 畫面要顯示來源類型時走這裡，不必知道 Aidoku 的內部形狀。 */
+export function sourceKindOf(source: InstalledSource): SourceKind {
+  return aidoku.isAidoku(source) ? "aidoku" : "venera"
+}
+
+/** 執行期被標成不可用的 Aidoku 源：錯誤要能被畫面讀到。 */
+function withFailure(source: InstalledSource): InstalledSource {
+  if (!aidoku.isAidoku(source)) return source
+  const reason = aidoku.failureOf(source.stored.key)
+  if (!reason) return source
+  return { ...source, error: source.error ?? reason }
+}
+
+/** 這個源現在能不能用（Venera 要載入成功，Aidoku 要在磁碟上、沒壞、也沒被標成不可用）。 */
+export function isReady(source: InstalledSource): boolean {
+  if (aidoku.isAidoku(source)) {
+    return source.error === undefined && aidoku.failureOf(source.stored.key) === undefined
+  }
+  return source.instance != null
 }
 
 export function enabledSources(): InstalledSource[] {
-  return current.filter(source => source.enabled && source.instance)
+  return current.filter(source => source.enabled && isReady(source))
 }
 
 export function findSource(key: string): InstalledSource | undefined {
-  return current.find(source => source.stored.key === key)
+  const found = current.find(source => source.stored.key === key)
+  return found && withFailure(found)
 }
 
 /** 從盤上重新載入全部源。啟動時呼叫一次，匯入/刪除後再呼叫。 */
 export function reloadRegistry() {
   revision++
   initTasks.clear()
-  current = store.listSources().map(rawEntry => {
-    let entry = rawEntry
-    const enabled = entry.enabled
-    const code = store.getSourceCode(entry.key)
-    if (!code) {
-      return { stored: entry, enabled, error: t("sources.codeMissing") }
-    }
-    try {
-      const loaded = loadSource(
-        code,
-        createHostContext(entry.key, {
-          settings: entry.settings ?? {},
-          loggedIn: entry.loggedIn === true,
-          ui: hostUI,
-        })
-      )
-      const { defaults, specs } = extractSettings(loaded.instance)
-      // 回填：自動補齊宣告的預設設定值
-      const merged = mergeSettings(defaults, entry.settings)
-      if (JSON.stringify(merged) !== JSON.stringify(entry.settings ?? {})) {
-        store.updateSettings(entry.key, merged)
-        entry = { ...entry, settings: merged }
-      }
-      return {
-        stored: entry,
-        enabled,
-        instance: loaded.instance,
-        meta: loaded.meta,
-        capabilities: loaded.capabilities,
-        settingsSpecs: specs,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      log("error", "sources", `載入 ${entry.key} 失敗`, message)
-      return { stored: entry, enabled, error: message }
-    }
-  })
+  current = [...store.listSources().map(loadVenera), ...aidoku.installedSources()]
   bus.emit()
 }
 
+/** Venera 源：原始碼在 store 裡，這裡建沙箱實例。 */
+function loadVenera(rawEntry: store.StoredSource): InstalledSource {
+  let entry = rawEntry
+  const enabled = entry.enabled
+  const code = store.getSourceCode(entry.key)
+  if (!code) {
+    return { stored: entry, enabled, error: t("sources.codeMissing") }
+  }
+  try {
+    const loaded = loadSource(
+      code,
+      createHostContext(entry.key, {
+        settings: entry.settings ?? {},
+        loggedIn: entry.loggedIn === true,
+        ui: hostUI,
+      })
+    )
+    const { defaults, specs } = extractSettings(loaded.instance)
+    // 回填：自動補齊宣告的預設設定值
+    const merged = mergeSettings(defaults, entry.settings)
+    if (JSON.stringify(merged) !== JSON.stringify(entry.settings ?? {})) {
+      store.updateSettings(entry.key, merged)
+      entry = { ...entry, settings: merged }
+    }
+    return {
+      stored: entry,
+      enabled,
+      instance: loaded.instance,
+      meta: loaded.meta,
+      capabilities: loaded.capabilities,
+      settingsSpecs: specs,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    log("error", "sources", `載入 ${entry.key} 失敗`, message)
+    return { stored: entry, enabled, error: message }
+  }
+}
+
 export function setSourceEnabled(key: string, enabled: boolean) {
-  store.setEnabled(key, enabled)
+  const source = findSource(key)
+  if (source && aidoku.isAidoku(source)) aidoku.setEnabled(key, enabled)
+  else store.setEnabled(key, enabled)
   reloadRegistry()
 }
 
@@ -179,6 +215,50 @@ export function updateSourceSetting(key: string, id: string, value: unknown) {
   reloadRegistry()
 }
 
+/** 源詳情要不要顯示「源設定」列：Aidoku 源的 schema 非空。 */
+export function hasAidokuSettings(source: InstalledSource): boolean {
+  return aidoku.isAidoku(source) && (source.settingsSpec?.count ?? 0) > 0
+}
+
+/**
+ * 改一個 Aidoku 源的設定值：寫進 `installed.json` 的 `settings`，並讓源下次呼叫時重載。
+ * 只寫改過的 key（沒有的就是 schema 預設）。
+ */
+export function updateAidokuSetting(key: string, id: string, value: unknown) {
+  aidoku.setSetting(key, id, value)
+  reloadRegistry()
+}
+
+/** Aidoku 源的 `method: "basic"` 登入：寫入三個設定鍵後重載源。 */
+export function loginAidokuBasic(key: string, settingKey: string, username: string, password: string) {
+  aidoku.loginBasic(key, settingKey, username, password)
+  reloadRegistry()
+}
+
+/** Aidoku 源的 `method: "basic"` 登出：移除那三個鍵。 */
+export function logoutAidokuBasic(key: string, settingKey: string) {
+  aidoku.logoutBasic(key, settingKey)
+  reloadRegistry()
+}
+
+/** Aidoku 源的 `method: "webview"` 登入：寫入 cookie／localStorage 後重載源。 */
+export function loginAidokuWebview(key: string, settingKey: string, data: aidoku.AidokuWebLoginData) {
+  aidoku.loginWebview(key, settingKey, data)
+  reloadRegistry()
+}
+
+/** Aidoku 源的 `method: "webview"` 登出：移除 cookie、localStorage 與狀態鍵。 */
+export function logoutAidokuWebview(key: string, settingKey: string) {
+  aidoku.logoutWebview(key, settingKey)
+  reloadRegistry()
+}
+
+/** 把 Aidoku 源的設定全部拿掉（回到 schema 預設）。 */
+export function resetAidokuSettings(key: string) {
+  aidoku.resetSettings(key)
+  reloadRegistry()
+}
+
 /** 把某個設定回復成源宣告的預設值。 */
 export function resetSourceSetting(key: string, id: string) {
   const source = findSource(key)
@@ -197,7 +277,9 @@ export async function runSourceSettingCallback(key: string, id: string): Promise
 }
 
 export function uninstallSource(key: string) {
-  store.removeSource(key)
+  const source = findSource(key)
+  if (source && aidoku.isAidoku(source)) aidoku.uninstall(key)
+  else store.removeSource(key)
   log("info", "sources", `已移除源 ${key}`)
   reloadRegistry()
 }
@@ -244,6 +326,15 @@ export async function fetchText(url: string): Promise<string> {
     throw new Error(t("sources.catalog.downloadFailed", { status: response.status }))
   }
   return await response.text()
+}
+
+/** 二進位下載（Aidoku 的 `.aix`）。 */
+async function fetchBytes(url: string): Promise<Uint8Array> {
+  const response = await fetch(url, { timeout: 60, allowInsecureRequest: true } as any)
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(t("sources.catalog.downloadFailed", { status: response.status }))
+  }
+  return new Uint8Array(await response.arrayBuffer())
 }
 
 export interface ImportReport {
@@ -322,40 +413,71 @@ export function installManualSource(text: string, origin: string | null): Instal
 
 // ---------------------------------------------------------------- 源倉庫
 
-/** 抓一份倉庫索引並解析。內容不是 JSON 陣列（例如貼到單一源）就給人話。 */
-async function fetchCatalogEntries(url: string): Promise<CatalogEntry[]> {
+/** 倉庫索引的長相：物件帶 `sources` 或條目帶 `id` ＋ 下載路徑的都是 Aidoku。 */
+function detectRepositoryKind(raw: unknown): RepositoryKind {
+  if (aidokuIndexSchema(raw) === "community") return "aidoku-index"
+  if (Array.isArray(raw)) {
+    const records = raw
+      .slice(0, 20)
+      .filter(item => item && typeof item === "object") as Array<Record<string, unknown>>
+    if (records.some(item => typeof item.key === "string")) return "venera"
+    if (records.some(item => typeof item.id === "string" && (item.downloadURL != null || item.file != null))) {
+      return "aidoku-index"
+    }
+  }
+  return "venera"
+}
+
+interface LoadedIndex {
+  kind: RepositoryKind
+  entries: CatalogEntry[]
+  /** 索引自己宣告的名稱（Aidoku community 才有）。 */
+  name?: string
+}
+
+/** 抓一份倉庫索引並解析；kind 沒指定就依內容判斷。 */
+async function loadIndex(url: string, kind?: RepositoryKind): Promise<LoadedIndex> {
+  const target = indexUrlOf(url)
   let parsed: unknown
   try {
-    parsed = JSON.parse(await fetchText(url))
+    parsed = JSON.parse(await fetchText(target))
   } catch {
     throw new Error(t("sources.catalog.repositoryNotArray"))
   }
-  const { entries, rejected } = parseCatalog(parsed)
-  if (entries.length === 0) {
-    throw new Error(catalogEmptyError(rejected))
+  const resolved = kind ?? detectRepositoryKind(parsed)
+  const base = catalogBaseOf(target)
+
+  if (resolved === "aidoku-index") {
+    const { entries, rejected, name } = parseAidokuIndex(parsed, base)
+    if (entries.length === 0) throw new Error(catalogEmptyError(rejected))
+    return { kind: resolved, entries, name }
   }
-  return entries
+
+  const { entries, rejected } = parseCatalog(parsed)
+  if (entries.length === 0) throw new Error(catalogEmptyError(rejected))
+  return { kind: resolved, entries }
 }
 
 /**
  * 加入一個倉庫：抓索引、驗證、存起來。同一個網址再加入就是重新抓取
- * （保留原本的加入時間與名稱）。**這裡不裝任何源**，裝哪個由使用者在倉庫裡挑。
+ * （保留原本的加入時間、名稱與類型）。**這裡不裝任何源**，裝哪個由使用者在倉庫裡挑。
  */
-export async function addRepository(url: string): Promise<StoredRepository> {
+export async function addRepository(url: string, kind?: RepositoryKind): Promise<StoredRepository> {
   const target = url.trim()
   if (!target) throw new Error(t("sources.repository.urlRequired"))
-  const entries = await fetchCatalogEntries(target)
-  const now = Date.now()
   const existing = repositoryStore.getRepository(target)
+  const loaded = await loadIndex(target, kind ?? existing?.kind)
+  const now = Date.now()
   const repository: StoredRepository = {
     url: target,
-    name: existing?.name ?? repositoryStore.repositoryNameFor(target),
+    kind: loaded.kind,
+    name: existing?.name ?? loaded.name ?? repositoryStore.repositoryNameFor(target),
     addedAt: existing?.addedAt ?? now,
     fetchedAt: now,
-    entries,
+    entries: loaded.entries,
   }
   repositoryStore.saveRepository(repository)
-  log("info", "sources", `已加入倉庫 ${repository.name}（${entries.length} 個源）`)
+  log("info", "sources", `已加入倉庫 ${repository.name}（${loaded.entries.length} 個源）`)
   return repository
 }
 
@@ -407,6 +529,17 @@ export async function installRepositoryEntry(repositoryUrl: string, key: string)
   if (!repository) throw new Error(t("sources.repository.notFound"))
   const entry = repository.entries.find(item => item.key === key)
   if (!entry) throw new Error(t("sources.repository.entryNotFound"))
+
+  if (repositoryStore.kindOf(repository) === "aidoku-index") {
+    if (!entry.url) throw new Error(t("sources.catalog.relativeOnly"))
+    const existed = findSource(entry.key) !== undefined
+    const aix = await fetchBytes(entry.url)
+    const stored = aidoku.install(aix, { origin: repository.url, expectedKey: entry.key, iconUrl: entry.iconUrl })
+    reloadRegistry()
+    log("info", "sources", `${existed ? "已更新" : "已安裝"} ${stored.name} v${stored.version}`)
+    return { key: stored.key, name: stored.name, version: stored.version, updated: existed }
+  }
+
   const sourceUrl = entry.url ?? resolveEntryUrl(entry, catalogBaseOf(repository.url))
   const code = await fetchText(sourceUrl)
   return installSourceCode(code, repository.url, entry.key)

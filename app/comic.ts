@@ -5,7 +5,6 @@ import { AbortController, type AbortSignal } from "scripting"
 
 import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
 import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
-import { resolveThumbnailRequest } from "../engine/images"
 import { readerImageBytes, statusOf, totalBytes, type OfflineStatus } from "../engine/offline"
 import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings } from "../library/readerSettings"
@@ -41,11 +40,13 @@ import {
   type ChapterDownloadState,
   type DownloadRecord,
 } from "../sources/downloads"
+import type { AidokuSettingsSpec } from "../sources/aidoku"
 import { hasMoreComments, type SourceComment } from "../sources/operations"
 import {
   accountSpec,
-  allSources,
+  enabledSources,
   findSource,
+  isReady,
   sourcesRevision,
   subscribeSources,
   type InstalledSource,
@@ -174,13 +175,19 @@ export interface ResumePoint {
  */
 export interface ComicSourceInfo {
   key: string
+  /** Venera 的 JS 源或 Aidoku 的 WASM 源。 */
+  kind: "venera" | "aidoku"
   name: string
   version: string
+  /** 源自己給的圖示（本機路徑或網址；沒有就讓畫面用首字徽章）。 */
+  iconUrl?: string
   /** 源有沒有宣告分類頁 / 排行榜（決定瀏覽頁的選單要不要給入口）。 */
   hasCategory: boolean
   hasRanking: boolean
   /** 這個源宣告的搜尋篩選列（沒宣告就是空陣列）。 */
   searchOptions: SearchOptionRow[]
+  /** Aidoku 源宣告的設定（`settings.json`）；不是 Aidoku 或沒有這個檔就是 undefined。 */
+  settingsSpec?: AidokuSettingsSpec
   /** 留言要登入但還沒登入（留言頁據此給「前往登入」）。 */
   needsLogin: boolean
   /** 目前登入的帳號名稱（留言送出後的即時回音要用）。 */
@@ -230,8 +237,11 @@ export interface ComicLibrary {
     options: Array<string | null>,
     opts?: { signal?: AbortSignal }
   ): Promise<SourceSearchResult>
-  /** 源的探索分頁（雜誌流的來源）。 */
-  explore(sourceKey: string): ExploreEntry[]
+  /**
+   * 源的探索分頁（雜誌流的來源）。
+   * Aidoku 的 listings 要先載入源才拿得到，所以這裡是非同步；畫面不必知道自己拿的是哪一種。
+   */
+  explore(sourceKey: string): Promise<ExploreEntry[]>
   browse(sourceKey: string, target: ListTarget, cursor?: Cursor): Promise<SectionPage>
   rankingOptions(sourceKey: string): RankingOption[]
   /** 排行榜一頁（平舖清單，形狀與 browse 的 SectionPage 不同）。 */
@@ -274,7 +284,7 @@ export interface ComicLibrary {
 function requireSource(key: string): InstalledSource {
   const source = findSource(key)
   if (!source) throw new Error(t("sources.notFound", { key }))
-  if (!source.instance) throw new Error(source.error ?? t("sources.notLoaded", { name: source.stored.name }))
+  if (!isReady(source)) throw new Error(source.error ?? t("sources.notLoaded", { name: source.stored.name }))
   return source
 }
 
@@ -301,8 +311,11 @@ function infoOf(source: InstalledSource): ComicSourceInfo {
   const account = accountSpec(source)
   const info: ComicSourceInfo = {
     key: source.stored.key,
+    kind: source.stored.kind === "aidoku" ? "aidoku" : "venera",
     name: source.meta?.name ?? source.stored.name,
     version: source.meta?.version ?? source.stored.version,
+    iconUrl: source.stored.iconUrl,
+    settingsSpec: source.settingsSpec,
     hasCategory: hasCategoryPage(source),
     hasRanking: openSource(source).hasRanking(),
     searchOptions: searchOptionRows(source),
@@ -325,7 +338,7 @@ export function createComicLibrary(): ComicLibrary {
   }
 
   return {
-    sources: () => allSources().filter(source => source.enabled && source.instance).map(infoOf),
+    sources: () => enabledSources().map(infoOf),
 
     source: key => {
       const found = findSource(key)
@@ -334,7 +347,7 @@ export function createComicLibrary(): ComicLibrary {
 
     search: (query, onProgress, opts) =>
       searchAll(
-        allSources().filter(source => source.enabled && source.instance),
+        enabledSources(),
         query.keyword,
         source => query.optionsOf?.(source.stored.key) ?? [],
         onProgress ?? (() => {}),
@@ -344,7 +357,12 @@ export function createComicLibrary(): ComicLibrary {
     searchSource: (sourceKey, keyword, options, opts) =>
       searchOne(requireSource(sourceKey), keyword, options, { signal: opts?.signal }),
 
-    explore: sourceKey => handleOf(sourceKey).handle.explore(),
+    explore: async sourceKey => {
+      const { handle } = handleOf(sourceKey)
+      // Aidoku 的 explore() 是同步的，但 listings 要先問源一次；Venera 的 explore 本來就隨實例一起載好。
+      if (handle.kind === "aidoku") await handle.ready()
+      return handle.explore()
+    },
 
     browse: (sourceKey, target, cursor) => handleOf(sourceKey).handle.list(target, cursor ?? { page: 1 }),
 
@@ -419,7 +437,7 @@ export function createComicLibrary(): ComicLibrary {
             ...key,
             pageIndex: index,
             imageKey: imageKeyOf(index),
-            comicModule: source.instance?.comic,
+            comicModule: handle.comicModule,
             retry,
           },
           pageCache,
@@ -543,11 +561,11 @@ export function createComicLibrary(): ComicLibrary {
       await handleOf(target.sourceKey).handle.postComment(target.comicId, target.subId, content)
     },
 
-    thumbnailPath: (sourceKey, url) => {
-      const { source } = handleOf(sourceKey)
+    thumbnailPath: async (sourceKey, url) => {
+      const { handle } = handleOf(sourceKey)
       // 縮圖也走完整的快取規格（絕對化 URL、onResponse、modifyImage、onLoadFailed 重試）：
       // 封面、頭像、留言內文圖都是同一條路，不再各自拼一次。
-      const request = resolveThumbnailRequest(source.instance?.comic, url)
+      const request = await handle.thumbnailRequest(url)
       return cachedImagePath(toCacheSpec(request), sourceKey)
     },
 

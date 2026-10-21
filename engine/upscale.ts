@@ -292,6 +292,11 @@ async function ensureServer(): Promise<number> {
   return currentPort
 }
 
+/** 超分伺服器的埠號（沒開就是 0）。 */
+export function upscalePort(): number {
+  return currentPort
+}
+
 /**
  * 確保 WebViewController 超分執行個體就緒（僅於 queuePromise 隊列內調用）。
  */

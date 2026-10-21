@@ -33,6 +33,20 @@ export default {
 
   verificationTitle: "Complete the security check ({name})",
 
+  aidoku: {
+    failed: "Source error: {message}",
+    missing: "This source's files are missing (reinstall it)",
+    timeout: "The source timed out",
+    initFailed: "The source failed to initialize",
+    invalidPackage: "Not a valid Aidoku source file (.aix)",
+    chapter: "Chapter {n}",
+    unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
+
+    indexInvalid: "Not an Aidoku index (expected { sources: [...] } or a JSON array)",
+    indexBadId: "Invalid source id: {id}",
+    indexBadEntry: "Index entry is missing name, version or a download path",
+  },
+
   login: {
     expired: "Sign-in expired, please sign in again",
     cancelled: "Sign-in cancelled",

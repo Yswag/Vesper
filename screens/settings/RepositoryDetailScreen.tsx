@@ -1,12 +1,12 @@
 // 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；下拉可重新整理索引。
 // 清單只讀本地快取，重新整理才會連網。
 
-import { Button, Divider, HStack, Spacer, Text, VStack, useEffect, useState } from "scripting"
+import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
-import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
+import { ActionRow, IconBadge, InfoRow, TagPill, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { Caption, Footnote } from "../../design/text"
-import { palette, rowPadding } from "../../design/tokens"
+import { palette, rect, rowPadding } from "../../design/tokens"
 import { t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
@@ -16,7 +16,7 @@ import {
   subscribeSources,
   type RepositoryEntryStatus,
 } from "../../sources/registry"
-import { getRepository, subscribeRepositories, type StoredRepository } from "../../sources/repository"
+import { getRepository, kindOf, subscribeRepositories, type StoredRepository } from "../../sources/repository"
 
 export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: string }) {
   const [repository, setRepository] = useState<StoredRepository | undefined>(undefined)
@@ -252,6 +252,11 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       <CardGroup title={t("settings.repo.group")}>
         <InfoRow label={t("settings.shared.url")} value={repository.url} />
         <Divider padding={{ leading: 16 }} />
+        <InfoRow
+          label={t("settings.repo.kind")}
+          value={t(kindOf(repository) === "aidoku-index" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")}
+        />
+        <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.repo.lastUpdated")} value={formatTime(repository.fetchedAt)} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow
@@ -326,6 +331,15 @@ function EntryRow({
 }) {
   const installedVersion = status.installed?.meta?.version ?? status.installed?.stored.version
   const isInstalled = Boolean(status.installed) && !status.updateAvailable
+  const languages = status.entry.languages?.filter(Boolean) ?? []
+  const metaLine = [
+    languages.length > 0 ? languages.join(" / ") : "",
+    status.entry.key,
+    `v${status.entry.version}`,
+    installedVersion ? t("settings.repo.installedVersion", { version: installedVersion }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ")
 
   return (
     <HStack
@@ -334,17 +348,26 @@ function EntryRow({
       alignment="center"
       frame={{ maxWidth: "infinity" }}
     >
-      <IconBadge icon="shippingbox" />
+      {status.entry.iconUrl ? (
+        <Image
+          imageUrl={status.entry.iconUrl}
+          resizable={true}
+          scaleToFill={true}
+          frame={{ width: 36, height: 36 }}
+          clipShape={rect(8)}
+        />
+      ) : (
+        <IconBadge icon="shippingbox" />
+      )}
       <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Text font="body" fontWeight="medium">
-          {status.entry.name}
-        </Text>
+        <HStack spacing={6} alignment="center">
+          <Text font="body" fontWeight="medium" lineLimit={1}>
+            {status.entry.name}
+          </Text>
+          {status.entry.nsfw ? <TagPill text={t("settings.repo.r18")} color={palette.red} /> : null}
+        </HStack>
         {status.entry.description ? <Caption>{status.entry.description}</Caption> : null}
-        <Footnote>
-          {`${status.entry.key} · v${status.entry.version}${
-            installedVersion ? ` · ${t("settings.repo.installedVersion", { version: installedVersion })}` : ""
-          }`}
-        </Footnote>
+        <Footnote>{metaLine}</Footnote>
       </VStack>
       <Spacer />
       <Button

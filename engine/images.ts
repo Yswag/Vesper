@@ -5,12 +5,18 @@
 // 重試本身住在 sources/（要 Keychain 憑證、要知道怎麼重登），而 engine 不可以 import sources——
 // 所以重試是**參數**：呼叫端把源與重登方式收在閉包裡帶進來，engine 不持有任何註冊狀態。
 
+/** 抓完圖的回應摘要；`onResponse` 的第二個參數。 */
+export interface ImageResponseInfo {
+  status: number
+  headers: Record<string, string>
+}
+
 export interface ImageRequest {
   url: string
   method: string
   data: unknown
   headers: Record<string, string>
-  onResponse?: (bytes: any) => any
+  onResponse?: (bytes: any, response?: ImageResponseInfo) => any
   modifyImage?: string
   onLoadFailed?: () => unknown
 }

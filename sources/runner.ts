@@ -4,7 +4,7 @@
 import type { ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
 import type { HostUI } from "../engine/globals"
 import { createHostContext } from "../engine/host"
-import type { SourceCallRetry } from "../engine/images"
+import { resolveThumbnailRequest, type ImageRequest, type SourceCallRetry } from "../engine/images"
 import {
   loadSource as loadSourceCode,
   type LoadedSource,
@@ -13,6 +13,7 @@ import {
   type SourceMeta,
 } from "../engine/loader"
 import { t } from "../i18n"
+import * as aidoku from "./aidoku"
 import {
   canSendComment,
   exploreEntries,
@@ -33,7 +34,7 @@ import {
   type Relogin,
   type SourceScope,
 } from "./operations"
-import { ensureSourceReady, findSource, reloginSource, type InstalledSource, type ReloginOutcome } from "./registry"
+import { ensureSourceReady, findSource, isReady, reloginSource, type InstalledSource, type ReloginOutcome } from "./registry"
 
 export type {
   CommentPage,
@@ -72,8 +73,12 @@ export type ListTarget =
 
 export type Cursor = { page: number } | { next: string }
 
+/** 這一頁的源是哪一種；畫面用它顯示來源類型，不碰 `stored.kind`。 */
+export type SourceKind = "venera" | "aidoku"
+
 export interface SourceHandle {
   readonly key: string
+  readonly kind: SourceKind
   readonly meta: SourceMeta | undefined
   readonly capabilities: SourceCapabilities | undefined
   readonly settingsSpecs: SettingSpec[]
@@ -111,6 +116,10 @@ export interface SourceHandle {
   relogin(): Promise<ReloginOutcome>
   /** 圖片解析（onImageLoad）要用的重試：登入過期就重登一次再試。`scope` 讓那一次的網路呼叫可取消。 */
   imageRetry(scope?: SourceScope): SourceCallRetry
+  /** 正文取圖要問的模組（`engine/images.ts` 的 `onImageLoad`）：Venera 是源的 comic 區塊。 */
+  readonly comicModule: any
+  /** 縮圖要怎麼抓（Venera 同步；Aidoku 要問源，所以可能是 Promise）。 */
+  thumbnailRequest(url: string): ImageRequest | Promise<ImageRequest>
 }
 
 /** 把一份源碼載進沙箱（純本地、不跑 init()）。 */
@@ -142,8 +151,10 @@ async function loadList(
 
 /** 把已載入的源包成 handle。operation 一律 delegate 給現有實作。 */
 export function openSource(source: InstalledSource, deps: RunnerDeps = {}): SourceHandle {
+  if (aidoku.isAidoku(source)) return aidokuHandle(source)
   return {
     key: source.stored.key,
+    kind: "venera",
     meta: source.meta,
     capabilities: source.capabilities,
     settingsSpecs: source.settingsSpecs ?? [],
@@ -164,7 +175,49 @@ export function openSource(source: InstalledSource, deps: RunnerDeps = {}): Sour
     loggedIn: () => source.stored.loggedIn === true,
     relogin: () => reloginSource(source),
     imageRetry: (scope?: SourceScope) => imageRetryFor(source, deps.auth, scope),
+    comicModule: source.instance?.comic,
+    thumbnailRequest: url => resolveThumbnailRequest(source.instance?.comic, url),
   }
+}
+
+/** Aidoku 源：四段查詢走 `sources/aidoku.ts`，沒有登入、排行、留言與離線。 */
+function aidokuHandle(source: InstalledSource): SourceHandle {
+  return {
+    key: source.stored.key,
+    kind: "aidoku",
+    meta: source.meta,
+    capabilities: source.capabilities,
+    settingsSpecs: [],
+    settings: {},
+    error: source.error,
+    ready: () => aidoku.ready(source),
+    explore: () => aidoku.explore(source),
+    ranking: () => Promise.reject(new Error(t("sources.unsupported.ranking"))),
+    rankingOptions: () => [],
+    hasRanking: () => false,
+    list: (target, cursor) => aidokuList(source, target, cursor),
+    detail: comicId => aidoku.detail(source, comicId),
+    chapter: (comicId, epId) => openChapterImages(source, comicId, epId),
+    comments: () => Promise.reject(new Error(t("sources.unsupported.comments"))),
+    canPostComment: () => false,
+    postComment: () => Promise.reject(new Error(t("sources.unsupported.sendComment"))),
+    loggedIn: () => false,
+    // v1 不做登入：重登永遠是「沒有憑證」，圖片重試就是直接再跑一次。
+    relogin: () => Promise.resolve("no-credentials"),
+    imageRetry: () => call => Promise.resolve(call()),
+    comicModule: aidoku.comicModule(source),
+    thumbnailRequest: url => aidoku.imageRequest(source, url),
+  }
+}
+
+/** Aidoku 的「瀏覽」只有 listings（沒有分類頁）。 */
+function aidokuList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
+  if (target.kind === "category") return Promise.reject(new Error(t("sources.unsupported.category")))
+  const page = "page" in cursor ? cursor.page : 1
+  return aidoku.listing(source, target.index, page).then(result => ({
+    sections: [{ title: "", comics: result.comics }],
+    maxPage: result.maxPage,
+  }))
 }
 
 /**
@@ -174,6 +227,6 @@ export function openSource(source: InstalledSource, deps: RunnerDeps = {}): Sour
 export function sourceHandle(key: string): SourceHandle {
   const source = findSource(key)
   if (!source) throw new Error(t("sources.notFound", { key }))
-  if (!source.instance) throw new Error(source.error ?? t("sources.notLoaded", { name: source.stored.name }))
+  if (!isReady(source)) throw new Error(source.error ?? t("sources.notLoaded", { name: source.stored.name }))
   return openSource(source)
 }

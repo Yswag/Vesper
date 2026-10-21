@@ -2,9 +2,22 @@
 // 點擊事件一律採 onTapGesture 與全寬容器，保持整列觸控範圍。
 // ⚠️ 有 onTapGesture 的列要配 `contentShape="rect"`，不然 Spacer 那段不算內容、點不到。
 
-import { HStack, Image, Picker, Spacer, Text, TextField, Toggle, VStack, ZStack, type Color } from "scripting"
+import {
+  HStack,
+  Image,
+  Picker,
+  SecureField,
+  Spacer,
+  Text,
+  TextField,
+  Toggle,
+  VStack,
+  ZStack,
+  type Color,
+  type KeyboardType,
+} from "scripting"
 
-import { badgeOff, badgeShape, badgeSize, palette, rowPadding } from "./tokens"
+import { badgeOff, badgePadding, badgeShape, badgeSize, capsule, fill, palette, rowPadding } from "./tokens"
 import { t } from "../i18n"
 
 /** 卡內分隔線的縮排：對齊文字起點（padding 16 + 圖示 24 + 間距 12）。 */
@@ -49,6 +62,17 @@ export function IconBadge({
 /** 列表右侧的箭頭。只在「會進下一頁」時用。 */
 export function Chevron() {
   return <Image systemName="chevron.right" font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
+}
+
+/** 只做資訊的小標籤（來源類型、R18），不可點。 */
+export function TagPill({ text, color = "secondaryLabel" }: { text: string; color?: Color }) {
+  return (
+    <HStack padding={badgePadding} background={fill.tag} clipShape={capsule("circular")}>
+      <Text font="caption2" fontWeight="medium" foregroundStyle={color}>
+        {text}
+      </Text>
+    </HStack>
+  )
 }
 
 /** 有圖示的一列。color 預設為 secondaryLabel（相容深淺色模式），onTap 不給就是純資訊列。 */
@@ -142,26 +166,35 @@ export function OptionRow({ title, checked, onTap }: { title: string; checked: b
   )
 }
 
-/** 開關列。 */
+/** 開關列。`subtitle` 是標題下方的一句說明（來源的 `subtitle`）。 */
 export function ToggleRow({
   icon,
   iconColor = "secondaryLabel",
   title,
+  subtitle,
   value,
   onChanged,
 }: {
   icon: string
   iconColor?: Color
   title: string
+  subtitle?: string
   value: boolean
   onChanged: (value: boolean) => void
 }) {
   return (
     <HStack spacing={14} padding={rowPadding} alignment="center">
       <IconBadge icon={icon} color={iconColor} />
-      <Text font="body" fontWeight="medium" foregroundStyle="label">
-        {title}
-      </Text>
+      <VStack spacing={2} alignment="leading">
+        <Text font="body" fontWeight="medium" foregroundStyle="label">
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text font="caption" foregroundStyle="secondaryLabel">
+            {subtitle}
+          </Text>
+        ) : null}
+      </VStack>
       <Spacer />
       <Toggle title="" value={value} onChanged={onChanged} />
     </HStack>
@@ -199,7 +232,10 @@ export function TextInputRow({
   value,
   multiline = false,
   lines = 4,
+  secure = false,
+  keyboardType,
   onChanged,
+  onBlur,
 }: {
   icon?: string
   iconColor?: Color
@@ -208,7 +244,11 @@ export function TextInputRow({
   value: string
   multiline?: boolean
   lines?: number
+  /** 遮蔽輸入（來源的 `secure: true`）。`SecureField` 沒有多行，所以 multiline 會失效。 */
+  secure?: boolean
+  keyboardType?: KeyboardType
   onChanged: (value: string) => void
+  onBlur?: () => void
 }) {
   return (
     <VStack spacing={8} padding={rowPadding} alignment="leading" frame={{ maxWidth: "infinity" }}>
@@ -219,15 +259,28 @@ export function TextInputRow({
         </Text>
         <Spacer />
       </HStack>
-      <TextField
-        title=""
-        prompt={prompt}
-        value={value}
-        textFieldStyle="plain"
-        axis={multiline ? "vertical" : undefined}
-        lineLimit={multiline ? { min: lines, max: lines * 3 } : undefined}
-        onChanged={onChanged}
-      />
+      {secure ? (
+        <SecureField
+          title=""
+          prompt={prompt}
+          value={value}
+          keyboardType={keyboardType}
+          onBlur={onBlur}
+          onChanged={onChanged}
+        />
+      ) : (
+        <TextField
+          title=""
+          prompt={prompt}
+          value={value}
+          textFieldStyle="plain"
+          axis={multiline ? "vertical" : undefined}
+          lineLimit={multiline ? { min: lines, max: lines * 3 } : undefined}
+          keyboardType={keyboardType}
+          onBlur={onBlur}
+          onChanged={onChanged}
+        />
+      )}
     </VStack>
   )
 }

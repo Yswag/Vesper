@@ -46,6 +46,24 @@ export default {
   /** Cloudflare 過盾視窗的標題；`{name}` 是來源名稱。 */
   verificationTitle: "請完成安全驗證 ({name})",
 
+  /** Aidoku（WASM）源。`{message}` 是源自己或宿主給的原因。 */
+  aidoku: {
+    failed: "源出錯：{message}",
+    missing: "源的檔案不見了（請重新安裝這個源）",
+    timeout: "源回應逾時",
+    initFailed: "源初始化失敗",
+    invalidPackage: "這不是有效的 Aidoku 源檔（.aix）",
+    chapter: "第 {n} 話",
+    /** 源被判定不可用；`{reason}` 是最後一次的失敗原因。 */
+    unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
+
+    /** 倉庫索引（community／zh-sources 兩種 schema）。 */
+    indexInvalid: "Aidoku 索引格式不對（要 { sources: [...] } 或 JSON 陣列）",
+    /** `{id}` 是索引條目裡的源 id。 */
+    indexBadId: "源 id 不合法：{id}",
+    indexBadEntry: "索引條目缺 name、version 或下載路徑",
+  },
+
   /** 登入（帳密 / cookie / 瀏覽器）。 */
   login: {
     expired: "登入已過期，請重新登入",
