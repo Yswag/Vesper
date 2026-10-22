@@ -98,10 +98,18 @@ function scheduleIdle(): void {
   }
   if (!controller && !server) return
   const remaining = Math.max(0, lastActivity + idleTimeoutMs - Date.now())
-  idleTimer = setTimeout(() => {
-    idleTimer = null
-    void disposeWhenIdle()
-  }, remaining)
+  const start = (): void => {
+    try {
+      idleTimer = setTimeout(() => {
+        idleTimer = null
+        void disposeWhenIdle()
+      }, remaining)
+    } catch {
+      // 呼叫端可能不在主佇列（WebView 回呼的續行），下一輪 touch() 再排就好。
+      idleTimer = null
+    }
+  }
+  start()
 }
 
 /** 排到隊列尾端才真的拆；輪到它時再確認一次（排隊期間可能又有請求進來）。 */
@@ -158,12 +166,14 @@ function readAsset(name: string, contentType: string): HttpResponse {
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
+  return new Promise<T>((resolve, reject) => {
+    try {
       setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    }),
-  ])
+    } catch {
+      // 不在主佇列時建不了 timer（原生回呼的續行）：那就沒有逾時，直接把結果交出去。
+    }
+    promise.then(resolve, reject)
+  })
 }
 
 function jsonBody(request: HttpRequest): any {
@@ -377,15 +387,27 @@ async function ensureHost(): Promise<WebViewController> {
 
 /** 先把工作丟給頁面（立即返回），結果由 script message handler 推回來。 */
 async function runTask(startScript: (id: number) => string, timeoutMs: number, label: string): Promise<any> {
-  const target = await ensureHost()
   const id = nextTaskId++
-
+  // 計時器要在呼叫當下（主佇列）就建好：`ensureHost()` 回來時可能已經不是主佇列，
+  // 那時建 timer 會丟「Timer requires its active script on the main JS execution queue」。
   const result = new Promise<any>((resolve, reject) => {
     taskWaiters.set(id, { resolve, reject })
-    setTimeout(() => {
-      if (taskWaiters.delete(id)) reject(new AidokuHostError(`${label} timed out after ${timeoutMs}ms`))
-    }, timeoutMs)
+    try {
+      setTimeout(() => {
+        if (taskWaiters.delete(id)) reject(new AidokuHostError(`${label} timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+    } catch {
+      // 連這裡都建不了就沒有逾時。
+    }
   })
+
+  let target: WebViewController
+  try {
+    target = await ensureHost()
+  } catch (failure) {
+    taskWaiters.delete(id)
+    throw hostError(failure)
+  }
 
   try {
     await withTimeout(Promise.resolve(target.evaluateJavaScript(startScript(id))), START_TIMEOUT_MS, `${label} start`)
