@@ -29,16 +29,18 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const info = comicLibrary().source(sourceKey)
   // Picker 的值只能是 string / number，所以這裡用字串。
   const [mode, setMode] = useState("explore")
-  // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（送出才更新）。
+  // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（送出才更新，空字串＝源的預設列表）。
   const [keyword, setKeyword] = useState("")
-  const [submitted, setSubmitted] = useState("")
+  const [submitted, setSubmitted] = useState<string | null>(null)
+  /** 系統搜尋框展開與否。Aidoku 源一展開就顯示空查詢的預設結果。 */
+  const [searchOpen, setSearchOpen] = useState(false)
   // 選單標籤與導覽列替代標題都在 render 時取自 `t()`：換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
   // 換源時整組搜尋作廢，不要把上一個源的關鍵字帶過來。
   useEffect(() => {
     setKeyword("")
-    setSubmitted("")
+    setSubmitted(null)
   }, [sourceKey])
 
   // 源沒宣告的頁面就不列進選單（33 個源裡有 2 個沒有分類、24 個沒有排行榜）。
@@ -53,17 +55,21 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const showCategory = hasCategory && mode === "category"
   const showRanking = hasBoard && mode === "ranking"
   const title = info?.name ?? t("browse.source")
+  /** 空查詢也是有效搜尋（源會回自己的預設列表），但只對 Aidoku 源成立。 */
+  const allowsEmptySearch = info?.kind === "aidoku"
+  /** 什麼時候該顯示搜尋結果：Aidoku 源一展開搜尋框就算，其他源要送出過才算。 */
+  const searchMode = submitted !== null || (allowsEmptySearch && searchOpen)
 
   /** 搜尋框的每一次變動：**不搜**，只記在原字。清成空的就復原（回原本的檢視）。 */
   function handleKeywordChange(text: string) {
     setKeyword(text)
-    if (text.trim() === "") setSubmitted("")
+    if (text.trim() === "") setSubmitted(null)
   }
 
-  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜。 */
+  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜；Aidoku 源空字也送（等於看預設列表）。 */
   function handleSubmitSearch() {
     const term = keyword.trim()
-    if (!term) return
+    if (!term && !allowsEmptySearch) return
     // 結果拿到就收起鍵盤，讓出來給網格。
     if (Keyboard.visible) Keyboard.hide()
     setSubmitted(term)
@@ -79,6 +85,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
         prompt: t("browse.searchInSource", { name: title }),
         value: keyword,
         onChanged: handleKeywordChange,
+        presented: { value: searchOpen, onChanged: setSearchOpen },
       }}
       //searchToolbarBehavior="minimize"
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}
@@ -119,8 +126,8 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
         </Toolbar>
       }
     >
-      {submitted ? (
-        <SourceSearchResults sourceKey={sourceKey} term={submitted} />
+      {searchMode ? (
+        <SourceSearchResults sourceKey={sourceKey} term={submitted ?? ""} />
       ) : showRanking ? (
         <RankingScreen sourceKey={sourceKey} />
       ) : showCategory ? (
