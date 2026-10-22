@@ -5,6 +5,9 @@ import {
   AbortController,
   Button,
   HStack,
+  Image,
+  Navigation,
+  NavigationStack,
   ProgressView,
   ScrollView,
   Spacer,
@@ -21,12 +24,27 @@ import type { ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { comicLibrary } from "../../app/services"
 import { loadSearchSelections } from "../../app/searchOptions"
+import { aidokuFilterRows, loadFilterValues, saveFilterValues } from "../../app/aidokuSearchFilters"
 import { PageBackground } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { decodeSearchOptions, encodeSearchOptions } from "../../sources/searchOptions"
+import {
+  activeFilterCount,
+  defaultFilterValues,
+  encodeFilters,
+  type AidokuFilterRow,
+  type AidokuFilterValue,
+} from "../../sources/aidokuFilters"
+import { findSource } from "../../sources/registry"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { PageLoading } from "../../design/status"
+import { AidokuFilterSheet } from "./AidokuFilterSheet"
+
+interface FilterState {
+  rows: AidokuFilterRow[]
+  values: AidokuFilterValue[]
+}
 
 export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; term: string }) {
   const library = comicLibrary()
@@ -35,6 +53,8 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState("")
   const [attempt, setAttempt] = useState(0)
+  /** Aidoku 源的搜尋篩選（列＋值）；其他源留在 null。 */
+  const [filters, setFilters] = useState<FilterState | null>(null)
   /** 這一輪搜尋的 epoch：換關鍵字或重試時舊的一輪作廢，在飛的請求真的被中止。 */
   const run = useRef({ id: 0, controller: null as AbortController | null })
 
@@ -44,6 +64,29 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     if (rows.length === 0) return []
     return encodeSearchOptions(rows, decodeSearchOptions(rows, loadSearchSelections()[sourceKey]))
   }
+
+  // Aidoku 源的篩選定義要問源（舊版讀 filters.json、v2 問 runtime），所以是非同步的。
+  useEffect(() => {
+    let alive = true
+    setFilters(null)
+    const source = findSource(sourceKey)
+    if (!source || source.stored.kind !== "aidoku") return
+    void (async () => {
+      try {
+        const rows = await aidokuFilterRows(source)
+        if (!alive || rows.length === 0) return
+        setFilters({ rows, values: loadFilterValues(sourceKey, rows) })
+      } catch {
+        // 篩選拿不到就只是沒有篩選可用，不影響搜尋本身。
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [sourceKey])
+
+  const encodedFilters = filters ? encodeFilters(filters.rows, filters.values) : []
+  const filterKey = JSON.stringify(encodedFilters)
 
   useEffect(() => {
     const id = ++run.current.id
@@ -57,6 +100,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       try {
         const result = await library.searchSource(sourceKey, term, searchOptions(), {
           signal: controller.signal,
+          filters: encodedFilters,
         })
         if (!current()) return
         setError(result.error ?? "")
@@ -76,7 +120,66 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     return (): void => {
       run.current.controller?.abort()
     }
-  }, [sourceKey, term, attempt])
+  }, [sourceKey, term, attempt, filterKey])
+
+  /** 開篩選 sheet；套用後寫回存檔，搜尋 effect 會因為 `filterKey` 變了重跑。 */
+  async function openFilters() {
+    if (!filters) return
+    const current = filters
+    await Navigation.present({
+      element: (
+        <NavigationStack>
+          <AidokuFilterSheet
+            rows={current.rows}
+            values={current.values}
+            defaults={defaultFilterValues(current.rows)}
+            onApply={next => {
+              const values = next ?? defaultFilterValues(current.rows)
+              saveFilterValues(sourceKey, current.rows, values)
+              setFilters({ rows: current.rows, values })
+            }}
+          />
+        </NavigationStack>
+      ),
+      modalPresentationStyle: "pageSheet",
+    })
+  }
+
+  function clearFilters() {
+    if (!filters) return
+    const values = defaultFilterValues(filters.rows)
+    saveFilterValues(sourceKey, filters.rows, values)
+    setFilters({ rows: filters.rows, values })
+  }
+
+  /** 結果頁上緣的篩選列：沒有篩選可設的源不顯示。 */
+  function filterBar(): VirtualNode {
+    if (!filters) return <VStack spacing={0} />
+    const count = activeFilterCount(filters.rows, filters.values)
+    return (
+      <HStack spacing={8} padding={{ horizontal: 16, vertical: 6 }} frame={{ maxWidth: "infinity" }}>
+        <Button action={() => void openFilters()} buttonStyle="plain">
+          <HStack spacing={6} alignment="center">
+            <Image
+              systemName={count > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"}
+              foregroundStyle={count > 0 ? "tintColor" : "label"}
+            />
+            <Text font="subheadline" foregroundStyle={count > 0 ? "tintColor" : "label"}>
+              {count > 0 ? t("search.filterCount", { n: count }) : t("search.filter")}
+            </Text>
+          </HStack>
+        </Button>
+        <Spacer />
+        {count > 0 ? (
+          <Button action={clearFilters} buttonStyle="plain">
+            <Text font="subheadline" foregroundStyle="tintColor">
+              {t("search.filterClear")}
+            </Text>
+          </Button>
+        ) : null}
+      </HStack>
+    )
+  }
 
   function body(): VirtualNode {
     if (error) {
@@ -102,7 +205,10 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       )
     }
     return (
-      <ScrollView scrollDismissesKeyboard="interactively">
+      <ScrollView
+        scrollDismissesKeyboard="interactively"
+        safeAreaInset={{ top: { content: filterBar() } }}
+      >
         <VStack
           spacing={0}
           frame={{ maxWidth: "infinity", maxHeight: "infinity" }}

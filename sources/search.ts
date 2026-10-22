@@ -42,7 +42,7 @@ export async function searchOne(
   const started = Date.now()
   const name = source.meta?.name ?? source.stored.name
   try {
-    const page = await searchSource(source, keyword, { options }, scope)
+    const page = await searchSource(source, keyword, { options, filters: scope?.filters }, scope)
     return { key: source.stored.key, name, comics: toListItems(source, page), ms: Date.now() - started }
   } catch (error) {
     if (isAbortError(error)) throw error

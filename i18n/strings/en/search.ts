@@ -21,6 +21,13 @@ export default {
   filterMulti: "Multiple choices",
   filterSelect: "Select",
   filterNone: "Unspecified",
+  /** Applied filter count on the results bar. */
+  filterCount: "{n} filters",
+  filterClear: "Clear",
+  /** Ascending toggle of a sort filter. */
+  filterAscending: "Ascending",
+  /** Hint for tri-state filters. */
+  filterTriState: "Tap to include, tap again to exclude",
 
   history: "Search history",
   historyEmpty: "Type a keyword to search every enabled source",

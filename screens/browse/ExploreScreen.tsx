@@ -1,9 +1,7 @@
 // 單一來源探索頁：支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
-// 導覽列搜尋框採 drawer 佈局，送出時針對當前來源發起搜尋。
 
 import {
   Button,
-  Divider,
   GeometryReader,
   HStack,
   LazyHStack,
@@ -28,7 +26,6 @@ import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { exploreCardSize } from "../shared/comicMetrics"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { WidthReporter } from "../../components/WidthReporter"
-import { GlassBadge } from "../../design/GlassBadge"
 import { CoverImage } from "../../components/CoverImage"
 import { SectionGridScreen } from "./SectionGridScreen"
 import { PageBackground } from "../../app/theme"
@@ -421,7 +418,7 @@ function SearchOnlyBlock() {
   )
 }
 
-/** 失敗時的一句話＋重試鈕（探索與搜尋共用：兩個狀態的形狀一模一樣）。 */
+/** 失敗時的一句話＋重試鈕。 */
 function MessageBlock({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
     <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>

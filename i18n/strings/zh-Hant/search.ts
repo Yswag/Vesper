@@ -34,6 +34,13 @@ export default {
   filterMulti: "可多選",
   filterSelect: "選擇",
   filterNone: "不指定",
+  /** 結果頁那條列的「已套用幾個篩選」。 */
+  filterCount: "{n} 個篩選",
+  filterClear: "清除",
+  /** 排序篩選的遞增開關。 */
+  filterAscending: "遞增",
+  /** 三態篩選的操作說明。 */
+  filterTriState: "點一下包含，再點一下排除",
 
   /** 還沒送出關鍵字時的歷史搜尋。 */
   history: "歷史搜尋",

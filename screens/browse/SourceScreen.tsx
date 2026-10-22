@@ -1,7 +1,6 @@
 // 單一源的頁面外殼：導覽列右上一個下拉切「探索 / 分類 / 排行」，內容是一整棵子樹。
 //
-// 搜尋歸這裡：輸入框是 top bar 的 toolbar 搜尋（minimize），擁有者與按鈕同一個 view。
-// 送出才真的打源，結果換成整頁的搜尋結果。
+// 搜尋歸這裡：導覽列上的放大鏡展開系統搜尋框，送出才真的打源，結果換成整頁的搜尋結果。
 // 三邊的狀態各自獨立（載入、錯誤、翻頁都不共用），這裡只負責切換與標題。
 
 import {
@@ -18,7 +17,6 @@ import {
 } from "scripting"
 
 import { comicLibrary } from "../../app/services"
-import { log } from "../../engine/log"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { CategoryScreen } from "./CategoryScreen"
@@ -34,7 +32,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（送出才更新）。
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState("")
-  const [searchPresented, setSearchPresented] = useState(false)
   // 選單標籤與導覽列替代標題都在 render 時取自 `t()`：換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
@@ -63,15 +60,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
     if (text.trim() === "") setSubmitted("")
   }
 
-  /** 搜尋欄的呈現狀態；系統取消時應回報 false。 */
-  function handleSearchPresented(value: boolean) {
-    log("info", "source-search", "Presented state changed", {
-      previous: searchPresented,
-      next: value,
-    })
-    setSearchPresented(value)
-  }
-
   /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜。 */
   function handleSubmitSearch() {
     const term = keyword.trim()
@@ -91,10 +79,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
         prompt: t("browse.searchInSource", { name: title }),
         value: keyword,
         onChanged: handleKeywordChange,
-        presented: {
-          value: searchPresented,
-          onChanged: handleSearchPresented,
-        },
       }}
       //searchToolbarBehavior="minimize"
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}

@@ -235,7 +235,7 @@ export interface ComicLibrary {
     sourceKey: string,
     keyword: string,
     options: Array<string | null>,
-    opts?: { signal?: AbortSignal }
+    opts?: { signal?: AbortSignal; filters?: unknown[] }
   ): Promise<SourceSearchResult>
   /**
    * 源的探索分頁（雜誌流的來源）。
@@ -355,7 +355,7 @@ export function createComicLibrary(): ComicLibrary {
       ),
 
     searchSource: (sourceKey, keyword, options, opts) =>
-      searchOne(requireSource(sourceKey), keyword, options, { signal: opts?.signal }),
+      searchOne(requireSource(sourceKey), keyword, options, { signal: opts?.signal, filters: opts?.filters }),
 
     explore: async sourceKey => {
       const { handle } = handleOf(sourceKey)

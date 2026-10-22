@@ -820,9 +820,29 @@ function toChapter(raw: any): { group: string; id: string; title: string } | nul
   }
 }
 
-/** 搜尋（第一頁；翻頁由 hasNextPage 轉成 maxPage）。 */
-export function search(source: InstalledSource, keyword: string, page = 1): Promise<ComicListPage> {
-  return ask("search", async () => toListPage(await call(source, "getSearchMangaList", [keyword, page, []]), page))
+/** 搜尋（第一頁；翻頁由 hasNextPage 轉成 maxPage）。`filters` 是 `aidokuFilters.encodeFilters` 的結果。 */
+export function search(
+  source: InstalledSource,
+  keyword: string,
+  page = 1,
+  filters: unknown[] = []
+): Promise<ComicListPage> {
+  return ask("search", async () =>
+    toListPage(await call(source, "getSearchMangaList", [keyword, page, filters]), page)
+  )
+}
+
+/** 舊版源宣告的篩選（`filters.json` → manifest）：定義的原始 JSON。 */
+export function filterDefsOf(key: string): unknown[] {
+  const list = manifestOf(key)?.filters
+  return Array.isArray(list) ? list : []
+}
+
+/** v2 源自己回報的篩選（wasm 的 `get_filters`）；沒有的話回空陣列。 */
+export async function runtimeFilterDefs(source: InstalledSource): Promise<unknown[]> {
+  await ready(source)
+  const defs = await ask("filters", async () => await call(source, "getFilters"))
+  return Array.isArray(defs) ? defs : []
 }
 
 /** 詳情＋章節：`getMangaDetails` 之後立刻補 `getChapterList`（章節就在詳情裡）。 */

@@ -75,6 +75,8 @@ export type Relogin = (source: InstalledSource) => Promise<ReloginOutcome>
  */
 export interface SourceScope {
   signal?: AbortSignal
+  /** Aidoku 源的搜尋篩選描述子（`aidokuFilters.encodeFilters`）。 */
+  filters?: unknown[]
 }
 
 /**
@@ -310,6 +312,8 @@ export async function loadRankingPage(
 interface SearchOptions {
   /** 源自己的篩選選項（`search.optionList` 的值，照列順序；dropdown 可以是 null）。 */
   options?: Array<string | null>
+  /** Aidoku 源的篩選描述子（`aidokuFilters.encodeFilters` 的結果）。 */
+  filters?: unknown[]
   page?: number
 }
 
@@ -319,7 +323,7 @@ export async function searchSource(
   options: SearchOptions = {},
   scope?: SourceScope
 ): Promise<ComicListPage> {
-  if (aidoku.isAidoku(source)) return await aidoku.search(source, keyword, options.page ?? 1)
+  if (aidoku.isAidoku(source)) return await aidoku.search(source, keyword, options.page ?? 1, options.filters ?? [])
   const instance = await requireInstance(source)
   const search = instance.search
   // ehentai 的 search 只有 loadNext（第一頁 = 沒有游標）；搜尋頁只取第一頁，所以這樣就夠。
