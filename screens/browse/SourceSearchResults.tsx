@@ -39,6 +39,7 @@ import {
 import { findSource } from "../../sources/registry"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { PageLoading } from "../../design/status"
+import { rect } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
 
 interface FilterState {
@@ -145,38 +146,29 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     })
   }
 
-  function clearFilters() {
-    if (!filters) return
-    const values = defaultFilterValues(filters.rows)
-    saveFilterValues(sourceKey, filters.rows, values)
-    setFilters({ rows: filters.rows, values })
-  }
-
-  /** 結果頁上緣的篩選列：沒有篩選可設的源不顯示。 */
+  /** 結果頁上緣的篩選鈕：跟 Aidoku 一樣只是一顆小膠囊（圖示＋數量），沒有篩選可設的源不顯示。 */
   function filterBar(): VirtualNode {
     if (!filters) return <VStack spacing={0} />
     const count = activeFilterCount(filters.rows, filters.values)
     return (
-      <HStack spacing={8} padding={{ horizontal: 16, vertical: 6 }} frame={{ maxWidth: "infinity" }}>
+      <HStack padding={{ horizontal: 16, vertical: 6 }} frame={{ maxWidth: "infinity" }}>
+        <Spacer />
         <Button action={() => void openFilters()} buttonStyle="plain">
-          <HStack spacing={6} alignment="center">
-            <Image
-              systemName={count > 0 ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"}
-              foregroundStyle={count > 0 ? "tintColor" : "label"}
-            />
-            <Text font="subheadline" foregroundStyle={count > 0 ? "tintColor" : "label"}>
-              {count > 0 ? t("search.filterCount", { n: count }) : t("search.filter")}
-            </Text>
+          <HStack
+            spacing={4}
+            alignment="center"
+            padding={{ horizontal: 9, vertical: 6 }}
+            background="ultraThinMaterial"
+            clipShape={rect(14)}
+          >
+            <Image systemName="line.3.horizontal.decrease" font="footnote" foregroundStyle="label" />
+            {count > 0 ? (
+              <Text font="caption" fontWeight="semibold" foregroundStyle="label">
+                {String(count)}
+              </Text>
+            ) : null}
           </HStack>
         </Button>
-        <Spacer />
-        {count > 0 ? (
-          <Button action={clearFilters} buttonStyle="plain">
-            <Text font="subheadline" foregroundStyle="tintColor">
-              {t("search.filterClear")}
-            </Text>
-          </Button>
-        ) : null}
       </HStack>
     )
   }

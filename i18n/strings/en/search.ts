@@ -21,9 +21,6 @@ export default {
   filterMulti: "Multiple choices",
   filterSelect: "Select",
   filterNone: "Unspecified",
-  /** Applied filter count on the results bar. */
-  filterCount: "{n} filters",
-  filterClear: "Clear",
   /** Ascending toggle of a sort filter. */
   filterAscending: "Ascending",
   /** Hint for tri-state filters. */
