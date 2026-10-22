@@ -44,6 +44,9 @@ import { PageLoading } from "../../design/status"
 import { rect } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
 
+// 點完不關 Menu（Scripting 沒有這個修飾子，當成 prop 硬送；沒作用也不影響）。
+const KEEP_MENU_OPEN = { menuActionDismissDisabled: true } as any
+
 interface FilterState {
   rows: AidokuFilterRow[]
   values: AidokuFilterValue[]
@@ -265,7 +268,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
         return (
           <Menu label={capsule(row.label, count > 0, count)}>
             {row.options.map(option => (
-              <Button key={option.value} action={() => toggle(option.value)}>
+              <Button {...KEEP_MENU_OPEN} key={option.value} action={() => toggle(option.value)}>
                 <HStack spacing={8}>
                   <Text>{option.label}</Text>
                   {picked.included.includes(option.value) ? (
