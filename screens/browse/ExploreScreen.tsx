@@ -2,7 +2,6 @@
 // 導覽列搜尋框採 drawer 佈局，送出時針對當前來源發起搜尋。
 
 import {
-  AbortController,
   Button,
   Divider,
   GeometryReader,
@@ -10,26 +9,21 @@ import {
   LazyHStack,
   NamespaceReader,
   NavigationLink,
-  ProgressView,
   ScrollView,
   Spacer,
   Text,
   VStack,
   ZStack,
   useEffect,
-  useObservable,
   useRef,
   useState,
 } from "scripting"
 
 import type { ComicListItem, ComicSection, JumpTarget, SectionPage } from "../../engine/adapt"
-import { isAbortError } from "../../engine/http"
 import { type ExploreEntry } from "../../app/comic"
-import { loadSearchSelections } from "../../app/searchOptions"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { decodeSearchOptions, encodeSearchOptions } from "../../sources/searchOptions"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { exploreCardSize } from "../shared/comicMetrics"
 import { ComicGridLayout } from "../../components/ComicGrid"
@@ -75,20 +69,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState<StatusKind>("ready")
   const [errorText, setErrorText] = useState("")
-  // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（**送出才更新**）。
-  // `hits` 是這個源回來的結果（`null` ＝還沒搜／已清空 → 內容區顯示探索）。
-  const [keyword, setKeyword] = useState("")
-  const [submitted, setSubmitted] = useState("")
-  const [hits, setHits] = useState<ComicListItem[] | null>(null)
-  const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState("")
-  /** 系統搜尋框的展開狀態：源沒有清單時，那顆「去搜尋」要把它打開。 */
-  const searchPresented = useObservable(false)
-  /**
-   * 這一輪搜尋的 epoch（跟 SearchScreen 同一套）：每次重跑換一個 id＋一個 controller。
-   * 換關鍵字、清空或離開畫面時舊的一輪作廢（回來的東西一律丟掉），在飛的請求真的被中止。
-   */
-  const searchRun = useRef({ id: 0, controller: null as AbortController | null })
   /** 這一輪 listings 的 epoch：換源或重試時舊的一輪作廢。 */
   const entryRun = useRef(0)
 
@@ -123,92 +103,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     if (entries.length === 0) return
     void loadFirst(entries[active])
   }, [sourceKey, active, entries.length])
-
-  // 換源／離開畫面（切到分類／排行）：這一輪作廢（回來的東西不再寫 state），
-  // 搜尋框與結果也不該跟著搬到下一個源去。
-  useEffect(() => {
-    return () => {
-      abortSearch()
-      searchRun.current.id++
-      setKeyword("")
-      setSubmitted("")
-      setHits(null)
-      setSearching(false)
-      setSearchError("")
-    }
-  }, [sourceKey])
-
-  /**
-   * 這個源要帶的搜尋 options：跟搜尋分頁同一套（存過的篩選優先，否則是源的預設），
-   * 不然同一個源的同一組關鍵字會在兩邊給出不同結果。沒宣告篩選的源就不必讀那個檔。
-   */
-  function searchOptions(): Array<string | null> {
-    const rows = library.source(sourceKey)?.searchOptions ?? []
-    if (rows.length === 0) return []
-    return encodeSearchOptions(rows, decodeSearchOptions(rows, loadSearchSelections()[sourceKey]))
-  }
-
-  /** 收掉目前在飛的那一輪。 */
-  function abortSearch() {
-    searchRun.current.controller?.abort()
-    searchRun.current.controller = null
-  }
-
-  /**
-   * 搜尋框的每一次變動：**不搜**，只記在原字。清成空的就復原（回探索）。
-   * 送出才真的打——源是對外網站（有的還有 WAF、速率限制），逐字搜會一連送好幾輪請求；
-   * 搜尋分頁也是同一個理由用送出才跑。
-   */
-  function handleKeyword(text: string) {
-    setKeyword(text)
-    if (text.trim() !== "") return
-    // 清掉關鍵字＝復原：這一輪作廢、內容區回到探索（分頁資料還在 state 裡，不必重載）。
-    abortSearch()
-    searchRun.current.id++
-    setSubmitted("")
-    setHits(null)
-    setSearching(false)
-    setSearchError("")
-  }
-
-  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜。 */
-  function submitSearch() {
-    const term = keyword.trim()
-    if (!term) return
-    // 結果拿到就收起鍵盤，讓出來給網格。
-    if (Keyboard.visible) Keyboard.hide()
-    void runSearch(term)
-  }
-
-  /** 搜這個源。失敗也回一筆（`error` 有值），取消則原樣丟上去（由 epoch 丟掉）。 */
-  async function runSearch(term: string) {
-    if (!term) return
-    abortSearch()
-    const id = ++searchRun.current.id
-    const controller = new AbortController()
-    searchRun.current.controller = controller
-    const current = () => searchRun.current.id === id
-    setSubmitted(term)
-    setSearching(true)
-    try {
-      const result = await library.searchSource(sourceKey, term, searchOptions(), {
-        signal: controller.signal,
-      })
-      if (!current()) return
-      setSearchError(result.error ?? "")
-      setHits(result.comics)
-    } catch (error) {
-      // 取消是正常結束；其他錯誤留在畫面上讓使用者看得到。
-      if (!current() || isAbortError(error)) return
-      setSearchError(error instanceof Error ? error.message : String(error))
-      setHits([])
-    } finally {
-      if (current()) {
-        setSearching(false)
-        searchRun.current.controller = null
-      }
-    }
-  }
 
   function moreOfSection(index: number): MoreSource {
     if (entryPaging.kind !== "none") return entryPaging
@@ -289,9 +183,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   // 導覽列標題使用源的名稱，更具歸屬感與清晰感
   const navTitle = library.source(sourceKey)?.name ?? t("browse.explore")
 
-  /** 結果已經拿到（＝送出去過一次）才把內容區換成搜尋結果。 */
-  const searchMode = submitted.length > 0
-
   /**
    * 分類 chip 列（源有多個 explore 分類才有，放置於 ScrollView 內隨內容捲動）。
    */
@@ -318,30 +209,9 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         navigationBarTitleDisplayMode="inline"
         // 靠頂對齊避免內容不足時被 ZStack 垂直置中
         frame={{ maxHeight: "infinity", alignment: "top" }}
-        // 搜尋框採用系統 drawer 模式（下拉展開、滑動收起）
-        searchable={{
-          placement: "navigationBarDrawerAutomaticDisplay",
-          prompt: t("browse.searchInSource", { name: navTitle }),
-          value: keyword,
-          onChanged: handleKeyword,
-          presented: searchPresented,
-        }}
-        // 送出（鍵盤的搜尋鍵）才真的打這個源。
-        onSubmit={{ triggers: "search", action: submitSearch }}
       >
       {/* 內容區 */}
-      {searchMode ? (
-        <ScrollView scrollContentBackground="hidden" scrollDismissesKeyboard="interactively">
-          <SearchResults
-            sourceKey={sourceKey}
-            hits={hits}
-            searching={searching}
-            error={searchError}
-            onRetry={() => void runSearch(submitted)}
-          />
-        </ScrollView>
-      ) : (
-        <ScrollView scrollContentBackground="hidden" scrollDismissesKeyboard="interactively">
+      <ScrollView scrollContentBackground="hidden" scrollDismissesKeyboard="interactively">
           {chipRow}
 
           {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
@@ -351,7 +221,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
             ) : errorText ? (
               <MessageBlock text={errorText} onRetry={() => void loadEntries()} />
             ) : (
-              <SearchOnlyBlock onSearch={() => searchPresented.setValue(true)} />
+              <SearchOnlyBlock />
             )
           ) : null}
 
@@ -394,8 +264,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
               <ListFooter loading={singleHasMore} />
             </VStack>
           ) : null}
-        </ScrollView>
-      )}
+      </ScrollView>
     </VStack>
   </ZStack>
   )
@@ -543,12 +412,11 @@ function MagazineSectionRow({
   )
 }
 
-/** 這個源沒有探索清單：搜尋是唯一入口，直接把人帶去上面的搜尋框（重試沒有意義）。 */
-function SearchOnlyBlock({ onSearch }: { onSearch: () => void }) {
+/** 這個源沒有探索清單：只能搜尋，提示使用者用上面的搜尋框。 */
+function SearchOnlyBlock() {
   return (
     <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>
       <Text foregroundStyle="secondaryLabel">{t("browse.searchOnly")}</Text>
-      <Button title={t("browse.goSearch")} systemImage="magnifyingglass" action={onSearch} buttonStyle="glassProminent" />
     </VStack>
   )
 }
@@ -563,45 +431,3 @@ function MessageBlock({ text, onRetry }: { text: string; onRetry: () => void }) 
   )
 }
 
-/** 這個源的搜尋結果。用跟探索同一套網格，點進詳情與封面解析的行為完全一樣。 */
-function SearchResults({
-  sourceKey,
-  hits,
-  searching,
-  error,
-  onRetry,
-}: {
-  sourceKey: string
-  /** `null` ＝還沒回來（去抖中／第一次搜尋）。 */
-  hits: ComicListItem[] | null
-  searching: boolean
-  /** 源回的失敗原因（有值就不看結果）。 */
-  error: string
-  onRetry: () => void
-}) {
-  if (error) return <MessageBlock text={error} onRetry={onRetry} />
-  // 尚無結果或重新搜尋中：顯示加載動畫
-  if (hits === null || (searching && hits.length === 0)) return <PageLoading />
-  if (hits.length === 0) {
-    return (
-      <VStack alignment="center" padding={{ top: 60, horizontal: 20 }}>
-        <Text foregroundStyle="secondaryLabel">{t("browse.noResults")}</Text>
-      </VStack>
-    )
-  }
-  return (
-    <VStack spacing={0}>
-      {/* 已經有結果時再改關鍵字：舊的先留著，只在上面放一條進行中，免得整個網格閃掉。 */}
-      {searching ? (
-        <HStack spacing={8} padding={{ horizontal: 16, top: 10 }} frame={{ maxWidth: "infinity" }}>
-          <ProgressView />
-          <Text font="caption" foregroundStyle="secondaryLabel">
-            {t("browse.searching")}
-          </Text>
-          <Spacer />
-        </HStack>
-      ) : null}
-      <ComicGridLayout entries={hits.map(comic => ({ sourceKey, comic }))} />
-    </VStack>
-  )
-}
