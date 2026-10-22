@@ -4,7 +4,7 @@
 // 切換時子樹會重建、重新載入一次；分開的好處是探索頁那套雜誌流 / 翻頁狀態
 // 完全不必知道另外兩頁的存在。
 
-import { Picker, Text, VStack, useState } from "scripting"
+import { Image, Menu, Picker, Text, VStack, useState } from "scripting"
 
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
@@ -43,20 +43,33 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
         pages.length > 1
           ? {
               topBarTrailing: (
-                <Picker
-                  title={pages.find(page => page.value === mode)?.label ?? t("browse.explore")}
-                  systemImage="line.3.horizontal.decrease"
-                  accessibilityLabel={t("browse.viewLabel", { label: pages.find(page => page.value === mode)?.label ?? t("browse.explore") })}
-                  value={mode}
-                  onChanged={setMode}
-                  pickerStyle="menu"
+                <Menu
+                  label={
+                    <Image
+                      systemName={
+                        mode === "explore"
+                          ? "line.3.horizontal.decrease.circle"
+                          : "line.3.horizontal.decrease.circle.fill"
+                      }
+                      font="body"
+                      fontWeight="medium"
+                    />
+                  }
                 >
-                  {pages.map(page => (
-                    <Text key={page.value} tag={page.value}>
-                      {page.label}
-                    </Text>
-                  ))}
-                </Picker>
+                  <Picker
+                    title={t("browse.viewLabel", {
+                      label: pages.find(page => page.value === mode)?.label ?? t("browse.explore"),
+                    })}
+                    value={mode}
+                    onChanged={setMode}
+                  >
+                    {pages.map(page => (
+                      <Text key={page.value} tag={page.value}>
+                        {page.label}
+                      </Text>
+                    ))}
+                  </Picker>
+                </Menu>
               ),
             }
           : undefined
