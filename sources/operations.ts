@@ -11,6 +11,7 @@ import { t } from "../i18n"
 import { collectItems, normalizeImages, normalizeListPage, normalizeListSections, normalizeTags, resolveChapters, type ComicListItem, type ComicListPage, type JumpTarget, type SectionPage } from "../engine/adapt"
 import type { SourceCallRetry } from "../engine/images"
 import { readChapterImageKeys } from "../engine/offline"
+import type { SourceViewer } from "../library/readerSettings"
 import * as aidoku from "./aidoku"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
@@ -29,6 +30,12 @@ export interface ComicDetail {
   title: string
   cover?: string
   description?: string
+  /** 源的連載狀態；源沒給就沒有。畫面自己翻成介面字。 */
+  status?: ComicStatus
+  /** 分級；只有 `suggestive`／`nsfw` 會顯示在畫面上。 */
+  contentRating?: ContentRating
+  /** 源宣告的閱讀方式（Aidoku 的 viewer）；Venera 源沒有。 */
+  viewer?: SourceViewer
   /** 源給的星等（0–5、可為小數）；源沒給就沒有。只讀顯示，不寫入。 */
   stars?: number
   /** 源自己的子識別碼（多數源忽略）；原封不動保留，之後留言 API 要用。 */
@@ -38,10 +45,18 @@ export interface ComicDetail {
   updateTime?: string
   uploadTime?: string
   uploader?: string
+  /** 作畫（和 `uploader` 的作者分開）；源沒給就沒有。 */
+  artists?: string
   url?: string
   recommend?: ComicListItem[]
   likesCount?: number
 }
+
+/** 連載狀態（Aidoku 的 PublishingStatus）：`unknown` 當作源沒給。 */
+export type ComicStatus = "ongoing" | "completed" | "cancelled" | "hiatus" | "notPublished"
+
+/** 內容分級（Aidoku 的 MangaContentRating）。 */
+export type ContentRating = "safe" | "suggestive" | "nsfw"
 
 /** 源給的分數（`stars`）：0–5 的數字；不是可辨識的數字就當源沒給。 */
 export function normalizeStars(raw: unknown): number | undefined {

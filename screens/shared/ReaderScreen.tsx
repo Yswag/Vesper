@@ -45,10 +45,13 @@ import { ZoomableView } from "../../components/ZoomableView"
 import { fill, neutral, radius, rect } from "../../design/tokens"
 import { isFavorite, setProgress, toggleFavorite } from "../../library/bookshelf"
 import {
-  getReaderSettings,
+  clearPerComicSettings,
   readerAxis,
+  resolveReaderSettings,
+  savePerComicSettings,
   setReaderSettings,
   type ReaderSettings,
+  type SourceViewer,
 } from "../../library/readerSettings"
 import { createOfflineSession, isOfflineReadable } from "./offlineSession"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
@@ -86,6 +89,8 @@ export interface ReaderProps {
   comicCover?: string
   /** 開啟時要跳到的頁碼（0 起算）。只給「繼續閱讀」用；換話不帶，一律從頭。 */
   initialPage?: number
+  /** 源宣告的閱讀方式（Aidoku 的 viewer）；沒有就退全域設定。 */
+  viewer?: SourceViewer
   /**
    * 離線模式：這一話只從離線 manifest 與本機檔案讀，不問源、不發任何請求。
    * `chapters` 只是「這部有哪些話」的線索，實際能不能讀由離線狀態決定（只列得出下載完的）。
@@ -143,6 +148,7 @@ function ReaderContent({
   comicTitle,
   comicCover,
   initialPage,
+  viewer,
   offlineMode = false,
   viewport,
   safeAreaInsets,
@@ -194,8 +200,15 @@ function ReaderContent({
     toggleFavorite({ sourceKey, comicId, title: comicTitle, cover: comicCover })
     bumpFavorite(previous => previous + 1)
   }
-  // 閱讀模式／方向（持久化，換話或重開都沿用）
-  const [settings, setSettings] = useState<ReaderSettings>(getReaderSettings())
+  // 閱讀設定：這本的獨立設定 → 源的 viewer（只換模式與方向）→ 全域。只算一次。
+  const scope = useMemo(() => ({ sourceKey, comicId }), [sourceKey, comicId])
+  const [initialSettings] = useState(() => resolveReaderSettings(scope, viewer))
+  const [settings, setSettings] = useState<ReaderSettings>(initialSettings.settings)
+  // 這本有沒有自己的設定（HUD 的 per-comic 開關）。
+  const [perComic, setPerComic] = useState(initialSettings.perComic)
+  // 開章的非同步流程不能把 settings 放進 deps（會重開章）；用 ref 讀當下的值。
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
   // 領先可見頁（0 起算）：畫廊/連續都看 onScrollTargetVisibilityChange 回報的可見集合。
   // 有還原目標時，先用目標頁當初始值，所以一進來頁碼就是對的（不是等回報才更新）。
   // 還原目標只認「開啟這一頁時指定的那一話」（entryEpId）；換話一律從頭。
@@ -267,6 +280,8 @@ function ReaderContent({
           return
         }
         setSession(result)
+        // session 自己建的时候讀的是全域；這裡對齊畫面看到的值（per-comic 可能不同）。
+        result.setHardwareSharpen(settingsRef.current.hardwareSharpen)
         setStatus(result.pageCount === 0 ? { kind: "empty" } : null)
         const wanted = restoringEntry ? entryPage.current : undefined
         const target = wanted !== undefined && wanted > 0 && wanted < result.pageCount ? wanted : null
@@ -493,12 +508,30 @@ function ReaderContent({
   function updateSettings(patch: Partial<ReaderSettings>) {
     const next = { ...settings, ...patch }
     setSettings(next)
-    setReaderSettings(next)
+    // per-comic 開著就只寫這本；沒開且源沒宣告 viewer 才寫全域。
+    // （源宣告了 viewer 時，寫全域下次還是會被 viewer 蓋掉，所以只算這次 session。）
+    if (perComic) savePerComicSettings(scope, next)
+    else if (!viewer) setReaderSettings(next)
     if (patch.hardwareSharpen !== undefined && session) {
       session.setHardwareSharpen(patch.hardwareSharpen)
       // 超分開關切換時推動世代序號，觸發當前畫面上所有 ChapterImage 重跑 loadPage 響應開關
       setRenderGeneration(g => g + 1)
     }
+  }
+
+  /** per-comic 開關：打開＝把當下看到的設定存成這本的；關閉＝刪掉並立刻回退 viewer／全域。 */
+  function togglePerComic(on: boolean) {
+    if (on) {
+      savePerComicSettings(scope, settings)
+      setPerComic(true)
+      return
+    }
+    clearPerComicSettings(scope)
+    setPerComic(false)
+    const fallback = resolveReaderSettings(scope, viewer).settings
+    setSettings(fallback)
+    if (session) session.setHardwareSharpen(fallback.hardwareSharpen)
+    if (fallback.hardwareSharpen !== settings.hardwareSharpen) setRenderGeneration(g => g + 1)
   }
 
   // 頁面列表記憶化：縮放僅限畫廊模式（單頁錨點明確）；deps 取純值避免因物件重建引發整批元件重算。
@@ -902,6 +935,8 @@ function ReaderContent({
           chapterTitle={title}
           settings={settings}
           onUpdateSettings={updateSettings}
+          perComic={perComic}
+          onTogglePerComic={togglePerComic}
           onDismiss={dismiss}
           onOpenChapterSheet={() => setShowChapterSheet(true)}
           onToggleHUD={toggleHUD}

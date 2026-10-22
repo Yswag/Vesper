@@ -26,7 +26,6 @@ export default {
   all: "All",
 
   searchOnly: "This source only supports search",
-  goSearch: "Search",
 
   noCategories: "This source has no categories available",
   partError: "Couldn't load: {error}",

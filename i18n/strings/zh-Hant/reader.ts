@@ -58,6 +58,8 @@ export default {
   gestureHint: "（縱向僅滑動）",
   tapZones: "三分區翻頁",
   hardwareSharpen: "AI 超解析度 (ACNet ONNX)",
+  /** 預設跟隨源宣告的閱讀方式（沒有就退全域）；打開就存成這本的獨立設定。 */
+  perComic: "記住這本的設定",
 
   /** 續讀入口（`ResumeReaderScreen`）：不經詳情頁直開閱讀器，失敗只跳 toast。 */
   noChapters: "這部作品目前沒有章節",

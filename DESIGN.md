@@ -46,7 +46,7 @@ sources/             漫畫源管理
   search.ts          跨源併發搜尋聚合
 library/             使用者資料
   bookshelf.ts       收藏清單與閱讀進度
-  readerSettings.ts  閱讀模式與方向設定
+  readerSettings.ts  閱讀模式／方向：全域、per-comic 與源 viewer 的解析
 design/              設計庫（Token、版面、列元件、液態玻璃、狀態）
 components/          共用元件（閱讀器圖片、縮放容器、圖片合成器）
 screens/             各功能分頁（home / bookshelf / browse / search / settings / shared）

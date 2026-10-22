@@ -61,6 +61,27 @@ export function chapterDownloadStates(
   return Object.fromEntries(states)
 }
 
+/** 連載狀態的介面字（源只給代碼，畫面負責翻）。 */
+function statusText(status: NonNullable<ComicPage["status"]>): string {
+  switch (status) {
+    case "ongoing":
+      return t("detail.statusOngoing")
+    case "completed":
+      return t("detail.statusCompleted")
+    case "cancelled":
+      return t("detail.statusCancelled")
+    case "hiatus":
+      return t("detail.statusHiatus")
+    case "notPublished":
+      return t("detail.statusNotPublished")
+  }
+}
+
+/** 只有 `suggestive`／`nsfw` 會走到這裡（safe 不占位置）。 */
+function ratingText(rating: NonNullable<ComicPage["contentRating"]>): string {
+  return rating === "nsfw" ? t("detail.ratingNsfw") : t("detail.ratingSuggestive")
+}
+
 export function ComicDetailScreen({
   sourceKey,
   comicId,
@@ -171,6 +192,7 @@ export function ComicDetailScreen({
     chapters,
     comicTitle,
     comicCover,
+    viewer: detail?.viewer,
   }
 
   // 確定首選閱讀章節：優先續讀上次進度，無進度則自第一話起算
@@ -440,6 +462,12 @@ export function ComicDetailScreen({
                   </Text>
                 ) : null}
 
+                {detail.artists ? (
+                  <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={2}>
+                    {t("detail.artist", { name: detail.artists })}
+                  </Text>
+                ) : null}
+
                 {/* 狀態徽章 */}
                 <HStack spacing={6}>
                   <HStack
@@ -463,11 +491,46 @@ export function ComicDetailScreen({
                       {detail.sourceName}
                     </Text>
                   </HStack>
+
+                  {detail.status ? (
+                    <HStack
+                      padding={badgePadding}
+                      background="ultraThinMaterial"
+                      clipShape={rect(radius.tag)}
+                      overlay={<RoundedRectangle cornerRadius={radius.tag} stroke={hairlineStroke} />}
+                    >
+                      <Text font="caption2" foregroundStyle="secondaryLabel">
+                        {statusText(detail.status)}
+                      </Text>
+                    </HStack>
+                  ) : null}
                 </HStack>
 
-                {/* 唯讀星等與喜愛數：源有給分數或點讚數才出現。 */}
-                {rating || (detail.likesCount != null && detail.likesCount > 0) ? (
+                {/* 唯讀星等、分級與喜愛數：源有給才出現。 */}
+                {rating || (detail.contentRating && detail.contentRating !== "safe") || (detail.likesCount != null && detail.likesCount > 0) ? (
                   <HStack spacing={8} alignment="center">
+                    {detail.contentRating && detail.contentRating !== "safe" ? (
+                      <HStack
+                        spacing={4}
+                        padding={badgePadding}
+                        background={detail.contentRating === "nsfw" ? "rgba(255, 45, 85, 0.12)" : fill.score}
+                        clipShape={capsule()}
+                      >
+                        <Image
+                          systemName={detail.contentRating === "nsfw" ? "exclamationmark.triangle.fill" : "info.circle"}
+                          font="caption2"
+                          foregroundStyle={detail.contentRating === "nsfw" ? palette.red : palette.orange}
+                        />
+                        <Text
+                          font="caption2"
+                          fontWeight="bold"
+                          foregroundStyle={detail.contentRating === "nsfw" ? palette.red : palette.orange}
+                        >
+                          {ratingText(detail.contentRating)}
+                        </Text>
+                      </HStack>
+                    ) : null}
+
                     {rating ? (
                       <HStack
                         spacing={6}

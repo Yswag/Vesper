@@ -3,10 +3,21 @@
 export default {
   singleChapter: "Single chapter",
   author: "Author: {name}",
+  artist: "Artist: {name}",
   chapterCount: { one: "{n} chapter", other: "{n} chapters" },
   updatedAt: "Updated {time}",
   uploadedAt: "Uploaded {time}",
   likesCount: { one: "{n} like", other: "{n} likes" },
+
+  /** Publishing status from the source. */
+  statusOngoing: "Ongoing",
+  statusCompleted: "Completed",
+  statusCancelled: "Cancelled",
+  statusHiatus: "Hiatus",
+  statusNotPublished: "Not published",
+  /** Content rating: only suggestive and nsfw are shown. */
+  ratingSuggestive: "Suggestive",
+  ratingNsfw: "18+",
 
   resumeReading: "Continue reading",
   startReading: "Start reading",

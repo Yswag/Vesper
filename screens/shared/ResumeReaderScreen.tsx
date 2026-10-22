@@ -96,6 +96,7 @@ export async function launchResumeReader({
           comicTitle={title}
           comicCover={cover}
           initialPage={targetPage}
+          viewer={comicPage.viewer}
         />
       ),
       modalPresentationStyle: "fullScreen",

@@ -7,7 +7,7 @@ import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../e
 import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
 import { readerImageBytes, statusOf, totalBytes, type OfflineStatus } from "../engine/offline"
 import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
-import { getReaderSettings } from "../library/readerSettings"
+import { getReaderSettings, type SourceViewer } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
@@ -41,7 +41,7 @@ import {
   type DownloadRecord,
 } from "../sources/downloads"
 import type { AidokuSettingsSpec } from "../sources/aidoku"
-import { hasMoreComments, type SourceComment } from "../sources/operations"
+import { hasMoreComments, type ComicStatus, type ContentRating, type SourceComment } from "../sources/operations"
 import {
   accountSpec,
   enabledSources,
@@ -99,6 +99,12 @@ export interface ComicPage {
   title: string
   cover?: string
   description?: string
+  /** 源的連載狀態；沒給就沒有。 */
+  status?: ComicStatus
+  /** 內容分級；只有 `suggestive`／`nsfw` 會顯示。 */
+  contentRating?: ContentRating
+  /** 源宣告的閱讀方式；沒宣告就沒有（退全域）。 */
+  viewer?: SourceViewer
   /** 源給的星等（0–5，可為小數）；源沒給就沒有。只讀顯示，不寫入。 */
   stars?: number
   /** 源自己的子識別碼（留言 API 要用）。 */
@@ -107,6 +113,8 @@ export interface ComicPage {
   updateTime?: string
   uploadTime?: string
   uploader?: string
+  /** 作畫（與 `uploader` 的作者分開）。 */
+  artists?: string
   likesCount?: number
   /** 該漫畫在來源網站上的原始網頁網址（若源有提供）。 */
   url?: string
@@ -384,12 +392,16 @@ export function createComicLibrary(): ComicLibrary {
         title: detail.title,
         cover: detail.cover,
         description: detail.description,
+        status: detail.status,
+        contentRating: detail.contentRating,
+        viewer: detail.viewer,
         stars: detail.stars,
         subId: detail.subId,
         tags: detail.tags,
         updateTime: detail.updateTime,
         uploadTime: detail.uploadTime,
         uploader: detail.uploader,
+        artists: detail.artists,
         likesCount: detail.likesCount,
         url: detail.url,
         recommend: detail.recommend,

@@ -8,12 +8,23 @@ export default {
   /** 章節既沒有標題也沒有分組名時，列上顯示的替代字。 */
   singleChapter: "單章",
   author: "作者：{name}",
+  artist: "作畫：{name}",
   /** `{n}` 是章節數。中文沒有單複數，兩形同字——留著是為了跟英文同形。 */
   chapterCount: { one: "{n} 個章節", other: "{n} 個章節" },
   /** `{time}` 是源給的更新時間字串（不翻）。 */
   updatedAt: "更新於 {time}",
   uploadedAt: "發布於 {time}",
   likesCount: { one: "{n} 人喜愛", other: "{n} 人喜愛" },
+
+  /** 源的連載狀態。 */
+  statusOngoing: "連載中",
+  statusCompleted: "已完結",
+  statusCancelled: "腰斬",
+  statusHiatus: "休刊中",
+  statusNotPublished: "未出版",
+  /** 內容分級：只有「建議」與 R18 會顯示。 */
+  ratingSuggestive: "建議 15+",
+  ratingNsfw: "R18",
 
   /** 閱讀入口：有續讀點是「繼續閱讀」，沒有是「開始閱讀」。 */
   resumeReading: "繼續閱讀",

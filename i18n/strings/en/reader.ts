@@ -41,6 +41,8 @@ export default {
   gestureHint: "(vertical scrolls only)",
   tapZones: "Tap zones",
   hardwareSharpen: "AI Super Resolution (ACNet ONNX)",
+  /** Default follows the source's viewer (then global); on saves settings for this title only. */
+  perComic: "Remember for this title",
 
   noChapters: "This title has no chapters yet",
   chapterUnavailable: "Couldn't open this chapter",

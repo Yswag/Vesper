@@ -3,10 +3,21 @@
 export default {
   singleChapter: "单章",
   author: "作者：{name}",
+  artist: "作画：{name}",
   chapterCount: { one: "{n} 个章节", other: "{n} 个章节" },
   updatedAt: "更新于 {time}",
   uploadedAt: "发布于 {time}",
   likesCount: { one: "{n} 人喜爱", other: "{n} 人喜爱" },
+
+  /** 源的连载状态。 */
+  statusOngoing: "连载中",
+  statusCompleted: "已完结",
+  statusCancelled: "腰斩",
+  statusHiatus: "休刊中",
+  statusNotPublished: "未出版",
+  /** 内容分级：只有「建议」与 R18 会显示。 */
+  ratingSuggestive: "建议 15+",
+  ratingNsfw: "R18",
 
   resumeReading: "继续阅读",
   startReading: "开始阅读",

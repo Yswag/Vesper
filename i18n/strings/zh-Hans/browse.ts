@@ -26,7 +26,6 @@ export default {
   all: "全部",
 
   searchOnly: "这个源只能搜索",
-  goSearch: "去搜索",
 
   noCategories: "这个源没有可用的分类",
   partError: "读不到：{error}",

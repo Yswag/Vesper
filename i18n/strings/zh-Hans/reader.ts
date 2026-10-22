@@ -41,6 +41,8 @@ export default {
   gestureHint: "（纵向仅滑动）",
   tapZones: "三分区翻页",
   hardwareSharpen: "AI 超分辨率 (ACNet ONNX)",
+  /** 預設跟随源宣告的阅读方式（没有就退全域）；打开就存成这部的独立设置。 */
+  perComic: "记住这部的设置",
 
   noChapters: "这部作品目前没有章节",
   chapterUnavailable: "读不到这一话",

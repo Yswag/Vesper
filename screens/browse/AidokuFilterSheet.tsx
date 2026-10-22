@@ -18,10 +18,11 @@ import {
   useState,
 } from "scripting"
 
+import { useSubscription } from "../../app/useSubscription"
 import { CardGroup } from "../../design/layout"
 import { OptionRow, SelectRow, TextInputRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { pageInsets, pageSpacing, palette } from "../../design/tokens"
-import { t } from "../../i18n"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuFilterRow, AidokuFilterValue } from "../../sources/aidokuFilters"
 
 type Value = AidokuFilterValue
@@ -75,6 +76,8 @@ export function AidokuFilterSheet({
 }) {
   const dismiss = Navigation.useDismiss()
   const [draft, setDraft] = useState<Value[]>(() => values.map(copyValue))
+  // sheet 是獨立的 render 根：語言一換就重繪。
+  useSubscription(subscribeLocale)
 
   function update(index: number, value: Value) {
     setDraft(previous => previous.map((item, at) => (at === index ? value : item)))

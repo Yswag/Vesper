@@ -45,6 +45,9 @@ export interface ReaderHUDProps {
   chapterTitle: string
   settings: ReaderSettings
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void
+  /** 這本有沒有自己的閱讀設定（開關狀態）。 */
+  perComic: boolean
+  onTogglePerComic: (on: boolean) => void
   onDismiss: () => void
   onOpenChapterSheet: () => void
   onToggleHUD: () => void
@@ -77,6 +80,8 @@ export function ReaderHUD({
   chapterTitle,
   settings,
   onUpdateSettings,
+  perComic,
+  onTogglePerComic,
   onDismiss,
   onOpenChapterSheet,
   onToggleHUD,
@@ -202,6 +207,14 @@ export function ReaderHUD({
                       />
                     }
                   >
+                    {/* 預設跟隨源宣告（再退全域）；打開才把這本記成獨立設定。 */}
+                    <Toggle
+                      title={t("reader.perComic")}
+                      systemImage="pin"
+                      value={perComic}
+                      onChanged={onTogglePerComic}
+                    />
+
                     <Picker
                       title={t("reader.mode")}
                       value={settings.mode}

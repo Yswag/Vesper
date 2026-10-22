@@ -22,12 +22,13 @@ import {
 } from "../engine/aidoku/host"
 import { appDataRoot, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
 import type { ImageRequest, ImageResponseInfo } from "../engine/images"
+import type { SourceViewer } from "../library/readerSettings"
 import type { SourceCapabilities, SourceMeta } from "../engine/loader"
 import { log } from "../engine/log"
 import { unzip } from "../engine/zip"
 import { t } from "../i18n"
 import type { StoredSource } from "./store"
-import type { ComicDetail, ExploreEntry } from "./operations"
+import type { ComicDetail, ComicStatus, ContentRating, ExploreEntry } from "./operations"
 import type { InstalledSource } from "./registry"
 
 const PREFIX = "aidoku:"
@@ -786,6 +787,42 @@ function names(raw: unknown): string {
     : ""
 }
 
+/** Aidoku 的 PublishingStatus（0 未知 / 1 連載 / 2 完結 / 3 腰斬 / 4 休刊 / 5 未出版）。 */
+const STATUS_BY_CODE: Record<number, ComicStatus> = {
+  1: "ongoing",
+  2: "completed",
+  3: "cancelled",
+  4: "hiatus",
+  5: "notPublished",
+}
+
+/** Aidoku 的 MangaContentRating（0 安全 / 1 建議 / 2 R18）。 */
+const RATING_BY_CODE: Record<number, ContentRating> = {
+  0: "safe",
+  1: "suggestive",
+  2: "nsfw",
+}
+
+function statusOf(raw: any): ComicStatus | undefined {
+  return STATUS_BY_CODE[Number(raw?.status)]
+}
+
+function contentRatingOf(raw: any): ContentRating | undefined {
+  return RATING_BY_CODE[Number(raw?.contentRating)]
+}
+
+/** Aidoku 的 MangaViewer：0 預設 / 1 rtl / 2 ltr / 3 vertical / 4 scroll。 */
+const VIEWER_BY_CODE: Record<number, SourceViewer> = {
+  1: "rtl",
+  2: "ltr",
+  3: "vertical",
+  4: "scroll",
+}
+
+function viewerOf(raw: any): SourceViewer | undefined {
+  return VIEWER_BY_CODE[Number(raw?.viewer)]
+}
+
 function toComicItem(raw: any): ComicListItem | null {
   const id = raw?.key ?? raw?.id
   if (id == null || id === "") return null
@@ -807,6 +844,20 @@ function toListPage(raw: any, page: number): ComicListPage {
   }
 }
 
+/**
+ * 漢化組就是 Vesper 的章節分組（`chapterGrouping.ts` 靠這個切分頁）。
+ * 這個 runtime 給的是單一 `scanlator` 字串；`scanlators` 陣列留給之後的 ABI。
+ */
+function scanlatorOf(raw: any): string {
+  if (Array.isArray(raw?.scanlators)) {
+    return raw.scanlators
+      .map((value: unknown) => String(value ?? "").trim())
+      .filter((value: string) => value.length > 0)
+      .join(", ")
+  }
+  return typeof raw?.scanlator === "string" ? raw.scanlator.trim() : ""
+}
+
 function toChapter(raw: any): { group: string; id: string; title: string } | null {
   const key = raw?.key ?? raw?.id
   if (key == null || key === "") return null
@@ -814,7 +865,7 @@ function toChapter(raw: any): { group: string; id: string; title: string } | nul
   const title = typeof raw.title === "string" ? raw.title.trim() : ""
   const number = raw.chapterNumber
   return {
-    group: "",
+    group: scanlatorOf(raw),
     id,
     title: title || (typeof number === "number" && number > 0 ? t("sources.aidoku.chapter", { n: number }) : id),
   }
@@ -856,11 +907,15 @@ export function detail(source: InstalledSource, comicId: string): Promise<ComicD
       title: String(raw?.title ?? t("sources.untitled")),
       cover: typeof raw?.cover === "string" && raw.cover ? raw.cover : undefined,
       description: typeof raw?.description === "string" && raw.description ? raw.description : undefined,
+      status: statusOf(raw),
+      contentRating: contentRatingOf(raw),
+      viewer: viewerOf(raw),
       tags: normalizeTags(raw?.tags),
       chapters: (Array.isArray(chapters) ? chapters : [])
         .map(toChapter)
         .filter((chapter): chapter is { group: string; id: string; title: string } => chapter !== null),
       uploader: names(raw?.authors) || undefined,
+      artists: names(raw?.artists) || undefined,
       url: typeof raw?.url === "string" && raw.url ? raw.url : undefined,
     }
   })

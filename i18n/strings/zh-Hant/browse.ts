@@ -40,7 +40,6 @@ export default {
 
   /** 這個源沒有任何探索清單：搜尋是唯一入口。 */
   searchOnly: "這個源只能搜尋",
-  goSearch: "去搜尋",
 
   /** 分類頁。 */
   noCategories: "這個源沒有可用的分類",
