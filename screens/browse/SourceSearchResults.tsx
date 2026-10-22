@@ -6,8 +6,10 @@ import {
   Button,
   HStack,
   Image,
+  Menu,
   Navigation,
   NavigationStack,
+  Picker,
   ProgressView,
   ScrollView,
   Spacer,
@@ -146,30 +148,179 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     })
   }
 
-  /** 結果頁上緣的篩選鈕：跟 Aidoku 一樣只是一顆小膠囊（圖示＋數量），沒有篩選可設的源不顯示。 */
+  /** 套用某一列的值（chips 是即時生效，沒有「套用」）。 */
+  function applyValue(index: number, value: AidokuFilterValue) {
+    if (!filters) return
+    const values = filters.values.map((item, at) => (at === index ? value : item))
+    saveFilterValues(sourceKey, filters.rows, values)
+    setFilters({ rows: filters.rows, values })
+  }
+
+  /** 膠囊：`active` 決定要不要上色，`badge` 是左邊那個數字。 */
+  function capsule(label: string, active: boolean, badge?: number, chevron = true): VirtualNode {
+    return (
+      <HStack
+        spacing={4}
+        alignment="center"
+        padding={{ horizontal: 9, vertical: 6 }}
+        background="ultraThinMaterial"
+        clipShape={rect(14)}
+      >
+        {badge && badge > 0 ? (
+          <Text font="caption2" fontWeight="semibold" foregroundStyle="tintColor">
+            {String(badge)}
+          </Text>
+        ) : null}
+        <Text font="caption" fontWeight="medium" foregroundStyle={active ? "tintColor" : "label"} lineLimit={1}>
+          {label}
+        </Text>
+        {chevron ? <Image systemName="chevron.down" font="caption2" foregroundStyle="tertiaryLabel" /> : null}
+      </HStack>
+    )
+  }
+
+  /** 每個篩選一顆膠囊：select／sort 開 menu，check 直接切，multi 開 sheet（跟 Aidoku 一樣）。 */
+  function chip(row: AidokuFilterRow, index: number): VirtualNode {
+    const value = filters?.values[index]
+
+    switch (row.kind) {
+      case "text":
+        // 文字篩選沒有 chip，只從篩選 sheet 進（Aidoku 也是這樣）。
+        return <VStack spacing={0} />
+      case "check": {
+        const on = value === true
+        return (
+          <Button action={() => applyValue(index, !on)} buttonStyle="plain">
+            {capsule(row.label, on, undefined, false)}
+          </Button>
+        )
+      }
+      case "select": {
+        const current = typeof value === "string" ? value : (row.options[0]?.value ?? "")
+        const active = current !== row.options[0]?.value
+        return (
+          <Menu label={capsule(row.label, active)}>
+            <Picker
+              title={row.label}
+              value={current}
+              onChanged={(next: string | number) => applyValue(index, String(next))}
+            >
+              {row.options.map(option => (
+                <Text key={option.value} tag={option.value}>
+                  {option.label}
+                </Text>
+              ))}
+            </Picker>
+          </Menu>
+        )
+      }
+      case "sort": {
+        const sort =
+          typeof value === "object" && value !== null && "index" in value ? value : { index: 0, ascending: false }
+        const active = sort.index !== 0 || sort.ascending
+        return (
+          <Menu label={capsule(`${row.label}: ${row.options[sort.index] ?? ""}`, active)}>
+            <Picker
+              title={row.label}
+              value={String(sort.index)}
+              onChanged={(next: string | number) =>
+                applyValue(index, { index: Number(next) || 0, ascending: sort.ascending })
+              }
+            >
+              {row.options.map((option, at) => (
+                <Text key={String(at)} tag={String(at)}>
+                  {option}
+                </Text>
+              ))}
+            </Picker>
+            {row.canAscend ? (
+              <Button action={() => applyValue(index, { index: sort.index, ascending: !sort.ascending })}>
+                <HStack spacing={6}>
+                  <Image systemName={sort.ascending ? "chevron.up" : "chevron.down"} />
+                  <Text>{t("search.filterAscending")}</Text>
+                </HStack>
+              </Button>
+            ) : null}
+          </Menu>
+        )
+      }
+      case "multi": {
+        const picked =
+          typeof value === "object" && value !== null && "included" in value
+            ? value
+            : { included: [] as string[], excluded: [] as string[] }
+        const count = picked.included.length + picked.excluded.length
+        // Aidoku 的 MultiSelectFilterView 也是 Menu：點一下包含、再點一下排除（canExclude 時）、再點一下取消。
+        // `menuActionDismissDisabled` 這裡沒有，所以 Menu 每點一次會關，重新打開才繼續。
+        const toggle = (option: string) => {
+          const included = picked.included.filter(item => item !== option)
+          const excluded = picked.excluded.filter(item => item !== option)
+          if (picked.included.includes(option)) {
+            if (row.canExclude) excluded.push(option)
+          } else if (!(row.canExclude && picked.excluded.includes(option))) {
+            included.push(option)
+          }
+          applyValue(index, { included, excluded })
+        }
+        return (
+          <Menu label={capsule(row.label, count > 0, count)}>
+            {row.options.map(option => (
+              <Button key={option.value} action={() => toggle(option.value)}>
+                <HStack spacing={8}>
+                  <Text>{option.label}</Text>
+                  {picked.included.includes(option.value) ? (
+                    <Image systemName="checkmark" foregroundStyle="tintColor" />
+                  ) : picked.excluded.includes(option.value) ? (
+                    <Image systemName="xmark" foregroundStyle="tintColor" />
+                  ) : null}
+                </HStack>
+              </Button>
+            ))}
+          </Menu>
+        )
+      }
+    }
+  }
+
+  /** 上緣那一排：`[篩選]` 後面每個篩選一顆膠囊，改過的排前面（Aidoku 的 `sortedFilters`）。 */
   function filterBar(): VirtualNode {
     if (!filters) return <VStack spacing={0} />
     const count = activeFilterCount(filters.rows, filters.values)
+    const touched = new Set(encodedFilters.map(descriptor => descriptor.name))
+    const entries = filters.rows
+      .map((row, index) => ({ row, index }))
+      .filter(entry => entry.row.kind !== "text")
+    const ordered = [
+      ...entries.filter(entry => touched.has(entry.row.name)),
+      ...entries.filter(entry => !touched.has(entry.row.name)),
+    ]
+
     return (
-      <HStack padding={{ horizontal: 16, vertical: 6 }} frame={{ maxWidth: "infinity" }}>
-        <Spacer />
-        <Button action={() => void openFilters()} buttonStyle="plain">
-          <HStack
-            spacing={4}
-            alignment="center"
-            padding={{ horizontal: 9, vertical: 6 }}
-            background="ultraThinMaterial"
-            clipShape={rect(14)}
-          >
-            <Image systemName="line.3.horizontal.decrease" font="footnote" foregroundStyle="label" />
-            {count > 0 ? (
-              <Text font="caption" fontWeight="semibold" foregroundStyle="label">
-                {String(count)}
-              </Text>
-            ) : null}
-          </HStack>
-        </Button>
-      </HStack>
+      <ScrollView axes="horizontal">
+        <HStack spacing={6} padding={{ horizontal: 16, vertical: 6 }}>
+          <Button action={() => void openFilters()} buttonStyle="plain">
+            <HStack
+              spacing={4}
+              alignment="center"
+              padding={{ horizontal: 9, vertical: 6 }}
+              background="ultraThinMaterial"
+              clipShape={rect(14)}
+            >
+              <Image systemName="line.3.horizontal.decrease" font="footnote" foregroundStyle="label" />
+              {count > 0 ? (
+                <Text font="caption2" fontWeight="semibold" foregroundStyle="tintColor">
+                  {String(count)}
+                </Text>
+              ) : null}
+            </HStack>
+          </Button>
+          {ordered.map(entry => (
+            <VStack key={`chip:${entry.index}`} spacing={0}>
+              {chip(entry.row, entry.index)}
+            </VStack>
+          ))}
+        </HStack>
+      </ScrollView>
     )
   }
 
