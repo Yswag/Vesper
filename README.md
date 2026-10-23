@@ -1,10 +1,10 @@
 # Vesper
 
-在 [Scripting](https://scripting.fun) 上執行的漫畫閱讀器，相容 [Venera](https://github.com/venera-app/venera) 漫畫源規範。
+在 [Scripting](https://scripting.fun) 上執行的漫畫閱讀器，相容 [Venera](https://github.com/venera-app/venera) 與 [Aidoku](https://github.com/Aidoku/Aidoku) 漫畫源規範。
 
 ## 功能
 
-- **漫畫源生態**：支援 Venera 格式漫畫源與倉庫索引，可直接安裝與更新。
+- **漫畫源生態**：支援 Venera 與 Aidoku 雙格式漫畫源與倉庫索引，可直接安裝、更新與搜尋篩選。
 - **瀏覽與檢索**：支援各源的探索、分類標籤、排行榜與跨源聚合搜尋。
 - **閱讀器體驗**：
   - 支援畫廊分頁與平滑連續捲動（左至右、右至左、縱向）。
@@ -25,4 +25,4 @@
 
 ## 感謝
 
-介面設計與源生態規格靈感來自 [venera-app/venera](https://github.com/venera-app/venera) 與 [CyrilPeng/Venera-Next](https://github.com/CyrilPeng/Venera-Next)。
+介面設計與源生態規格靈感來自 [venera-app/venera](https://github.com/venera-app/venera)、[CyrilPeng/Venera-Next](https://github.com/CyrilPeng/Venera-Next) 與 [Aidoku/Aidoku](https://github.com/Aidoku/Aidoku)。

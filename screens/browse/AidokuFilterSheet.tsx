@@ -8,10 +8,8 @@ import {
   FlowLayout,
   HStack,
   Image,
-  Menu,
   Navigation,
   ScrollView,
-  Spacer,
   Text,
   Toolbar,
   ToolbarItem,
@@ -22,7 +20,7 @@ import {
 
 import { useSubscription } from "../../app/useSubscription"
 import { CardGroup } from "../../design/layout"
-import { FieldRow, IconBadge, ToggleRow } from "../../design/rows"
+import { FieldRow, IconBadge, SelectRow, ToggleRow } from "../../design/rows"
 import { capsule, fill, pageInsets, pageSpacing, palette, rowPadding } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuFilterRow, AidokuFilterValue } from "../../sources/aidokuFilters"
@@ -114,57 +112,6 @@ function SortAscendButton({ ascending, onToggle }: { ascending: boolean; onToggl
   )
 }
 
-/** 單選下拉列（限制 lineLimit={1} 單行不折行；選單內選中項加打勾）。 */
-function SingleSelectRow({
-  icon,
-  title,
-  selectedValue,
-  options,
-  onSelect,
-}: {
-  icon: string
-  title: string
-  selectedValue: string
-  options: Array<{ value: string; text: string }>
-  onSelect: (value: string) => void
-}) {
-  const currentText = options.find(o => o.value === selectedValue)?.text ?? selectedValue
-
-  return (
-    <HStack spacing={14} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
-      <IconBadge icon={icon} />
-      <Text font="body" fontWeight="regular" foregroundStyle="label">
-        {title}
-      </Text>
-      <Spacer />
-      <Menu
-        label={
-          <HStack spacing={4} alignment="center">
-            <Text font="body" foregroundStyle="secondaryLabel" lineLimit={1}>
-              {currentText}
-            </Text>
-            <Image
-              systemName="chevron.up.chevron.down"
-              font="caption2"
-              fontWeight="semibold"
-              foregroundStyle="tertiaryLabel"
-            />
-          </HStack>
-        }
-      >
-        {options.map(option => (
-          <Button
-            key={option.value}
-            title={option.text}
-            systemImage={option.value === selectedValue ? "checkmark" : undefined}
-            action={() => onSelect(option.value)}
-          />
-        ))}
-      </Menu>
-    </HStack>
-  )
-}
-
 export function AidokuFilterSheet({
   rows,
   values,
@@ -200,12 +147,12 @@ export function AidokuFilterSheet({
       case "select": {
         const selected = typeof value === "string" ? value : (row.options[0]?.value ?? "")
         return (
-          <SingleSelectRow
+          <SelectRow
             icon="chevron.up.chevron.down"
             title={row.label}
-            selectedValue={selected}
+            value={selected}
             options={row.options.map(option => ({ value: option.value, text: option.label }))}
-            onSelect={next => update(index, next)}
+            onChanged={next => update(index, next)}
           />
         )
       }
@@ -213,12 +160,12 @@ export function AidokuFilterSheet({
         const sort =
           typeof value === "object" && value !== null && "index" in value ? value : { index: 0, ascending: false }
         return (
-          <SingleSelectRow
+          <SelectRow
             icon="arrow.up.arrow.down"
             title={row.label}
-            selectedValue={String(sort.index)}
+            value={String(sort.index)}
             options={row.options.map((option, at) => ({ value: String(at), text: option }))}
-            onSelect={next => update(index, { index: Number(next) || 0, ascending: sort.ascending })}
+            onChanged={next => update(index, { index: Number(next) || 0, ascending: sort.ascending })}
           />
         )
       }

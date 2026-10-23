@@ -24,8 +24,6 @@ export default {
   /** Ascending toggle of a sort filter. */
   filterAscending: "Ascending",
   filterDescending: "Descending",
-  /** Hint for tri-state filters. */
-  filterTriState: "Tap to include, tap again to exclude",
 
   history: "Search history",
   historyEmpty: "Type a keyword to search every enabled source",

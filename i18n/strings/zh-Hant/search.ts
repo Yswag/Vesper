@@ -37,8 +37,6 @@ export default {
   /** 排序篩選的遞增開關。 */
   filterAscending: "遞增",
   filterDescending: "遞減",
-  /** 三態篩選的操作說明。 */
-  filterTriState: "點一下包含，再點一下排除",
 
   /** 還沒送出關鍵字時的歷史搜尋。 */
   history: "歷史搜尋",

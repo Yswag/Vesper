@@ -36,8 +36,6 @@ export default {
     groupAppearance: "Appearance",
     appearance: "Theme",
     groupStorage: "Downloads & storage",
-    storageFootnote:
-      "Offline downloads are not affected by clearing the cache; the thumbnail cache only holds covers and avatars — page images take no disk space.",
     downloads: "Offline downloads",
     thumbCache: "Thumbnail cache",
     thumbCacheDetail: "{files} · {size}",
@@ -47,10 +45,9 @@ export default {
     clearCacheMessage:
       "Cover and avatar thumbnails will be removed and downloaded again when needed. Page images take no disk space.",
     groupAbout: "System & about",
-    aboutFootnote: "Venera source spec compatible; home rankings and explore data come from Bangumi.",
     logs: "Logs",
     sourceSpec: "Source spec",
-    sourceSpecDetail: "Venera source compatible",
+    sourceSpecDetail: "Venera / Aidoku compatible",
     homeData: "Home rankings & data",
   },
 

@@ -3,8 +3,10 @@
 // ⚠️ 有 onTapGesture 的列要配 `contentShape="rect"`，不然 Spacer 那段不算內容、點不到。
 
 import {
+  Button,
   HStack,
   Image,
+  Menu,
   Picker,
   SecureField,
   Spacer,
@@ -285,7 +287,7 @@ export function TextInputRow({
   )
 }
 
-/** 下拉選單列。左側圖示與標題，右側顯示當前值（可選單點擊切換）。 */
+/** 下拉選單列。左側圖示與標題，右側顯示當前值（低調無彩色次要標籤，點擊彈出 Menu；選中項打勾）。 */
 export function SelectRow({
   icon,
   iconColor = "secondaryLabel",
@@ -310,18 +312,30 @@ export function SelectRow({
         {title}
       </Text>
       <Spacer />
-      <Picker
-        title={currentText}
-        pickerStyle="menu"
-        value={value}
-        onChanged={(next: string | number) => onChanged(String(next))}
+      <Menu
+        label={
+          <HStack spacing={4} alignment="center">
+            <Text font="body" foregroundStyle="secondaryLabel" lineLimit={1}>
+              {currentText}
+            </Text>
+            <Image
+              systemName="chevron.up.chevron.down"
+              font="caption2"
+              fontWeight="semibold"
+              foregroundStyle="tertiaryLabel"
+            />
+          </HStack>
+        }
       >
         {options.map(option => (
-          <Text key={option.value} tag={option.value}>
-            {option.text}
-          </Text>
+          <Button
+            key={option.value}
+            title={option.text}
+            systemImage={option.value === value ? "checkmark" : undefined}
+            action={() => onChanged(option.value)}
+          />
         ))}
-      </Picker>
+      </Menu>
     </HStack>
   )
 }

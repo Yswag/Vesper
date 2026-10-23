@@ -91,7 +91,7 @@ export function SettingsScreen() {
         </NavigationLink>
       </CardGroup>
 
-      <CardGroup title={t("settings.root.groupStorage")} footnote={t("settings.root.storageFootnote")}>
+      <CardGroup title={t("settings.root.groupStorage")}>
         <NavigationLink destination={<DownloadScreen />}>
           <IconRow
             icon="arrow.down.circle"
@@ -111,7 +111,7 @@ export function SettingsScreen() {
         </NavigationLink>
       </CardGroup>
 
-      <CardGroup title={t("settings.root.groupAbout")} footnote={t("settings.root.aboutFootnote")}>
+      <CardGroup title={t("settings.root.groupAbout")}>
         {/* 選項用語言自稱；「跟隨系統」跟著介面語言走，所以兩個字串都要在 render 時求值。 */}
         <SelectRow
           icon="globe"
