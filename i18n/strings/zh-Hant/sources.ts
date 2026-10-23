@@ -54,6 +54,7 @@ export default {
     initFailed: "源初始化失敗",
     invalidPackage: "這不是有效的 Aidoku 源檔（.aix）",
     chapter: "第 {n} 話",
+    volume: "第 {n} 卷",
     /** 源被判定不可用；`{reason}` 是最後一次的失敗原因。 */
     unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
 

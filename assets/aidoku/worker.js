@@ -109,8 +109,23 @@ function applyManifestDefaults(settings, manifest) {
   if (config.allowsBaseUrlSelect && Array.isArray(info.urls) && info.urls.length > 0 && settings.url === undefined) {
     settings.url = info.urls[0]
   }
-  if (Array.isArray(info.languages) && info.languages.length > 0 && settings.languages === undefined) {
-    settings.languages = config.languageSelectType === "multi" ? info.languages : [info.languages[0]]
+  // 語言預設照 Aidoku：標了 isDefault 的優先，否則只取第一個；single 只留一個。
+  const languages = Array.isArray(manifest && manifest.languages)
+    ? manifest.languages
+    : Array.isArray(info.languages)
+      ? info.languages
+      : []
+  if (languages.length > 0 && settings.languages === undefined) {
+    const codes = languages
+      .map(entry => (typeof entry === "string" ? entry : entry && typeof entry.code === "string" ? entry.code : ""))
+      .filter(code => code.length > 0)
+    const marked = languages
+      .filter(entry => entry && typeof entry === "object" && entry.isDefault === true)
+      .map(entry => entry.code)
+      .filter(code => typeof code === "string" && code.length > 0)
+    const defaults = marked.length > 0 ? marked : codes.slice(0, 1)
+    const selectType = config.languageSelectType || (manifest && manifest.languageSelectType)
+    settings.languages = selectType === "single" ? defaults.slice(0, 1) : defaults
   }
 }
 

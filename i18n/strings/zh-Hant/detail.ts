@@ -33,6 +33,8 @@ export default {
   chapterAtPage: "{chapter} · 第 {n} 頁",
   /** 連章節標題都拿不到時的替代字。 */
   firstChapter: "首話閱讀",
+  /** 有章節但全部被源鎖定（付費／登入）時，閱讀入口顯示的狀態。 */
+  allChaptersLocked: "所有章節已鎖定",
 
   /** 收藏鈕：顯示字與無障礙標籤各一組。 */
   favorite: "收藏",

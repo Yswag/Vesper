@@ -40,6 +40,7 @@ export default {
     initFailed: "The source failed to initialize",
     invalidPackage: "Not a valid Aidoku source file (.aix)",
     chapter: "Chapter {n}",
+    volume: "Vol. {n}",
     unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
 
     indexInvalid: "Not an Aidoku index (expected { sources: [...] } or a JSON array)",

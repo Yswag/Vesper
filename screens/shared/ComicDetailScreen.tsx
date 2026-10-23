@@ -144,6 +144,7 @@ export function ComicDetailScreen({
     id: chapter.ref.epId,
     title: chapter.title || chapter.group || t("detail.singleChapter"),
     group: chapter.group,
+    locked: chapter.locked,
   }))
 
   // 續讀點：ComicLibrary 會把越界的頁碼 clamp 到合法範圍；沒讀過就是 null。
@@ -195,9 +196,11 @@ export function ComicDetailScreen({
     viewer: detail?.viewer,
   }
 
-  // 確定首選閱讀章節：優先續讀上次進度，無進度則自第一話起算
-  const targetEpId =
-    resumed && chapters.some(c => c.id === resumed.chapter.epId) ? resumed.chapter.epId : chapters[0]?.id
+  // 確定首選閱讀章節：優先續讀上次進度，無進度則自第一話起算（鎖定的章節不自動開）。
+  const firstReadable = chapters.find(chapter => !chapter.locked)
+  const resumedReadable =
+    resumed && chapters.some(c => c.id === resumed.chapter.epId && !c.locked) ? resumed.chapter.epId : undefined
+  const targetEpId = resumedReadable ?? firstReadable?.id
 
   const targetEpTitle = chapters.find(chapter => chapter.id === targetEpId)?.title
 
@@ -227,9 +230,12 @@ export function ComicDetailScreen({
     ...selectedIds,
   ])
 
-  // 選取模式的兩個數字：都只算「尚未下載」的章節（已下載的不會再抓）。
+  // 選取模式的兩個數字：都只算「尚未下載」且非鎖定的章節（鎖定的不能下載）。
   function pendingOf(epIds: string[]): string[] {
-    return epIds.filter(epId => chapterStates[epId].state !== "done")
+    return epIds.filter(epId => {
+      if (chapters.find(chapter => chapter.id === epId)?.locked) return false
+      return chapterStates[epId].state !== "done"
+    })
   }
 
   const pendingAll = pendingOf(currentGroupChapters.map(chapter => chapter.id))
@@ -238,8 +244,9 @@ export function ComicDetailScreen({
   /** 這一組章的漫畫資訊（下載頁要顯示的名稱與封面）；詳情還沒到就沒有。 */
   const downloadMeta = detail ? { comicTitle: detail.title, cover: detail.cover } : undefined
 
-  /** 選取模式：點列＝切換勾選（不是進閱讀器）。 */
+  /** 選取模式：點列＝切換勾選（不是進閱讀器）；鎖定的章節不能選。 */
   function toggleSelected(epId: string) {
+    if (chapters.find(chapter => chapter.id === epId)?.locked) return
     setSelectedIds(previous =>
       previous.includes(epId) ? previous.filter(item => item !== epId) : [...previous, epId]
     )
@@ -615,6 +622,23 @@ export function ComicDetailScreen({
                     </HStack>
                   </GlassSurface>
                 </NavigationLink>
+              ) : chapters.length > 0 ? (
+                // 有章節但全部鎖定：不讓入口消失，改成看得懂的狀態。
+                <GlassSurface shape={rect(radius.card)}>
+                  <HStack
+                    spacing={10}
+                    alignment="center"
+                    padding={{ horizontal: 16, vertical: 0 }}
+                    frame={{ maxWidth: "infinity", height: 64 }}
+                  >
+                    <Spacer />
+                    <Image systemName="lock.fill" font="title3" foregroundStyle="secondaryLabel" />
+                    <Text font="headline" fontWeight="semibold" foregroundStyle="secondaryLabel">
+                      {t("detail.allChaptersLocked")}
+                    </Text>
+                    <Spacer />
+                  </HStack>
+                </GlassSurface>
               ) : null}
 
               {/* 收藏按鈕 */}
@@ -967,6 +991,7 @@ export function ComicDetailScreen({
               <LazyVStack spacing={8} swipeActionsContainer={true}>
                 {displayChapters.map(chapter => {
                   const isCurrent = resumed?.chapter.epId === chapter.id
+                  const locked = chapter.locked === true
                   // 這一列的狀態是上面那一輪算好的（與「下載 (n)」共用），不再自己問一次。
                   const download = chapterStates[chapter.id]
                   const settled = isActive(download.state) || download.state === "done"
@@ -981,14 +1006,17 @@ export function ComicDetailScreen({
                       clipShape={rect(radius.thumb)}
                       overlay={<RoundedRectangle cornerRadius={radius.thumb} stroke={hairlineStroke} />}
                       frame={{ maxWidth: "infinity" }}
-                      onTapGesture={selecting ? () => toggleSelected(chapter.id) : undefined}
+                      onTapGesture={selecting && !locked ? () => toggleSelected(chapter.id) : undefined}
                     >
-                      {selecting ? (
+                      {selecting && !locked ? (
                         <Image
                           systemName={checked ? "checkmark.circle.fill" : "circle"}
                           fontWeight="medium"
                           foregroundStyle={checked ? "accentColor" : "tertiaryLabel"}
                         />
+                      ) : null}
+                      {locked ? (
+                        <Image systemName="lock.fill" font="caption2" foregroundStyle="tertiaryLabel" />
                       ) : null}
                       <Text
                         font="subheadline"
@@ -1016,7 +1044,7 @@ export function ComicDetailScreen({
                             {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
                           </Text>
                         </HStack>
-                      ) : selecting ? null : (
+                      ) : selecting || locked ? null : (
                         <Image
                           systemName="chevron.right"
                           font="caption2"
@@ -1026,7 +1054,8 @@ export function ComicDetailScreen({
                     </HStack>
                   )
 
-                  const row = selecting ? (
+                  // 鎖定的章節只顯示，不包 NavigationLink（點了不會進去）。
+                  const row = selecting || locked ? (
                     body
                   ) : (
                     <NavigationLink
@@ -1043,8 +1072,8 @@ export function ComicDetailScreen({
                   )
 
                   // 下載動作放左滑：一列只能有一個可點元件，塞 Button 會跟 NavigationLink 搶命中。
-                  // 選取模式不給左滑（那一列的點擊區已經是勾選了）。
-                  return selecting || settled ? (
+                  // 選取模式與鎖定章節不給左滑。
+                  return selecting || settled || locked ? (
                     <VStack key={chapter.id} spacing={0}>
                       {row}
                     </VStack>

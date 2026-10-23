@@ -23,6 +23,8 @@ export default {
   startReading: "Start reading",
   chapterAtPage: "{chapter} · Page {n}",
   firstChapter: "Read from the start",
+  /** Shown when the source locks every chapter (paid / login only). */
+  allChaptersLocked: "All chapters are locked",
 
   favorite: "Favorite",
   unfavorite: "Remove from favorites",

@@ -69,6 +69,7 @@ export async function launchResumeReader({
       // 連標題都拿不到時的替代字：沿用詳情頁章節列的同一個 key（同一件事同一句話）。
       title: chapter.title || chapter.group || t("detail.singleChapter"),
       group: chapter.group,
+      locked: chapter.locked,
     }))
 
     if (chapters.length === 0) {
@@ -76,7 +77,9 @@ export async function launchResumeReader({
       return
     }
 
-    const targetEpId = chapters.some(ch => ch.id === wantedEpId) ? wantedEpId : chapters[0]?.id
+    const targetEpId = chapters.some(ch => ch.id === wantedEpId && !ch.locked)
+      ? wantedEpId
+      : chapters.find(ch => !ch.locked)?.id
 
     if (!targetEpId) {
       showToast(t("reader.chapterUnavailable"))

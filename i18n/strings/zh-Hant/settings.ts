@@ -189,6 +189,10 @@ export default {
   /** Aidoku 源自己的設定頁（`settings.json` 的 schema）。 */
   aidokuSettings: {
     title: "源設定",
+    languageGroup: "語言",
+    language: "語言",
+    languageNone: "未選擇",
+    languageFootnote: "只有所選語言的章節會被讀取；變更後源會重新載入。",
     empty: "這個源沒有可調整的設定",
     footer: "共 {n} 項 · 值只存改過的欄位，沒改的用源宣告的預設。",
     saved: "已套用，源會重新載入",

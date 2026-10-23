@@ -23,6 +23,8 @@ export default {
   startReading: "开始阅读",
   chapterAtPage: "{chapter} · 第 {n} 页",
   firstChapter: "首话阅读",
+  /** 有章节但全部被源锁定（付费／登录）时，阅读入口显示的状态。 */
+  allChaptersLocked: "所有章节已锁定",
 
   favorite: "收藏",
   unfavorite: "取消收藏",

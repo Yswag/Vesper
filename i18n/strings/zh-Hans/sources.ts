@@ -40,6 +40,7 @@ export default {
     initFailed: "源初始化失败",
     invalidPackage: "这不是有效的 Aidoku 源文件（.aix）",
     chapter: "第 {n} 话",
+    volume: "第 {n} 卷",
     unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
 
     indexInvalid: "Aidoku 索引格式不对（要 { sources: [...] } 或 JSON 数组）",

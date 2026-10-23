@@ -41,7 +41,7 @@ export interface ComicDetail {
   /** 源自己的子識別碼（多數源忽略）；原封不動保留，之後留言 API 要用。 */
   subId?: string
   tags: Array<{ namespace: string; values: string[] }>
-  chapters: Array<{ group: string; id: string; title: string }>
+  chapters: Array<{ group: string; id: string; title: string; locked?: boolean; lang?: string }>
   updateTime?: string
   uploadTime?: string
   uploader?: string

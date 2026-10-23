@@ -215,9 +215,12 @@ export function updateSourceSetting(key: string, id: string, value: unknown) {
   reloadRegistry()
 }
 
-/** 源詳情要不要顯示「源設定」列：Aidoku 源的 schema 非空。 */
+/** 源詳情要不要顯示「源設定」列：Aidoku 源有設定 schema 或多語言。 */
 export function hasAidokuSettings(source: InstalledSource): boolean {
-  return aidoku.isAidoku(source) && (source.settingsSpec?.count ?? 0) > 0
+  return (
+    aidoku.isAidoku(source) &&
+    ((source.settingsSpec?.count ?? 0) > 0 || (source.settingsSpec?.languages.length ?? 0) > 1)
+  )
 }
 
 /**

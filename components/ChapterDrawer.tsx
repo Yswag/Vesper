@@ -24,6 +24,8 @@ export interface ChapterItem {
   id: string
   title: string
   group?: string
+  /** 源標為鎖定：目錄看得到，不能點。 */
+  locked?: boolean
 }
 
 export interface ChapterDrawerProps {
@@ -233,18 +235,18 @@ export function ChapterDrawer({
                         clipShape={rect(radius.thumb)}
                         contentShape={rect(radius.thumb)}
                         frame={{ maxWidth: "infinity" }}
-                        onTapGesture={() => onSelectChapter(ch.id)}
+                        onTapGesture={ch.locked ? undefined : () => onSelectChapter(ch.id)}
                       >
                         <Image
-                          systemName={isCurrent ? "bookmark.fill" : "doc.text"}
+                          systemName={ch.locked ? "lock.fill" : isCurrent ? "bookmark.fill" : "doc.text"}
                           font={13}
-                          foregroundStyle={isCurrent ? "accentColor" : neutral.tertiary}
+                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? "accentColor" : neutral.tertiary}
                         />
                         <Spacer frame={{ width: 8 }} />
                         <Text
                           font="subheadline"
                           fontWeight={isCurrent ? "semibold" : "regular"}
-                          foregroundStyle={isCurrent ? "white" : "label"}
+                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? "white" : "label"}
                           lineLimit={1}
                         >
                           {ch.title}

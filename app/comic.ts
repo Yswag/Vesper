@@ -126,7 +126,7 @@ export interface ComicPage {
   comments: boolean
   /** 源有沒有宣告送出留言。 */
   canPostComment: boolean
-  chapters: Array<{ ref: ChapterRef; title: string; group: string; download: ChapterDownloadState }>
+  chapters: Array<{ ref: ChapterRef; title: string; group: string; locked: boolean; lang?: string; download: ChapterDownloadState }>
 }
 
 export interface ChapterSession {
@@ -415,6 +415,8 @@ export function createComicLibrary(): ComicLibrary {
             ref: chapterRef,
             title: chapter.title,
             group: chapter.group,
+            locked: chapter.locked === true,
+            lang: chapter.lang,
             download: chapterDownloadState(chapterRef),
           }
         }),

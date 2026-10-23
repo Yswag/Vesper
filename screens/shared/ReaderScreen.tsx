@@ -78,6 +78,8 @@ export interface ChapterRef {
   id: string
   title: string
   group?: string
+  /** 源標為鎖定（付費／登入）的章節：目錄看得到，不能開。 */
+  locked?: boolean
 }
 
 export interface ReaderProps {
@@ -386,6 +388,8 @@ function ReaderContent({
   function selectChapter(id: string) {
     setShowChapterSheet(false)
     if (id === currentEpId) return
+    // 鎖定的章節只列在目錄裡，點了不換話（也不提示）。
+    if (allChapters.find(chapter => chapter.id === id)?.locked) return
     // 立即清空過期目標與計時器
     clearGate(restoreTimer)
     clearGate(scrubTimer)

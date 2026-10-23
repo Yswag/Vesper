@@ -181,6 +181,10 @@ export default {
   /** Aidoku source settings (the `settings.json` schema). */
   aidokuSettings: {
     title: "Source settings",
+    languageGroup: "Language",
+    language: "Language",
+    languageNone: "None selected",
+    languageFootnote: "Only chapters in the selected languages are read. The source reloads after a change.",
     empty: "This source has no settings",
     footer: "{n} items · Only changed fields are stored; everything else uses the source's defaults.",
     saved: "Applied — the source will reload",

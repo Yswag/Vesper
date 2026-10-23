@@ -8,8 +8,9 @@
 // 值只寫使用者改過的 key（`installed.json` 的 `settings`），沒改的就是 schema 預設；
 // 改完會讓源下次呼叫時重載（見 `sources/aidoku.ts` 的 `setSetting`）。
 
-import { Divider, HStack, Navigation, NavigationStack, Slider, Spacer, Stepper, Text, VStack, useEffect, useState } from "scripting"
+import { Divider, HStack, Navigation, NavigationLink, NavigationStack, Slider, Spacer, Stepper, Text, VStack, useEffect, useState } from "scripting"
 
+import { languageName } from "../../app/languageNames"
 import { Card, CardGroup, PageScroll } from "../../design/layout"
 import {
   ActionRow,
@@ -26,7 +27,7 @@ import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../d
 import { rowPadding } from "../../design/tokens"
 import { hostOf } from "../../engine/cookies"
 import { t } from "../../i18n"
-import type { AidokuSettingControl, AidokuSettingGroup, AidokuSettingItem } from "../../sources/aidoku"
+import type { AidokuSettingControl, AidokuSettingGroup, AidokuSettingItem, AidokuSettingsSpec } from "../../sources/aidoku"
 import {
   findSource,
   loginAidokuBasic,
@@ -34,10 +35,12 @@ import {
   logoutAidokuWebview,
   reloadRegistry,
   resetAidokuSettings,
+  subscribeSources,
   updateAidokuSetting,
   type InstalledSource,
 } from "../../sources/registry"
 import { AidokuWebLoginScreen } from "./AidokuWebLoginScreen"
+import { AidokuLanguageScreen } from "./AidokuLanguageScreen"
 
 const CONTROL_ICON: Record<AidokuSettingControl, string> = {
   select: "list.bullet",
@@ -64,6 +67,15 @@ function loginKeys(settingKey: string): { name: string; password: string; state:
   }
 }
 
+/** 語言列的右側摘要：選了什麼（最多兩顆名字，其餘給 +N）。 */
+function languageDetail(spec: AidokuSettingsSpec, overrides: Record<string, unknown>): string {
+  const stored = Array.isArray(overrides.languages) ? overrides.languages.map(value => String(value ?? "")) : null
+  const selected = stored ?? spec.defaultLanguages
+  if (selected.length === 0) return t("settings.aidokuSettings.languageNone")
+  const names = selected.slice(0, 2).map(languageName)
+  return selected.length > 2 ? `${names.join("、")} +${selected.length - 2}` : names.join("、")
+}
+
 export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [status, setStatus] = useState<StatusNotice | null>(null)
@@ -74,8 +86,12 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setStatus(null)
   }, [sourceKey])
 
+  // 從語言子頁回來時，registry 已經換了新值：跟著重讀，摘要才會是對的。
+  useEffect(() => subscribeSources(() => setSource(findSource(sourceKey))), [sourceKey])
+
   const spec = source?.settingsSpec
   const overrides = source?.stored.settings ?? {}
+  const hasContent = Boolean(spec && (spec.groups.length > 0 || spec.languages.length > 1))
 
   function refresh() {
     setSource(findSource(sourceKey))
@@ -134,7 +150,20 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     <PageScroll title={t("settings.aidokuSettings.title")}>
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
-      {!spec || spec.groups.length === 0 ? (
+      {spec && spec.languages.length > 1 ? (
+        <CardGroup title={t("settings.aidokuSettings.languageGroup")}>
+          <NavigationLink destination={<AidokuLanguageScreen sourceKey={sourceKey} />}>
+            <IconRow
+              icon="globe"
+              title={t("settings.aidokuSettings.language")}
+              detail={languageDetail(spec, overrides)}
+              chevron
+            />
+          </NavigationLink>
+        </CardGroup>
+      ) : null}
+
+      {!hasContent || !spec ? (
         <EmptyState icon="slider.horizontal.3" title={t("settings.aidokuSettings.empty")} />
       ) : (
         spec.groups.map((group, index) => (
@@ -150,7 +179,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
         ))
       )}
 
-      {spec && spec.groups.length > 0 ? (
+      {hasContent && spec ? (
         <>
           <Card>
             <ActionRow
@@ -160,9 +189,11 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
               onTap={() => void confirmReset()}
             />
           </Card>
-          <Text font="caption2" foregroundStyle="tertiaryLabel" padding={{ leading: 6, top: 2 }}>
-            {t("settings.aidokuSettings.footer", { n: spec.count })}
-          </Text>
+          {spec.count > 0 ? (
+            <Text font="caption2" foregroundStyle="tertiaryLabel" padding={{ leading: 6, top: 2 }}>
+              {t("settings.aidokuSettings.footer", { n: spec.count })}
+            </Text>
+          ) : null}
         </>
       ) : null}
     </PageScroll>

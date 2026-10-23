@@ -361,6 +361,12 @@ export interface AidokuSettingsSpec {
   defaults: Record<string, unknown>
   /** 設定的項數（源詳情顯示用）。 */
   count: number
+  /** 源支援的語言代碼（manifest）；>1 才顯示語言列。 */
+  languages: string[]
+  /** 語言只能選一個（manifest 的 `languageSelectType === "single"`）。 */
+  singleLanguage: boolean
+  /** 沒選過時源會用的語言（isDefault 優先，否則第一個；single 只留第一個）。 */
+  defaultLanguages: string[]
 }
 
 function recordOf(value: unknown): Record<string, unknown> | null {
@@ -485,12 +491,42 @@ export function parseSettingsSpec(schema: unknown): AidokuSettingsSpec {
       }
     }
   }
-  return { groups, defaults, count }
+  return { groups, defaults, count, languages: [], singleLanguage: false, defaultLanguages: [] }
+}
+
+/** manifest 的語言資訊：兼容頂層 `languages`、`info.languages` 與字串／物件兩種形狀。 */
+function languageSpecOf(manifest: any): Pick<AidokuSettingsSpec, "languages" | "singleLanguage" | "defaultLanguages"> {
+  const raw = manifest?.languages ?? manifest?.info?.languages ?? manifest?.config?.languages
+  const codes: string[] = []
+  const marked: string[] = []
+  for (const value of Array.isArray(raw) ? raw : []) {
+    const entry = typeof value === "string" ? { code: value } : recordOf(value)
+    const code = typeof entry?.code === "string" ? entry.code : ""
+    if (!code) continue
+    codes.push(code)
+    if (entry?.isDefault === true) marked.push(code)
+  }
+  const selectType =
+    manifest?.config?.languageSelectType ?? manifest?.languageSelectType ?? manifest?.info?.languageSelectType
+  const single = selectType === "single"
+  const defaults = marked.length > 0 ? marked : codes.slice(0, 1)
+  return { languages: codes, singleLanguage: single, defaultLanguages: single ? defaults.slice(0, 1) : defaults }
 }
 
 /** 讀 `Payload/settings.json` 轉成 spec；沒有這個檔（或壞掉）就是空的。 */
 export function settingsSpecOf(key: string): AidokuSettingsSpec {
-  return parseSettingsSpec(readJson(join(payloadDir(key), "settings.json")))
+  const spec = parseSettingsSpec(readJson(join(payloadDir(key), "settings.json")))
+  let language: Pick<AidokuSettingsSpec, "languages" | "singleLanguage" | "defaultLanguages"> = {
+    languages: [],
+    singleLanguage: false,
+    defaultLanguages: [],
+  }
+  try {
+    language = languageSpecOf(manifestOf(key))
+  } catch {
+    // 檔案壞掉的源：語言資訊就沒有，源清單已經有錯誤訊息。
+  }
+  return { ...spec, ...language }
 }
 
 /** 使用者改過的值（只含改過的 key）。 */
@@ -858,16 +894,39 @@ function scanlatorOf(raw: any): string {
   return typeof raw?.scanlator === "string" ? raw.scanlator.trim() : ""
 }
 
-function toChapter(raw: any): { group: string; id: string; title: string } | null {
+/** 章節編號：wasm 用 f32 傳，200.1 會變成 200.100006…；跟 Aidoku 的 `%g` 一樣收成 6 位有效數字。 */
+function chapterNumberText(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return ""
+  return String(parseFloat(value.toPrecision(6)))
+}
+
+/**
+ * 章節標題：卷號與話數照 Aidoku 的 makeTitle 組合（「第 3 卷 · 第 12 話 · 標題」）。
+ * 標題自己已經帶編號的（中文源很常這樣）就照原樣，不重複疊。
+ */
+function chapterTitleOf(raw: any, id: string): string {
+  const title = typeof raw?.title === "string" ? raw.title.trim() : ""
+  const volume = chapterNumberText(raw?.volumeNumber)
+  const number = chapterNumberText(raw?.chapterNumber)
+  if (/第\s*[\d.]+\s*[話话回章卷]/.test(title)) return title
+  const parts: string[] = []
+  if (volume) parts.push(t("sources.aidoku.volume", { n: volume }))
+  if (number) parts.push(t("sources.aidoku.chapter", { n: number }))
+  if (title) parts.push(title)
+  return parts.join(" · ") || id
+}
+
+function toChapter(raw: any): { group: string; id: string; title: string; locked: boolean; lang?: string } | null {
   const key = raw?.key ?? raw?.id
   if (key == null || key === "") return null
   const id = String(key)
-  const title = typeof raw.title === "string" ? raw.title.trim() : ""
-  const number = raw.chapterNumber
+  const lang = typeof raw?.lang === "string" && raw.lang.trim() ? raw.lang.trim().toLowerCase() : undefined
   return {
     group: scanlatorOf(raw),
     id,
-    title: title || (typeof number === "number" && number > 0 ? t("sources.aidoku.chapter", { n: number }) : id),
+    title: chapterTitleOf(raw, id),
+    locked: raw?.locked === true,
+    lang,
   }
 }
 
@@ -913,7 +972,7 @@ export function detail(source: InstalledSource, comicId: string): Promise<ComicD
       tags: normalizeTags(raw?.tags),
       chapters: (Array.isArray(chapters) ? chapters : [])
         .map(toChapter)
-        .filter((chapter): chapter is { group: string; id: string; title: string } => chapter !== null),
+        .filter((chapter): chapter is { group: string; id: string; title: string; locked: boolean; lang?: string } => chapter !== null),
       uploader: names(raw?.authors) || undefined,
       artists: names(raw?.artists) || undefined,
       url: typeof raw?.url === "string" && raw.url ? raw.url : undefined,
