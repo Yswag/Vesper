@@ -447,7 +447,7 @@ function ItemRows({
         title={item.title}
         value={value == null ? "" : String(value)}
         options={item.options}
-        onChanged={next => onApply(next)}
+        onChanged={next => onApply(item.indexValue ? Number(next) : next)}
       />
     )
   }

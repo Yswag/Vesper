@@ -19,6 +19,7 @@ import {
   resetAidokuHost,
   runAidokuExclusive,
   setAidokuSettingWriter,
+  takeAidokuChallenge,
   type AidokuPackage,
   type AidokuPageImageRequest,
 } from "../engine/aidoku/host"
@@ -27,6 +28,7 @@ import type { ImageRequest, ImageResponseInfo } from "../engine/images"
 import type { SourceViewer } from "../library/readerSettings"
 import type { SourceCapabilities, SourceMeta } from "../engine/loader"
 import { log } from "../engine/log"
+import { solveCloudflare } from "../engine/cloudflare"
 import { unzip } from "../engine/zip"
 import { t } from "../i18n"
 import type { StoredSource } from "./store"
@@ -356,6 +358,11 @@ export interface AidokuSettingItem {
   options: AidokuSettingOption[]
   /** 值是陣列（`multi-select` / `multi-single-select`）。 */
   multiple: boolean
+  /**
+   * 選項的值是**索引**（`segment`）：Aidoku 存 Int，不是選項字串。
+   * 畫面仍然當字串選，寫回去才轉成 number。
+   */
+  indexValue: boolean
   min?: number
   max?: number
   step?: number
@@ -457,11 +464,14 @@ function unsupportedOf(type: string, method: string | undefined): AidokuSettingI
 function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
   const type = textOf(node.type)
   if (!type) return null
-  const values = Array.isArray(node.values) ? node.values.map(value => String(value ?? "")) : []
+  // `segment` 的選項在 `options`，其餘在 `values`（兩種都收，舊源還有 `titles`）。
+  const rawValues = Array.isArray(node.values) ? node.values : Array.isArray(node.options) ? node.options : []
+  const values = rawValues.map(value => String(value ?? ""))
   const titles = Array.isArray(node.titles) ? node.titles.map(value => String(value ?? "")) : []
   const key = textOf(node.key)
   const method = textOf(node.method) || undefined
   const control = controlOf(type, method)
+  const indexValue = type === "segment"
   // `button` 沒有 key、也沒有值，但它是真的能按的列。
   if (!key && control !== "button" && control !== "unsupported") return null
   return {
@@ -473,12 +483,17 @@ function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
     placeholder: textOf(node.placeholder) || undefined,
     secure: node.secure === true,
     control,
-    options: values.map((value, index) => ({ value, text: titles[index] || value })),
+    options: values.map((value, index) => ({
+      value: indexValue ? String(index) : value,
+      text: titles[index] || value,
+    })),
     multiple: control === "multi",
+    indexValue,
     min: numberOf(node.min),
     max: numberOf(node.max),
     step: numberOf(node.step),
-    default: node.default,
+    // `segment` 沒宣告就是第一項（Aidoku 的預設也是 0）。
+    default: indexValue ? (numberOf(node.default) ?? 0) : node.default,
     refreshes: Array.isArray(node.refreshes) ? node.refreshes.map(String) : [],
     method,
     url: textOf(node.url) || undefined,
@@ -879,9 +894,44 @@ async function processPageImageBytes(
   }
 }
 
-/** 一次源呼叫。`timeoutMs` 沒給就用宿主預設的 15s。 */
-function call(source: InstalledSource, method: string, args: unknown[] = [], timeoutMs?: number): Promise<any> {
-  return withHealing(source, method, () => callAidoku(method, args, timeoutMs))
+/**
+ * 一次源呼叫。撞到 Cloudflare 挑戰就先過盾再重試一次（只處理一次，避免重試又撞牆時繞圈）。
+ * 過盾放在這裡而不是宿主：宿主那條路徑（HttpServer 回呼）建不了 timer。
+ */
+async function call(source: InstalledSource, method: string, args: unknown[] = [], timeoutMs?: number): Promise<any> {
+  const run = () => withHealing(source, method, () => callAidoku(method, args, timeoutMs))
+  let value: any
+  let failure: unknown = null
+  let failed = false
+  try {
+    value = await run()
+  } catch (error) {
+    failed = true
+    failure = error
+  }
+
+  const challenge = takeAidokuChallenge(source.stored.key)
+  if (!challenge) {
+    if (failed) throw failure
+    return value
+  }
+
+  log("info", "aidoku", `${source.stored.key} 撞到 Cloudflare 挑戰（${challenge.url}），過盾後重試一次`)
+  try {
+    await solveCloudflare(challenge.sourceKey, challenge.url, challenge.userAgent)
+  } catch (solveFailure) {
+    log("warning", "aidoku", `${source.stored.key} 的 Cloudflare 過盾失敗`, solveFailure)
+    if (failed) throw failure
+    throw solveFailure
+  }
+  // 第一次就被判死的源（例如 initialize 被擋）要先解掉，不然重試會直接被 assertAvailable 擋下。
+  clearFailure(source.stored.key)
+  try {
+    return await run()
+  } finally {
+    // 重試自己撞到的挑戰不再留給下一次（避免每次呼叫都多過一次盾）。
+    takeAidokuChallenge(source.stored.key)
+  }
 }
 
 /** 把失敗包成「源出錯」（畫面才不會把它當成網路問題）。 */

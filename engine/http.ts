@@ -3,7 +3,7 @@
 
 import { fetch, type AbortSignal } from "scripting"
 
-import { absorbResponseCookies, cookieHeader } from "./cookies"
+import { absorbResponseCookies, cookieHeader, mergeCookieHeader } from "./cookies"
 import { isCloudflareChallenge, solveCloudflare } from "./cloudflare"
 import { log } from "./log"
 
@@ -191,7 +191,11 @@ async function perform(
   if (!hasHeader(headers, "user-agent")) headers["user-agent"] = WEB_UA
 
   const cookie = cookieHeader(sourceKey, url)
-  if (cookie && !hasHeader(headers, "cookie")) headers["cookie"] = cookie
+  if (cookie) {
+    const existing = Object.keys(headers).find(name => name.toLowerCase() === "cookie")
+    if (existing) headers[existing] = mergeCookieHeader(headers[existing], cookie)
+    else headers["cookie"] = cookie
+  }
 
   const body = method === "GET" || method === "HEAD" ? undefined : encodeBody(extra.data, headers)
 

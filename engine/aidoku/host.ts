@@ -6,8 +6,10 @@
 
 import { Script, fetch } from "scripting"
 
+import { cookieHeader, mergeCookieHeader } from "../cookies"
 import { join, readBytes } from "../fs"
 import { log } from "../log"
+import { isCloudflareChallenge } from "../cloudflareDetect"
 
 const CALL_TIMEOUT_MS = 15_000
 const LOAD_TIMEOUT_MS = 30_000
@@ -252,12 +254,56 @@ export interface AidokuProxyResult {
   url: string
 }
 
+/** 代理請求撞到的 Cloudflare 挑戰（由呼叫端決定何時去過盾）。 */
+export interface AidokuChallenge {
+  sourceKey: string
+  url: string
+  userAgent: string
+  at: number
+}
+
+/** 沒人去處理的挑戰不要留太久，不然下一次同名源的呼叫會莫名多過一次盾。 */
+const CHALLENGE_TTL_MS = 120_000
+
+let pendingChallenge: AidokuChallenge | null = null
+
+/** 取走這個源待處理的挑戰；別的源的不算，也不清掉。 */
+export function takeAidokuChallenge(sourceKey: string): AidokuChallenge | null {
+  if (!pendingChallenge) return null
+  if (Date.now() - pendingChallenge.at > CHALLENGE_TTL_MS) {
+    pendingChallenge = null
+    return null
+  }
+  if (pendingChallenge.sourceKey !== sourceKey) return null
+  const value = pendingChallenge
+  pendingChallenge = null
+  return value
+}
+
+/** 把 jar 的 cookie 補進代理請求（源自己給的 Cookie 保留，同名由 jar 覆蓋）。 */
+function withJarCookies(sourceKey: string | null, url: string, headers: Record<string, string>): void {
+  if (!sourceKey) return
+  const jar = cookieHeader(sourceKey, url)
+  if (!jar) return
+  const existing = Object.keys(headers).find(name => name.toLowerCase() === "cookie")
+  if (existing) headers[existing] = mergeCookieHeader(headers[existing], jar)
+  else headers["cookie"] = jar
+}
+
 /** 實際幫 worker 打那發請求；與伺服器隔開，讓它可以被直接測。 */
-export async function performProxy(request: AidokuProxyRequest, timeoutMs: number = PROXY_TIMEOUT_MS): Promise<AidokuProxyResult> {
+export async function performProxy(
+  request: AidokuProxyRequest,
+  timeoutMs: number = PROXY_TIMEOUT_MS,
+  sourceKey: string | null = null
+): Promise<AidokuProxyResult> {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(request.headers ?? {})) {
     if (!DROPPED_REQUEST_HEADERS.has(key.toLowerCase())) headers[key] = String(value)
   }
+
+  // 過盾拿到的 cf_clearance 存在 jar 裡；源自己從設定組的 Cookie 只會在畫面那幾條路徑拿到，
+  // 所以代理這一層一定要補上（同名以 jar 為準，才不會被舊值卡住）。
+  withJarCookies(sourceKey, request.url, headers)
 
   const method = String(request.method || "GET").toUpperCase()
   const init: any = { method, headers, redirect: "follow" }
@@ -275,6 +321,16 @@ export async function performProxy(request: AidokuProxyRequest, timeoutMs: numbe
   const finalUrl = response.url || request.url
   outHeaders["X-Nemu-Final-Url"] = finalUrl
 
+  if (sourceKey && isCloudflareChallenge(response.status, outHeaders, buffer)) {
+    pendingChallenge = {
+      sourceKey,
+      url: finalUrl,
+      userAgent: headers["user-agent"] ?? headers["User-Agent"] ?? "",
+      at: Date.now(),
+    }
+    log("info", "aidoku", `${sourceKey} 的代理請求遇到 Cloudflare 挑戰，交給呼叫端過盾`)
+  }
+
   return { status: response.status, headers: outHeaders, bytes: new Uint8Array(buffer), url: finalUrl }
 }
 
@@ -284,12 +340,16 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   const target: string | null = payload && typeof payload.url === "string" ? payload.url : null
   if (!target) return HttpResponse.badRequest()
 
-  const result = await performProxy({
-    url: target,
-    method: payload.method,
-    headers: payload.headers,
-    body: payload.body,
-  })
+  const result = await performProxy(
+    {
+      url: target,
+      method: payload.method,
+      headers: payload.headers,
+      body: payload.body,
+    },
+    PROXY_TIMEOUT_MS,
+    loadedKey ?? loadingKey
+  )
 
   return HttpResponse.raw(result.status, "OK", {
     headers: result.headers,

@@ -87,6 +87,29 @@ export function cookieHeader(sourceKey: string, url: string): string {
     .join("; ")
 }
 
+/**
+ * 把 jar 的 cookie 疊到請求自己的 `Cookie` 上；同名時 jar 優先——
+ * jar 只有過盾登入會寫，比源存在設定裡的陳舊值新。
+ */
+export function mergeCookieHeader(own: string | undefined, jar: string): string {
+  const values = new Map<string, string>()
+  for (const part of (own ?? "").split(";")) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const eq = trimmed.indexOf("=")
+    if (eq <= 0) continue
+    values.set(trimmed.slice(0, eq), trimmed.slice(eq + 1))
+  }
+  for (const part of jar.split(";")) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const eq = trimmed.indexOf("=")
+    if (eq <= 0) continue
+    values.set(trimmed.slice(0, eq), trimmed.slice(eq + 1))
+  }
+  return [...values].map(([name, value]) => `${name}=${value}`).join("; ")
+}
+
 /** 把回應的 Set-Cookie 收進 jar。 */
 export function absorbResponseCookies(sourceKey: string, url: string, response: { cookies?: any[] }) {
   const incoming = response?.cookies

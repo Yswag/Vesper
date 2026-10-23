@@ -2,9 +2,18 @@
 // 當 HTTP 請求遭遇 403 且帶有 Cloudflare 挑戰特徵時，透過 WebViewController 執行挑戰並抽取 Cookie。
 
 import { type Cookie, setCookies } from "./cookies"
+import { isCloudflareChallenge } from "./cloudflareDetect"
 import { log } from "./log"
 import { t } from "../i18n"
-import { findSource } from "../sources/registry"
+
+export { isCloudflareChallenge }
+
+/** 源的顯示名稱：由 registry 在載入時接上（不直接 import，避免 cloudflare ↔ registry 的循環依賴）。 */
+let sourceNameLookup: ((key: string) => string | undefined) | null = null
+
+export function setCloudflareSourceNameLookup(lookup: ((key: string) => string | undefined) | null): void {
+  sourceNameLookup = lookup
+}
 
 const CF_TIMEOUT_MS = 45000
 const INITIAL_OFFSCREEN_WAIT_MS = 2500
@@ -20,41 +29,6 @@ function originOf(url: string): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/** 判斷回應是否為 Cloudflare 挑戰頁面。 */
-export function isCloudflareChallenge(status: number, headers: Record<string, string>, body: string | ArrayBuffer): boolean {
-  if (status !== 403 && status !== 503) return false
-
-  // 1. 檢查特徵 Header
-  const mitigated = headers["cf-mitigated"]
-  if (mitigated && mitigated.toLowerCase() === "challenge") return true
-
-  // 2. 檢查文字 Body 內容
-  let text = ""
-  if (typeof body === "string") {
-    text = body
-  } else if (body instanceof ArrayBuffer) {
-    try {
-      const decoder = new TextDecoder("utf-8")
-      text = decoder.decode(body.slice(0, 4096))
-    } catch {
-      text = ""
-    }
-  }
-
-  if (text.length > 0) {
-    if (
-      text.includes("/cdn-cgi/challenge-platform/") ||
-      text.includes("Just a moment...") ||
-      text.includes("Attention Required! | Cloudflare") ||
-      text.includes("cf-browser-verification")
-    ) {
-      return true
-    }
-  }
-
-  return false
 }
 
 /**
@@ -120,8 +94,7 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
         if (!isPresented && Date.now() - startedAt >= INITIAL_OFFSCREEN_WAIT_MS) {
           log("info", "cf", `離屏等待未放行，彈出驗證視窗供用戶操作: ${origin}`)
           isPresented = true
-          const source = findSource(sourceKey)
-          const sourceName = source?.meta?.name || source?.stored?.name || sourceKey
+          const sourceName = sourceNameLookup?.(sourceKey) || sourceKey
           const title = t("sources.verificationTitle", { name: sourceName })
           void controller.present({
             fullscreen: true,

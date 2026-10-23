@@ -2,6 +2,7 @@
 // 單一真相源為 Storage（store.ts）。
 
 import { clearCookies } from "../engine/cookies"
+import { setCloudflareSourceNameLookup } from "../engine/cloudflare"
 import { clearCredentials, loadCredentials, saveCredentials } from "../engine/credentials"
 import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
@@ -53,6 +54,12 @@ const bus = createEmitter({
 
 /** Aidoku 源在執行期被標成不可用時，讓畫面跟著更新。 */
 aidoku.setStateListener(() => bus.emit())
+
+/** 過盾視窗的標題要源的名字；cloudflare 不直接 import registry（循環依賴），在這裡接上。 */
+setCloudflareSourceNameLookup(key => {
+  const source = findSource(key)
+  return source?.meta?.name || source?.stored?.name
+})
 
 function withTimeout<T>(task: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
