@@ -246,6 +246,7 @@ export default {
     removeTitle: "Remove repository?",
     removeMessage: "Remove “{name}”? Installed sources will be kept.",
     addTitle: "Add a repository",
+    linkTitle: "Add this repository?",
     addPlaceholder: "https://…/index.json",
     timeout: "Connection timed out",
     refreshPartial: "Refreshed {done} repositories, {failed} failed",

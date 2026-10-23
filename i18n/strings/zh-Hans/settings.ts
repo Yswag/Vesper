@@ -240,6 +240,7 @@ export default {
     removeTitle: "移除仓库？",
     removeMessage: "确定要移除「{name}」吗？已安装的源不会被删除。",
     addTitle: "添加新仓库",
+    linkTitle: "添加源仓库？",
     timeout: "连接超时",
     refreshPartial: "已重新整理 {done} 个仓库，{failed} 个失败",
     refreshAll: "已更新 {n} 个仓库",

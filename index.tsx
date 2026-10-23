@@ -2,6 +2,7 @@ import { Device, Navigation, Script } from "scripting"
 
 import { App } from "./app/App"
 import { createComicLibrary } from "./app/comic"
+import { listenForInstallLinks, readInstallTarget } from "./app/installLink"
 import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
 import { installOfflineSession } from "./app/offlineSession"
@@ -15,6 +16,11 @@ import { reloadRegistry } from "./sources/registry"
 async function run() {
   // 書架/進度是去抖寫入的，退出前一定要落盤。
   onBeforeExit(() => flushLibrary())
+
+  // 連結帶進來的安裝請求：冷啟動看 queryParameters，實例活著時再點則走 onResume。
+  // 畫面還沒起來，所以只把目標傳給 App，由它在掛載後確認、加入、跳轉。
+  const pendingInstall = readInstallTarget(Script.queryParameters)
+  listenForInstallLinks()
 
   // 源的存放需要檔案存取；在呈現 UI 之前先問一次，系統會記住使用者的選擇。
   // 被拒絕也照常啟動，只是退回 Storage 儲存並在源管理頁顯示警告。
@@ -46,7 +52,7 @@ async function run() {
   installOfflineSession()
 
   await Navigation.present({
-    element: <App />,
+    element: <App pendingInstall={pendingInstall} />,
     modalPresentationStyle: "overFullScreen",
   })
   // present 的 promise 在畫面被關閉後才 resolve；不 exit 會留下殭屍實例。

@@ -256,6 +256,7 @@ export default {
     removeTitle: "移除倉庫？",
     removeMessage: "確定要移除「{name}」嗎？已安裝的源不會被刪除。",
     addTitle: "加入新倉庫",
+    linkTitle: "加入源倉庫？",
     timeout: "連線逾時",
     refreshPartial: "已重新整理 {done} 個倉庫，{failed} 個失敗",
     refreshAll: "已更新 {n} 個倉庫",

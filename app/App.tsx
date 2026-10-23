@@ -14,7 +14,7 @@
 // toast 掛在殼上：源的 UI.showMessage 需要一個全域出口（見 app/toast.ts）。
 // 載入指示同樣掛殼的 overlay：源的 UI.showLoading 要一張浮動小卡片，不是 modal（見 app/loadingState.ts）。
 
-import { NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
+import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
 import {
   InstallFailedView,
@@ -29,8 +29,11 @@ import { subscribe as subscribeLocale, t } from "../i18n"
 import { CustomDialogOverlay } from "./CustomDialogOverlay"
 import { LoadingHUD } from "./LoadingHUD"
 import { setToastListener } from "./toast"
-import { setTabBarHidden, setTabChangeListener } from "./navigation"
+import { setTabBarHidden, setTabChangeListener, switchToTab } from "./navigation"
+import { setInstallListener } from "./installLink"
+import { addRepository } from "../sources/registry"
 import { BookshelfScreen } from "../screens/bookshelf/BookshelfScreen"
+import { RepositoryDetailScreen } from "../screens/settings/RepositoryDetailScreen"
 import { BrowseScreen } from "../screens/browse/BrowseScreen"
 import { HomeScreen } from "../screens/home/HomeScreen"
 import { SearchScreen } from "../screens/search/SearchScreen"
@@ -55,13 +58,20 @@ function sectionScreen(index: number): VirtualNode {
   }
 }
 
-export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
+export function App({ hideTabBar = false, pendingInstall = null }: {
+  hideTabBar?: boolean
+  /** 冷啟動時由入口從 URL scheme 帶進來的倉庫網址。 */
+  pendingInstall?: string | null
+}) {
   // 安裝失敗不放行：沒有依賴的話每個源、每張圖都會爆。
   const [depsState, setDepsState] = useState<DepsState>(() => (areDependenciesInstalled() ? "ready" : "installing"))
   const selection = useObservable<number>(0)
   const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
+  // 熱啟動的請求（onResume）與冷啟動的參數都先排進同一個位置，依序處理。
+  const [installTarget, setInstallTarget] = useState<string | null>(pendingInstall)
+  const [installBusy, setInstallBusy] = useState(false)
 
   useEffect(() => {
     if (depsState !== "installing") return
@@ -73,6 +83,12 @@ export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
       cancelled = true
     }
   }, [depsState])
+
+  // 實例活著時再被 run scheme 觸發：入口不會重跑，只能從這裡收。
+  useEffect(() => {
+    setInstallListener(url => setInstallTarget(url))
+    return () => setInstallListener(null)
+  }, [])
 
   // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
   // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。
@@ -97,6 +113,54 @@ export function App({ hideTabBar = false }: { hideTabBar?: boolean }) {
       setTabChangeListener(null)
     }
   }, [])
+
+  // 依賴就緒才處理：加入完要切到設定頁、開倉庫詳情，不該蓋在「準備中」上面。
+  // 放在分頁監聽之後：冷啟動時 switchToTab 才有 listener 可接。
+  useEffect(() => {
+    if (depsState !== "ready" || installTarget === null || installBusy) return
+    const target = installTarget
+    setInstallTarget(null)
+    setInstallBusy(true)
+    void installRepository(target).finally(() => setInstallBusy(false))
+  }, [depsState, installTarget, installBusy])
+
+  /** 連結只是「請求」，內容由外人決定，一律先確認再抓索引。 */
+  async function installRepository(url: string) {
+    const ok = await Dialog.confirm({
+      title: t("settings.repos.linkTitle"),
+      message: url,
+      confirmLabel: t("common.add"),
+      cancelLabel: t("common.cancel"),
+    })
+    if (!ok) return
+
+    try {
+      const repository = await addRepository(url)
+      setToastMessage(
+        t("settings.repos.addDone", {
+          label: t("common.add"),
+          name: repository.name,
+          count: repository.entries.length,
+        })
+      )
+      setToastShown(true)
+      switchToTab(3)
+      // 首頁分頁殼不能 present；那裡切到設定頁就夠了。
+      if (hideTabBar) return
+      // 加入只快取索引，裝哪個源要在詳情頁挑。
+      await Navigation.present({
+        element: (
+          <NavigationStack>
+            <RepositoryDetailScreen repositoryUrl={repository.url} />
+          </NavigationStack>
+        ),
+        modalPresentationStyle: "pageSheet",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await Dialog.alert({ title: t("settings.repos.linkTitle"), message })
+    }
+  }
 
   const toast = {
     message: toastMessage,
