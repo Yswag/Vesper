@@ -244,13 +244,13 @@ export function logoutAidokuBasic(key: string, settingKey: string) {
   reloadRegistry()
 }
 
-/** Aidoku 源的 `method: "webview"` 登入：寫入 cookie／localStorage 後重載源。 */
+/** Aidoku 源的 `method: "web"` 登入：寫入 cookie／localStorage 後重載源。 */
 export function loginAidokuWebview(key: string, settingKey: string, data: aidoku.AidokuWebLoginData) {
   aidoku.loginWebview(key, settingKey, data)
   reloadRegistry()
 }
 
-/** Aidoku 源的 `method: "webview"` 登出：移除 cookie、localStorage 與狀態鍵。 */
+/** Aidoku 源的 `method: "web"` 登出：移除 cookie、localStorage 與狀態鍵。 */
 export function logoutAidokuWebview(key: string, settingKey: string) {
   aidoku.logoutWebview(key, settingKey)
   reloadRegistry()

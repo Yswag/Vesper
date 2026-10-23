@@ -2,8 +2,10 @@
 //
 // 範圍（v1）：group 一張卡片、page 攤平成同一頁（不做巢狀子頁）；
 // `login` 做 `method: "basic"`（寫 `<key>.username` / `<key>.password` / `<key>`）
-// 與 `method: "webview"`（開登入頁，寫 `<key>.keys` / `.values` / `.ls.*` / `<key>`）；
-// `oauth` 的登入、`editable-list`、`button` 只顯示「尚未支援」。
+// 與 `method: "web"`（開登入頁，寫 `<key>.keys` / `.values` / `.ls.*` / `<key>`）；
+// `editable-list` 增刪字串（`inline` 攤在同一頁，否則進子頁），
+// `button` 有確認文字先問，再叫源的 `handle_notification`；
+// `oauth` 的登入見 `AidokuOAuthScreen`。
 //
 // 值只寫使用者改過的 key（`installed.json` 的 `settings`），沒改的就是 schema 預設；
 // 改完會讓源下次呼叫時重載（見 `sources/aidoku.ts` 的 `setSetting`）。
@@ -28,6 +30,7 @@ import { rowPadding } from "../../design/tokens"
 import { hostOf } from "../../engine/cookies"
 import { t } from "../../i18n"
 import type { AidokuSettingControl, AidokuSettingGroup, AidokuSettingItem, AidokuSettingsSpec } from "../../sources/aidoku"
+import { isWebLoginMethod } from "../../sources/aidoku"
 import {
   findSource,
   loginAidokuBasic,
@@ -36,6 +39,7 @@ import {
   logoutAidokuWebview,
   reloadRegistry,
   resetAidokuSettings,
+  notifyAidokuSource,
   subscribeSources,
   updateAidokuSetting,
   type InstalledSource,
@@ -43,6 +47,7 @@ import {
 import { AidokuWebLoginScreen } from "./AidokuWebLoginScreen"
 import { AidokuOAuthScreen } from "./AidokuOAuthScreen"
 import { AidokuLanguageScreen } from "./AidokuLanguageScreen"
+import { AidokuEditableList, AidokuListScreen, listValuesOf } from "./AidokuListScreen"
 
 const CONTROL_ICON: Record<AidokuSettingControl, string> = {
   select: "list.bullet",
@@ -52,6 +57,8 @@ const CONTROL_ICON: Record<AidokuSettingControl, string> = {
   slider: "slider.horizontal.3",
   stepper: "plus.forwardslash.minus",
   login: "person.crop.circle",
+  list: "list.bullet.rectangle",
+  button: "bolt",
   unsupported: "nosign",
 }
 
@@ -81,6 +88,8 @@ function languageDetail(spec: AidokuSettingsSpec, overrides: Record<string, unkn
 export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [status, setStatus] = useState<StatusNotice | null>(null)
+  /** 正在執行的 `button`（用標題當 id：這類設定沒有 key）。 */
+  const [runningKey, setRunningKey] = useState<string | null>(null)
 
   useEffect(() => {
     reloadRegistry()
@@ -110,6 +119,33 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     loginAidokuBasic(sourceKey, settingKey, username, password)
     refresh()
     setStatus({ kind: "ready", text: t("settings.aidokuSettings.loggedIn") })
+  }
+
+  /** `button`：有確認文字先問，再叫源自己的 `handle_notification`。 */
+  async function runAction(item: AidokuSettingItem) {
+    const id = item.key || item.title
+    if (item.confirmTitle || item.confirmText) {
+      const ok = await Dialog.confirm({
+        title: item.confirmTitle ?? item.title,
+        message: item.confirmText ?? "",
+        confirmLabel: t("common.confirm"),
+      })
+      if (!ok) return
+    }
+    setRunningKey(id)
+    setStatus({ kind: "loading", text: t("common.inProgress", { label: item.title }) })
+    try {
+      if (item.notification) await notifyAidokuSource(sourceKey, item.notification)
+      reloadRegistry()
+      refresh()
+      setStatus({ kind: "ready", text: t("settings.shared.done", { label: item.title }) })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setStatus({ kind: "error", text: t("common.failed", { message }) })
+      await Dialog.alert({ title: item.title, message })
+    } finally {
+      setRunningKey(null)
+    }
   }
 
   async function webLogin(item: AidokuSettingItem) {
@@ -146,7 +182,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   }
 
   function logout(settingKey: string, method?: string) {
-    if (method === "webview") logoutAidokuWebview(sourceKey, settingKey)
+    if (isWebLoginMethod(method)) logoutAidokuWebview(sourceKey, settingKey)
     else if (method === "oauth") logoutAidokuOAuth(sourceKey, settingKey)
     else logoutAidokuBasic(sourceKey, settingKey)
     refresh()
@@ -189,12 +225,15 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
           <GroupCard
             key={`${index}:${group.title}`}
             group={group}
+            sourceKey={sourceKey}
             overrides={overrides}
             onApply={apply}
             onLogin={login}
             onWebLogin={item => void webLogin(item)}
             onOAuth={item => void oauthLogin(item)}
             onLogout={logout}
+            onRun={item => void runAction(item)}
+            runningKey={runningKey}
           />
         ))
       )}
@@ -229,23 +268,31 @@ interface LoginActions {
 
 interface GroupActions extends LoginActions {
   onApply: (id: string, value: unknown) => void
+  onRun: (item: AidokuSettingItem) => void
+  runningKey: string | null
 }
 
 interface RowActions extends LoginActions {
   onApply: (value: unknown) => void
+  onRun: (item: AidokuSettingItem) => void
+  runningKey: string | null
 }
 
 /** 一組＝一張卡片（標題＋註腳）；`page` 來的組也走這裡。 */
 function GroupCard({
   group,
+  sourceKey,
   overrides,
   onApply,
   onLogin,
   onWebLogin,
   onOAuth,
   onLogout,
+  onRun,
+  runningKey,
 }: {
   group: AidokuSettingGroup
+  sourceKey: string
   overrides: Record<string, unknown>
 } & GroupActions) {
   return (
@@ -255,6 +302,7 @@ function GroupCard({
           {index > 0 ? <Divider padding={{ leading: rowSeparatorInset }} /> : null}
           <ItemRows
             item={item}
+            sourceKey={sourceKey}
             value={item.key && item.key in overrides ? overrides[item.key] : item.default}
             overrides={overrides}
             onApply={value => onApply(item.key, value)}
@@ -262,6 +310,8 @@ function GroupCard({
             onWebLogin={onWebLogin}
             onOAuth={onOAuth}
             onLogout={onLogout}
+            onRun={onRun}
+            runningKey={runningKey}
           />
         </VStack>
       ))}
@@ -271,6 +321,7 @@ function GroupCard({
 
 function ItemRows({
   item,
+  sourceKey,
   value,
   overrides,
   onApply,
@@ -278,8 +329,11 @@ function ItemRows({
   onWebLogin,
   onOAuth,
   onLogout,
+  onRun,
+  runningKey,
 }: {
   item: AidokuSettingItem
+  sourceKey: string
   value: unknown
   overrides: Record<string, unknown>
 } & RowActions) {
@@ -291,6 +345,35 @@ function ItemRows({
         detail={unsupportedLabel(item)}
         detailColor="tertiaryLabel"
       />
+    )
+  }
+
+  if (item.control === "button") {
+    return (
+      <ActionRow
+        icon={item.destructive ? "trash" : CONTROL_ICON.button}
+        title={item.title}
+        tone={item.destructive ? "destructive" : "default"}
+        busy={runningKey === (item.key || item.title)}
+        onTap={() => onRun(item)}
+      />
+    )
+  }
+
+  if (item.control === "list") {
+    const values = listValuesOf(item, overrides)
+    if (item.inline) {
+      return <AidokuEditableList item={item} values={values} onChange={(next: string[]) => onApply(next)} />
+    }
+    return (
+      <NavigationLink destination={<AidokuListScreen sourceKey={sourceKey} item={item} />}>
+        <IconRow
+          icon={CONTROL_ICON.list}
+          title={item.title}
+          detail={t("settings.shared.countItems", { n: values.length })}
+          chevron
+        />
+      </NavigationLink>
     )
   }
 
@@ -313,7 +396,7 @@ function ItemRows({
       )
     }
 
-    if (item.method === "webview") {
+    if (isWebLoginMethod(item.method)) {
       if (!item.url) {
         return (
           <IconRow
@@ -380,16 +463,14 @@ function ItemRows({
   return <NumberItem item={item} value={typeof value === "number" ? value : undefined} onApply={onApply} />
 }
 
-/** 「尚未支援」右側那句話：分得出是登入、清單還是動作。 */
+/** 「尚未支援」右側那句話。 */
 function unsupportedLabel(item: AidokuSettingItem): string {
   if (item.unsupported === "login") return t("settings.aidokuSettings.unsupportedLogin")
-  if (item.unsupported === "list") return t("settings.aidokuSettings.unsupportedList")
-  if (item.unsupported === "action") return t("settings.aidokuSettings.unsupportedAction")
   return t("settings.aidokuSettings.unsupported")
 }
 
 /**
- * `method: "webview"` 的登入：沒有帳號可顯示，只有「未登入 → 開瀏覽器」與「已登入 → 登出」。
+ * `method: "web"` 的登入：沒有帳號可顯示，只有「未登入 → 開瀏覽器」與「已登入 → 登出」。
  */
 function WebLoginItem({
   item,

@@ -333,6 +333,8 @@ export type AidokuSettingControl =
   | "slider"
   | "stepper"
   | "login"
+  | "list"
+  | "button"
   | "unsupported"
 
 export interface AidokuSettingOption {
@@ -379,8 +381,18 @@ export interface AidokuSettingItem {
   useEmail: boolean
   /** `login` 登出按鈕的字（源給的）。 */
   logoutTitle?: string
-  /** 不支援的種類：登入、清單編輯、動作按鈕。 */
-  unsupported?: "login" | "list" | "action"
+  /** `button` 是危險動作（紅字，確認鈕也紅）。 */
+  destructive: boolean
+  /** `button` 的確認框標題；有它就先問。 */
+  confirmTitle?: string
+  /** `button` 的確認框說明；有它也先問。 */
+  confirmText?: string
+  /** `editable-list` 直接攤在設定頁裡（Aidoku 的 `inline`），否則進子頁。 */
+  inline: boolean
+  /** `editable-list` 每列的行數上限（0＝不限）。 */
+  lineLimit: number
+  /** 不支援的種類：只留登入（Aidoku 新增而我們還不認得的型別）。 */
+  unsupported?: "login"
 }
 
 export interface AidokuSettingGroup {
@@ -417,6 +429,11 @@ function numberOf(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
 }
 
+/** Aidoku 的網頁登入在 schema 寫 `web`；`webview` 是舊版／手寫源的別名。 */
+export function isWebLoginMethod(method: string | undefined): boolean {
+  return method === "web" || method === "webview"
+}
+
 function controlOf(type: string, method: string | undefined): AidokuSettingControl {
   if (type === "select" || type === "picker" || type === "segment") return "select"
   if (type === "multi-select" || type === "multi-single-select") return "multi"
@@ -424,16 +441,16 @@ function controlOf(type: string, method: string | undefined): AidokuSettingContr
   if (type === "text") return "text"
   if (type === "slider") return "slider"
   if (type === "stepper") return "stepper"
-  if (type === "login") return method === "basic" || method === "webview" || method === "oauth" ? "login" : "unsupported"
+  if (type === "login") return method === "basic" || isWebLoginMethod(method) || method === "oauth" ? "login" : "unsupported"
+  if (type === "editable-list") return "list"
+  if (type === "button") return "button"
   return "unsupported"
 }
 
 function unsupportedOf(type: string, method: string | undefined): AidokuSettingItem["unsupported"] {
   if (type === "login") {
-    return method === "basic" || method === "webview" || method === "oauth" ? undefined : "login"
+    return method === "basic" || isWebLoginMethod(method) || method === "oauth" ? undefined : "login"
   }
-  if (type === "editable-list") return "list"
-  if (type === "button") return "action"
   return undefined
 }
 
@@ -445,8 +462,8 @@ function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
   const key = textOf(node.key)
   const method = textOf(node.method) || undefined
   const control = controlOf(type, method)
-  // `button` 沒有 key、也沒有值：留成唯讀列，不然整組會少一格。
-  if (!key && control !== "unsupported") return null
+  // `button` 沒有 key、也沒有值，但它是真的能按的列。
+  if (!key && control !== "button" && control !== "unsupported") return null
   return {
     raw: node,
     key,
@@ -473,6 +490,11 @@ function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
     localStorageKeys: Array.isArray(node.localStorageKeys) ? node.localStorageKeys.map(String).filter(Boolean) : [],
     useEmail: node.useEmail === true,
     logoutTitle: textOf(node.logoutTitle) || undefined,
+    destructive: node.destructive === true,
+    confirmTitle: textOf(node.confirmTitle) || undefined,
+    confirmText: textOf(node.confirmText) || undefined,
+    inline: node.inline === true,
+    lineLimit: numberOf(node.lineLimit) ?? 0,
     unsupported: unsupportedOf(type, method),
   }
 }
@@ -618,7 +640,7 @@ export interface AidokuWebLoginData {
 }
 
 /**
- * `method: "webview"` 的登入：把 cookie 寫成同序的 `.keys`／`.values`，
+ * `method: "web"` 的登入：把 cookie 寫成同序的 `.keys`／`.values`，
  * localStorage 寫成 `.ls.<名>`，最後把狀態設成 `logged_in`。
  */
 export function loginWebview(key: string, settingKey: string, data: AidokuWebLoginData): void {
