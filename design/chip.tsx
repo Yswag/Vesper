@@ -2,12 +2,13 @@
 
 import { Button, HStack, ScrollView, Text } from "scripting"
 
+import { useTint } from "../app/theme"
 import { GlassSurface } from "./GlassSurface"
-import { capsule, chipPadding, chipRowPadding, fill, palette, type StackChildren } from "./tokens"
+import { capsule, chipPadding, chipRowPadding, type StackChildren } from "./tokens"
 
 export interface ChipProps {
   text: string
-  /** 選中＝藍底＋藍字粗體。 */
+  /** 選中＝ tint 底＋ tint 粗體字。 */
   selected?: boolean
   /** 給了就整顆可點（內部包 Button）；導覽用的 chip 交給外層 NavigationLink，不用給。 */
   onTap?: () => void
@@ -16,18 +17,19 @@ export interface ChipProps {
 }
 
 export function Chip({ text, selected = false, onTap, interactive }: ChipProps) {
+  const tint = useTint()
   const pill = (
     <GlassSurface variant="regular" shape={capsule("circular")} interactive={interactive ?? onTap !== undefined}>
       <HStack
         spacing={6}
         padding={chipPadding}
-        background={selected ? fill.selected : undefined}
+        background={selected ? tint.selected : undefined}
         clipShape={capsule("circular")}
       >
         <Text
           font="subheadline"
           fontWeight={selected ? "bold" : "medium"}
-          foregroundStyle={selected ? palette.blue : "label"}
+          foregroundStyle={selected ? tint.tint : "label"}
         >
           {text}
         </Text>

@@ -22,7 +22,7 @@ import {
   areDependenciesInstalled,
   installMissingDependencies,
 } from "./dependencies"
-import { PageBackground } from "./theme"
+import { PageBackground, useTint } from "./theme"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
 import { subscribe as subscribeLocale, t } from "../i18n"
@@ -66,6 +66,10 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   // 安裝失敗不放行：沒有依賴的話每個源、每張圖都會爆。
   const [depsState, setDepsState] = useState<DepsState>(() => (areDependenciesInstalled() ? "ready" : "installing"))
   const selection = useObservable<number>(0)
+  // 根層 tint：會繼承的控制項（Toggle、borderless Button、menu Picker）跟主題；字面值與 segmented Picker 不跟，
+  // 那些地方一律用 useTint() 的明確顏色（見 design/ 與 screens/）。中性盤（石墨）照樣套：tint 是近白，
+  // 文字型控制項剛好；Toggle 的圓鈕會淹在軌道裡，所以 ToggleRow 自己用 `toggleTint()` 換回系統綠。
+  const tint = useTint()
   const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
@@ -180,7 +184,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
 
   if (depsState !== "ready") {
     return (
-      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageBackground />
         {depsState === "installing" ? (
           <PreparingView />
@@ -193,7 +197,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
 
   if (hideTabBar) {
     return (
-      <ZStack toast={toast} overlay={overlay} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ZStack toast={toast} overlay={overlay} tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageBackground />
         <NavigationStack>{sectionScreen(section)}</NavigationStack>
       </ZStack>
@@ -201,7 +205,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   }
 
   return (
-    <ZStack>
+    <ZStack tint={tint.tint}>
       <PageBackground />
       {/* tab bar 收起行為（iOS 26+ 的膠囊）。這個 API 只有 automatic／never／onScrollDown／onScrollUp
           四個值，**沒有展開門檻可調**。實測（2026-10-09）：

@@ -7,6 +7,7 @@ import { ActionRow, IconBadge, InfoRow, TagPill, rowSeparatorInset } from "../..
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { Caption, Footnote } from "../../design/text"
 import { palette, rect, rowPadding } from "../../design/tokens"
+import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
@@ -19,6 +20,7 @@ import {
 import { getRepository, kindOf, subscribeRepositories, type StoredRepository } from "../../sources/repository"
 
 export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: string }) {
+  const tint = useTint()
   const [repository, setRepository] = useState<StoredRepository | undefined>(undefined)
   const [entries, setEntries] = useState<RepositoryEntryStatus[]>([])
   const [busy, setBusy] = useState(false)
@@ -285,7 +287,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
               }
               buttonStyle="bordered"
               controlSize="regular"
-              tint={allInstalledFromThisRepo ? "secondaryLabel" : "accentColor"}
+              tint={allInstalledFromThisRepo ? "secondaryLabel" : tint.tint}
               disabled={isActionDisabled}
               action={installAll}
             />
@@ -329,6 +331,7 @@ function EntryRow({
   label: string
   onInstall: () => void
 }) {
+  const tint = useTint()
   const installedVersion = status.installed?.meta?.version ?? status.installed?.stored.version
   const isInstalled = Boolean(status.installed) && !status.updateAvailable
   const languages = status.entry.languages?.filter(Boolean) ?? []
@@ -380,7 +383,7 @@ function EntryRow({
         title={label}
         buttonStyle="bordered"
         controlSize="small"
-        tint={isInstalled ? "secondaryLabel" : "accentColor"}
+        tint={isInstalled ? "secondaryLabel" : tint.tint}
         disabled={busy}
         action={onInstall}
       />

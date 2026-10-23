@@ -27,7 +27,7 @@ import { isAbortError } from "../../engine/http"
 import { comicLibrary } from "../../app/services"
 import { loadSearchSelections } from "../../app/searchOptions"
 import { aidokuFilterRows, loadFilterValues, saveFilterValues } from "../../app/aidokuSearchFilters"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { decodeSearchOptions, encodeSearchOptions } from "../../sources/searchOptions"
@@ -54,6 +54,7 @@ interface FilterState {
 
 export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; term: string }) {
   const library = comicLibrary()
+  const tint = useTint()
   useSubscription(subscribeLocale)
   const [hits, setHits] = useState<ComicListItem[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -170,11 +171,11 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
         clipShape={rect(14)}
       >
         {badge && badge > 0 ? (
-          <Text font="caption2" fontWeight="semibold" foregroundStyle="tintColor">
+          <Text font="caption2" fontWeight="semibold" foregroundStyle={tint.tint}>
             {String(badge)}
           </Text>
         ) : null}
-        <Text font="caption" fontWeight="medium" foregroundStyle={active ? "tintColor" : "label"} lineLimit={1}>
+        <Text font="caption" fontWeight="medium" foregroundStyle={active ? tint.tint : "label"} lineLimit={1}>
           {label}
         </Text>
         {chevron ? <Image systemName="chevron.down" font="caption2" foregroundStyle="tertiaryLabel" /> : null}
@@ -272,9 +273,9 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
                 <HStack spacing={8}>
                   <Text>{option.label}</Text>
                   {picked.included.includes(option.value) ? (
-                    <Image systemName="checkmark" foregroundStyle="tintColor" />
+                    <Image systemName="checkmark" foregroundStyle={tint.tint} />
                   ) : picked.excluded.includes(option.value) ? (
-                    <Image systemName="xmark" foregroundStyle="tintColor" />
+                    <Image systemName="xmark" foregroundStyle={tint.tint} />
                   ) : null}
                 </HStack>
               </Button>
@@ -311,7 +312,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
             >
               <Image systemName="line.3.horizontal.decrease" font="footnote" foregroundStyle="label" />
               {count > 0 ? (
-                <Text font="caption2" fontWeight="semibold" foregroundStyle="tintColor">
+                <Text font="caption2" fontWeight="semibold" foregroundStyle={tint.tint}>
                   {String(count)}
                 </Text>
               ) : null}

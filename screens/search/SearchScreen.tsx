@@ -25,11 +25,12 @@ import {
 } from "../../sources/searchOptions"
 import { SearchFilterSheet } from "./SearchFilterSheet"
 import { sourceSidebarLabel } from "./sidebarLabel"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { cardBackground, cardGap, fill, hairlineStroke, palette, radius, rect } from "../../design/tokens"
 
 export function SearchScreen() {
   const library = comicLibrary()
+  const tint = useTint()
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState("")
   const [results, setResults] = useState<SourceSearchResult[]>([])
@@ -257,7 +258,7 @@ export function SearchScreen() {
                       <Divider />
                       <ActionRow
                         icon="arrow.counterclockwise"
-                        iconColor={palette.blue}
+                        iconColor={tint.tint}
                         title={t("search.filterReset")}
                         onTap={() => setDraft(defaultSearchValues(rowsOf(filterKey)))}
                       />
@@ -297,8 +298,8 @@ export function SearchScreen() {
                 {filterRows.length > 0 ? (
                   <Button buttonStyle="plain" action={() => openFilter(selectedInfo.key)} accessibilityLabel={t("search.filterLabel", { name: filterName })}>
                     <HStack spacing={4} frame={{ minHeight: 36 }}>
-                      <Image systemName="line.3.horizontal.decrease" font={13} fontWeight="medium" foregroundStyle={palette.blue} />
-                      <Text font="subheadline" fontWeight="medium" foregroundStyle={palette.blue}>
+                      <Image systemName="line.3.horizontal.decrease" font={13} fontWeight="medium" foregroundStyle={tint.tint} />
+                      <Text font="subheadline" fontWeight="medium" foregroundStyle={tint.tint}>
                         {rerunning === selectedInfo.key ? t("search.updating") : t("search.filter")}
                       </Text>
                     </HStack>
@@ -404,6 +405,7 @@ function SidebarRow({
   active: boolean
   onTap: () => void
 }) {
+  const tint = useTint()
   const hasHits = count != null && count > 0
   return (
     <Button
@@ -440,7 +442,7 @@ function SidebarRow({
           <Text
             font="caption2"
             fontWeight={active ? "bold" : "medium"}
-            foregroundStyle={active ? "accentColor" : "secondaryLabel"}
+            foregroundStyle={active ? tint.tint : "secondaryLabel"}
           >
             {String(count)}
           </Text>

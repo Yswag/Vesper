@@ -11,10 +11,12 @@ import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } fro
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { Footnote } from "../../design/text"
 import { palette, radius, rect } from "../../design/tokens"
+import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import { accountSpec, findSource, loginWithCookies, loginWithPassword, loginWithWebview, logoutSource, reloadRegistry, type AccountSpec, type InstalledSource } from "../../sources/registry"
 
 export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
+  const tint = useTint()
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [spec, setSpec] = useState<AccountSpec | null>(null)
   const [values, setValues] = useState<string[]>([])
@@ -102,7 +104,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
               <HStack
                 alignment="center"
                 frame={{ maxWidth: "infinity", minHeight: 50 }}
-                background={palette.blue}
+                background={tint.tint}
                 clipShape={rect(radius.cover)}
                 opacity={busy ? 0.75 : 1}
                 onTapGesture={busy ? undefined : () => void run(login, () => loginWithPassword(sourceKey, account.trim(), password))}
@@ -111,7 +113,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                   <ProgressView controlSize="small" />
                 ) : (
                   <HStack spacing={6} alignment="center">
-                    <Text font="headline" fontWeight="semibold" foregroundStyle="#FFFFFF">
+                    <Text font="headline" fontWeight="semibold" foregroundStyle={tint.onTint}>
                       {login}
                     </Text>
                   </HStack>
@@ -125,10 +127,10 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                   padding={{ top: 2, bottom: 4 }}
                   onTapGesture={() => void Safari.openURL(spec.registerUrl ?? "")}
                 >
-                  <Text font="subheadline" foregroundStyle="tintColor">
+                  <Text font="subheadline" foregroundStyle={tint.tint}>
                     {t("settings.account.registerNow")}
                   </Text>
-                  <Image systemName="arrow.up.forward" font="caption2" foregroundStyle="tintColor" />
+                  <Image systemName="arrow.up.forward" font="caption2" foregroundStyle={tint.tint} />
                 </HStack>
               ) : null}
             </VStack>
@@ -156,7 +158,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
               <HStack
                 alignment="center"
                 frame={{ maxWidth: "infinity", minHeight: 50 }}
-                background={palette.blue}
+                background={tint.tint}
                 clipShape={rect(radius.cover)}
                 opacity={busy ? 0.75 : 1}
                 onTapGesture={busy ? undefined : () => void run(login, () => loginWithCookies(sourceKey, values.map(value => value.trim())))}
@@ -164,7 +166,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                 {busy ? (
                   <ProgressView controlSize="small" />
                 ) : (
-                  <Text font="headline" fontWeight="semibold" foregroundStyle="#FFFFFF">
+                  <Text font="headline" fontWeight="semibold" foregroundStyle={tint.onTint}>
                     {login}
                   </Text>
                 )}
@@ -177,10 +179,10 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                   padding={{ top: 2, bottom: 4 }}
                   onTapGesture={() => void Safari.openURL(spec.registerUrl ?? "")}
                 >
-                  <Text font="subheadline" foregroundStyle="tintColor">
+                  <Text font="subheadline" foregroundStyle={tint.tint}>
                     {t("settings.account.registerNow")}
                   </Text>
-                  <Image systemName="arrow.up.forward" font="caption2" foregroundStyle="tintColor" />
+                  <Image systemName="arrow.up.forward" font="caption2" foregroundStyle={tint.tint} />
                 </HStack>
               ) : null}
             </VStack>
@@ -193,7 +195,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
             >
               <ActionRow
                 icon="safari"
-                iconColor={palette.blue}
+                iconColor={tint.tint}
                 title={t("settings.account.webviewAction")}
                 busy={busy}
                 onTap={() => void run(login, () => loginWithWebview(sourceKey))}

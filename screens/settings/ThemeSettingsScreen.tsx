@@ -15,6 +15,7 @@ import {
   setCustomColor,
   setPalette,
   useThemeChoice,
+  useTint,
   type Composition,
   type Palette,
 } from "../../app/theme"
@@ -85,6 +86,7 @@ function CompositionRow({
   selected: boolean
   onTap: () => void
 }) {
+  const tint = useTint()
   return (
     <HStack
       spacing={14}
@@ -102,7 +104,7 @@ function CompositionRow({
       </VStack>
       <Spacer />
       {selected ? (
-        <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle="tintColor" />
+        <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint} />
       ) : null}
     </HStack>
   )
@@ -118,6 +120,7 @@ function PaletteDotButton({
   selected: boolean
   onTap: () => void
 }) {
+  const tint = useTint()
   return (
     <ZStack
       alignment="center"
@@ -129,7 +132,7 @@ function PaletteDotButton({
       {selected ? (
         <Circle
           frame={{ width: 38, height: 38 }}
-          stroke={{ shapeStyle: "tintColor", strokeStyle: { lineWidth: 2 } }}
+          stroke={{ shapeStyle: tint.tint, strokeStyle: { lineWidth: 2 } }}
           allowsHitTesting={false}
         />
       ) : null}
@@ -151,6 +154,7 @@ function CustomColorButton({
 }) {
   const currentCustom = getCustomColor()
   const customPalette = buildCustomPalette(String(currentCustom))
+  const tint = useTint()
 
   return (
     <ZStack alignment="center" frame={{ width: 44, height: 44 }}>
@@ -159,7 +163,7 @@ function CustomColorButton({
       {selected ? (
         <Circle
           frame={{ width: 38, height: 38 }}
-          stroke={{ shapeStyle: "tintColor", strokeStyle: { lineWidth: 2 } }}
+          stroke={{ shapeStyle: tint.tint, strokeStyle: { lineWidth: 2 } }}
           allowsHitTesting={false}
         />
       ) : null}

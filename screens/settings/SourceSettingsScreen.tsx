@@ -11,6 +11,7 @@ import { CardGroup, PageScroll } from "../../design/layout"
 import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { badgeOff, palette } from "../../design/tokens"
+import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
 import { t } from "../../i18n"
 import {
@@ -202,6 +203,7 @@ function SpecCard({
   onRun: (id: string, label: string) => void
 }) {
   const style = specStyle(spec.type)
+  const tint = useTint()
   const stored = String(values[spec.id] ?? "")
   const current = draft[spec.id] ?? stored
   const dirty = draft[spec.id] !== undefined && draft[spec.id] !== stored
@@ -277,9 +279,9 @@ function SpecCard({
       <Divider padding={{ leading: rowSeparatorInset }} />
       <IconRow
         icon="square.and.arrow.down"
-        iconColor={dirty ? "tintColor" : "secondaryLabel"}
+        iconColor={dirty ? tint.tint : "secondaryLabel"}
         title={t("common.save")}
-        titleColor={dirty ? "tintColor" : "secondaryLabel"}
+        titleColor={dirty ? tint.tint : "secondaryLabel"}
         detail={dirty ? t("settings.sourceSettings.unsaved") : undefined}
         detailColor="systemOrange"
         onTap={() => onApply(spec.id, current)}

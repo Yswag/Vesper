@@ -29,9 +29,8 @@ export const dangerBadge: Color = "rgba(255, 69, 58, 0.18)"
 /** 徽章的停用底。 */
 export const badgeOff: Color = "rgba(255, 255, 255, 0.12)"
 
-/** 語意色。頁面用名字，不寫 hex。 */
+/** 語意色。頁面用名字，不寫 hex；互動色一律用 `useTint()`（跟主題），不在這裡。 */
 export const palette = {
-  blue: "#0A84FF",
   indigo: "#5E5CE6",
   green: "#30D158",
   orange: "#FF9F0A",
@@ -46,18 +45,8 @@ export const neutral = {
   tertiary: "#636366",
 } as const
 
-/** 容器與狀態填色（藍色系為透明度遞增階梯）。 */
+/** 容器與狀態填色（非互動的部分）。互動色（選中底、描邊、榜單）在 `useTint()` 的 `Tint` 裡。 */
 export const fill = {
-  /** 可選取項目的底（chip、膠囊）。 */
-  selected: "rgba(10, 132, 255, 0.22)",
-  /** 選中的整列 —— 面積大，所以比 chip 輕。 */
-  selectedRow: "rgba(10, 132, 255, 0.14)",
-  /** 選中的項目（閱讀器目錄列）。 */
-  highlight: "rgba(10, 132, 255, 0.15)",
-  /** 選中項目的描邊。 */
-  highlightBorder: "rgba(10, 132, 255, 0.75)",
-  /** 榜單徽章底（藍）。 */
-  rank: "rgba(10, 132, 255, 0.15)",
   /** 次要容器（標籤、輸入框底）。 */
   chip: "secondarySystemFill",
   /** 更輕的容器（非互動的標籤）。 */

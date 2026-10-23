@@ -36,7 +36,7 @@ import { WidthReporter } from "../../components/WidthReporter"
 import { GlassBadge } from "../../design/GlassBadge"
 import { EmptyState } from "../../design/status"
 import { badgePadding, capsule, fill, hairlineStroke, pageInsets, pageSpacing, palette, radius, rect, tagPadding } from "../../design/tokens"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { navigateToSearch } from "../../app/navigation"
 
 interface BangumiDetailScreenProps {
@@ -49,6 +49,7 @@ interface BangumiDetailScreenProps {
 
 export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailScreenProps) {
   const library = comicLibrary()
+  const tint = useTint()
   const [sources, setSources] = useState<ComicSourceInfo[]>([])
   const [searchResults, setSearchResults] = useState<SourceSearchResult[]>([])
   const [searching, setSearching] = useState(true)
@@ -262,11 +263,11 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                     <HStack
                       spacing={3}
                       padding={badgePadding}
-                      background={fill.rank}
+                      background={tint.rank}
                       clipShape={capsule()}
                     >
-                      <Image systemName="trophy.fill" font="caption2" foregroundStyle={palette.blue} />
-                      <Text font="caption" fontWeight="semibold" foregroundStyle={palette.blue}>
+                      <Image systemName="trophy.fill" font="caption2" foregroundStyle={tint.tint} />
+                      <Text font="caption" fontWeight="semibold" foregroundStyle={tint.tint}>
                         Top {subject.rank}
                       </Text>
                     </HStack>
@@ -322,13 +323,13 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                       action={() => setDescExpanded(!descExpanded)}
                     >
                       <HStack spacing={2} alignment="center">
-                        <Text font="caption2" foregroundStyle="accentColor" fontWeight="medium">
+                        <Text font="caption2" foregroundStyle={tint.tint} fontWeight="medium">
                           {descExpanded ? t("home.bangumi.collapse") : t("home.bangumi.expand")}
                         </Text>
                         <Image
                           systemName={descExpanded ? "chevron.up" : "chevron.down"}
                           font="caption2"
-                          foregroundStyle="accentColor"
+                          foregroundStyle={tint.tint}
                         />
                       </HStack>
                     </Button>

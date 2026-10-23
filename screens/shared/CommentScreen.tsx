@@ -28,7 +28,7 @@ import { CommentContent } from "../../components/CommentContent"
 import { type SourceComment } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { formatCommentTime } from "./commentTime"
 import { Card } from "../../design/layout"
@@ -179,23 +179,24 @@ export function CommentRow({
  * 這樣圖示的中心跟頭像同一條線、文字也跟留言的文字同一條線。
  */
 export function LoginBanner({ sourceKey }: { sourceKey: string }) {
+  const tint = useTint()
   return (
     <NavigationLink destination={<SourceAccountScreen sourceKey={sourceKey} />} buttonStyle="plain">
       <HStack
         spacing={12}
         alignment="center"
         padding={{ horizontal: 16, vertical: 12 }}
-        background="rgba(10, 132, 255, 0.12)"
+        background={tint.info}
         clipShape={rect(radius.card)}
-        overlay={<RoundedRectangle cornerRadius={radius.card} stroke="rgba(10, 132, 255, 0.25)" />}
+        overlay={<RoundedRectangle cornerRadius={radius.card} stroke={tint.selected} />}
         frame={{ maxWidth: "infinity" }}
       >
         <ZStack alignment="center" frame={{ width: avatarSize, height: avatarSize }}>
-          <Image systemName="person.crop.circle.badge.exclamationmark" font="title3" foregroundStyle="accentColor" />
+          <Image systemName="person.crop.circle.badge.exclamationmark" font="title3" foregroundStyle={tint.tint} />
         </ZStack>
         {/* frame 的 alignment 不給就是中心——文字會被丟到中間去，一定要寫 leading */}
         <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <Text font="subheadline" fontWeight="semibold" foregroundStyle="accentColor">
+          <Text font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint}>
             {t("comments.notLoggedIn")}
           </Text>
           <Text font="caption2" foregroundStyle="secondaryLabel">
@@ -203,10 +204,10 @@ export function LoginBanner({ sourceKey }: { sourceKey: string }) {
           </Text>
         </VStack>
         <HStack spacing={4} alignment="center">
-          <Text font="caption" fontWeight="medium" foregroundStyle="accentColor">
+          <Text font="caption" fontWeight="medium" foregroundStyle={tint.tint}>
             {t("comments.goLogin")}
           </Text>
-          <Image systemName="chevron.right" font="caption2" foregroundStyle="accentColor" />
+          <Image systemName="chevron.right" font="caption2" foregroundStyle={tint.tint} />
         </HStack>
       </HStack>
     </NavigationLink>
@@ -230,6 +231,7 @@ export function CommentComposer({
   onChanged: (value: string) => void
   onSend: () => void
 }) {
+  const tint = useTint()
   const filled = draft.trim().length > 0
   return (
     <VStack spacing={6} padding={{ horizontal: 16, vertical: 8 }} frame={{ maxWidth: "infinity" }}>
@@ -255,14 +257,14 @@ export function CommentComposer({
         <Button buttonStyle="plain" disabled={sending || !filled} action={onSend}>
           <ZStack
             frame={{ width: 34, height: 34 }}
-            background={filled ? "accentColor" : "quaternarySystemFill"}
+            background={filled ? tint.tint : "quaternarySystemFill"}
             clipShape={capsule("circular")}
           >
             <Image
               systemName="arrow.up"
               font="subheadline"
               fontWeight="bold"
-              foregroundStyle={filled ? "white" : "tertiaryLabel"}
+              foregroundStyle={filled ? tint.onTint : "tertiaryLabel"}
             />
           </ZStack>
         </Button>
@@ -281,6 +283,7 @@ export function CommentScreen({
   subId?: string
 }) {
   const library = comicLibrary()
+  const tint = useTint()
   const info = library.source(sourceKey)
   const [comments, setComments] = useState<SourceComment[]>([])
   const [page, setPage] = useState(0)
@@ -435,7 +438,7 @@ export function CommentScreen({
                   <Card>
                     <ActionRow
                       icon="arrow.down.circle"
-                      iconColor={palette.blue}
+                      iconColor={tint.tint}
                       title={loading ? t("common.loadingMore") : t("comments.loadMore")}
                       disabled={loading}
                       onTap={() => void fetchPage(page + 1, false)}

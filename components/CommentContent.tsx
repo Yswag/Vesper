@@ -7,10 +7,11 @@
 // 頭像與圖片都走既有的圖片管線（源多半需要 Referer），失敗時誠實顯示，不畫破圖。
 // 解析與快取都在 ComicLibrary.thumbnailPath 後面；這裡只認來源鍵與網址。
 
-import { HStack, Image, ProgressView, Spacer, Text, VStack, useEffect, useMemo, useState, type Color, type StyledText } from "scripting"
+import { HStack, Image, ProgressView, Spacer, Text, VStack, useEffect, useMemo, useState, useColorScheme, type Color, type StyledText } from "scripting"
 
 import { comicLibrary } from "../app/services"
-import { palette, radius, rect } from "../design/tokens"
+import { useTint } from "../app/theme"
+import { radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
 /** 一段文字與它身上的樣式；`link` 有值就是 `<a href>`。 */
@@ -165,7 +166,7 @@ export function parseComment(html: string): CommentBody {
 }
 
 /** 片段 → 一個 `Text` 的 rich text（Scripting 的 Text 只吃字串，樣式只能靠 styledText）。 */
-function toStyledText(runs: CommentRun[], color: Color): StyledText {
+function toStyledText(runs: CommentRun[], color: Color, linkColor: Color): StyledText {
   return {
     font: "subheadline",
     foregroundColor: color,
@@ -177,7 +178,7 @@ function toStyledText(runs: CommentRun[], color: Color): StyledText {
       if (run.strike) node.strikethroughStyle = "single"
       if (run.link) {
         node.link = run.link
-        node.foregroundColor = palette.blue
+        node.foregroundColor = linkColor
         node.underlineStyle = "single"
       }
       return node
@@ -253,7 +254,10 @@ export function CommentContent({
   color?: Color
 }) {
   const body = useMemo(() => parseComment(content), [content])
-  const styled = useMemo(() => toStyledText(body.runs, color), [body, color])
+  const tint = useTint()
+  const scheme = useColorScheme()
+  const linkColor = String(tint.tint[scheme]) as Color
+  const styled = useMemo(() => toStyledText(body.runs, color, linkColor), [body, color, linkColor])
 
   return (
     <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>

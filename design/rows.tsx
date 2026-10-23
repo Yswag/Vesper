@@ -16,11 +16,16 @@ import {
   VStack,
   ZStack,
   type Color,
+  type DynamicShapeStyle,
   type KeyboardType,
 } from "scripting"
 
+import { useTint, type Tint } from "../app/theme"
 import { badgeOff, badgePadding, badgeShape, badgeSize, capsule, fill, palette, rowPadding } from "./tokens"
 import { t } from "../i18n"
+
+/** 列上的顏色可以給固定色（`Color`）或跟主題的 `DynamicShapeStyle`。 */
+export type RowColor = Color | DynamicShapeStyle
 
 /** 卡內分隔線的縮排：對齊文字起點（padding 16 + 圖示 24 + 間距 12）。 */
 export const rowSeparatorInset = 52
@@ -35,8 +40,8 @@ export function IconBadge({
   size = 24,
 }: {
   icon: string
-  color?: Color
-  background?: Color
+  color?: RowColor
+  background?: RowColor
   size?: number
 }) {
   if (!background) {
@@ -67,7 +72,7 @@ export function Chevron() {
 }
 
 /** 只做資訊的小標籤（來源類型、R18），不可點。 */
-export function TagPill({ text, color = "secondaryLabel" }: { text: string; color?: Color }) {
+export function TagPill({ text, color = "secondaryLabel" }: { text: string; color?: RowColor }) {
   return (
     <HStack padding={badgePadding} background={fill.tag} clipShape={capsule("circular")}>
       <Text font="caption2" fontWeight="medium" foregroundStyle={color}>
@@ -90,12 +95,12 @@ export function IconRow({
   onTap,
 }: {
   icon: string
-  iconColor?: Color
-  iconBackground?: Color
+  iconColor?: RowColor
+  iconBackground?: RowColor
   title: string
-  titleColor?: Color
+  titleColor?: RowColor
   detail?: string
-  detailColor?: Color
+  detailColor?: RowColor
   chevron?: boolean
   onTap?: () => void
 }) {
@@ -131,7 +136,7 @@ export function InfoRow({
 }: {
   label: string
   value: string
-  valueColor?: Color
+  valueColor?: RowColor
 }) {
   return (
     <HStack spacing={14} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
@@ -148,6 +153,7 @@ export function InfoRow({
 
 /** 單選列。選中的那一列同時有 tint 色與勾號，不是只靠顏色。 */
 export function OptionRow({ title, checked, onTap }: { title: string; checked: boolean; onTap: () => void }) {
+  const tint = useTint()
   return (
     <HStack
       spacing={8}
@@ -157,15 +163,20 @@ export function OptionRow({ title, checked, onTap }: { title: string; checked: b
       contentShape="rect"
       onTapGesture={onTap}
     >
-      <Text font="body" fontWeight={checked ? "medium" : "regular"} foregroundStyle={checked ? "tintColor" : "label"}>
+      <Text font="body" fontWeight={checked ? "medium" : "regular"} foregroundStyle={checked ? tint.tint : "label"}>
         {title}
       </Text>
       <Spacer />
       {checked ? (
-        <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle="tintColor" />
+        <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint} />
       ) : null}
     </HStack>
   )
+}
+
+/** 開關的軌道色：中性盤（石墨、灰階）的 tint 是白色，圓鈕會淹在軌道裡 → 用系統預設綠。 */
+export function toggleTint(tint: Tint): RowColor {
+  return tint.neutral ? "systemGreen" : tint.tint
 }
 
 /** 開關列。`subtitle` 是標題下方的一句說明（來源的 `subtitle`）。 */
@@ -178,12 +189,13 @@ export function ToggleRow({
   onChanged,
 }: {
   icon: string
-  iconColor?: Color
+  iconColor?: RowColor
   title: string
   subtitle?: string
   value: boolean
   onChanged: (value: boolean) => void
 }) {
+  const tint = useTint()
   return (
     <HStack spacing={14} padding={rowPadding} alignment="center">
       <IconBadge icon={icon} color={iconColor} />
@@ -198,7 +210,7 @@ export function ToggleRow({
         ) : null}
       </VStack>
       <Spacer />
-      <Toggle title="" value={value} onChanged={onChanged} />
+      <Toggle title="" value={value} onChanged={onChanged} tint={toggleTint(tint)} />
     </HStack>
   )
 }
@@ -212,7 +224,7 @@ export function FieldRow({
   onChanged,
 }: {
   icon: string
-  iconColor?: Color
+  iconColor?: RowColor
   value: string
   prompt?: string
   onChanged: (value: string) => void
@@ -240,7 +252,7 @@ export function TextInputRow({
   onBlur,
 }: {
   icon?: string
-  iconColor?: Color
+  iconColor?: RowColor
   label: string
   prompt?: string
   value: string
@@ -252,10 +264,11 @@ export function TextInputRow({
   onChanged: (value: string) => void
   onBlur?: () => void
 }) {
+  const tint = useTint()
   return (
     <VStack spacing={8} padding={rowPadding} alignment="leading" frame={{ maxWidth: "infinity" }}>
       <HStack spacing={8} alignment="center">
-        {icon ? <IconBadge icon={icon} color={iconColor ?? "tintColor"} /> : null}
+        {icon ? <IconBadge icon={icon} color={iconColor ?? tint.tint} /> : null}
         <Text font="caption" foregroundStyle="secondaryLabel">
           {label}
         </Text>
@@ -297,7 +310,7 @@ export function SelectRow({
   onChanged,
 }: {
   icon: string
-  iconColor?: Color
+  iconColor?: RowColor
   title: string
   value: string
   options: Array<{ value: string; text: string }>
@@ -356,7 +369,7 @@ export function ActionRow({
   onTap,
 }: {
   icon: string
-  iconColor?: Color
+  iconColor?: RowColor
   title: string
   detail?: string
   tone?: ActionTone
@@ -365,14 +378,15 @@ export function ActionRow({
   onTap: () => void
 }) {
   const inactive = busy || disabled
-  const fallbackColor = tone === "destructive" ? palette.red : "tintColor"
+  const tint = useTint()
+  const fallbackColor: RowColor = tone === "destructive" ? palette.red : tint.tint
 
   return (
     <IconRow
       icon={busy ? "hourglass" : icon}
       iconColor={inactive ? "secondaryLabel" : (iconColor ?? fallbackColor)}
       title={busy ? t("common.working") : title}
-      titleColor={tone === "destructive" ? palette.red : inactive ? "secondaryLabel" : "tintColor"}
+      titleColor={tone === "destructive" ? palette.red : inactive ? "secondaryLabel" : tint.tint}
       detail={detail}
       onTap={inactive ? undefined : onTap}
     />
@@ -392,7 +406,7 @@ export function FormInputRow({
   onChanged,
 }: {
   icon?: string
-  iconColor?: Color
+  iconColor?: RowColor
   label: string
   value: string
   prompt?: string

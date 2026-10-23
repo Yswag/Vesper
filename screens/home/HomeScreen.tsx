@@ -1,6 +1,6 @@
 // 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
-import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useState } from "scripting"
+import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color } from "scripting"
 
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage } from "../../components/CoverImage"
@@ -16,7 +16,7 @@ import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { canResumeOffline } from "../shared/offlineSession"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
 
@@ -32,6 +32,9 @@ function carouselWidthProbe(onWidth: (width: number) => void) {
 }
 
 export function HomeScreen() {
+  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
+  const tint = useTint()
+  const tintColor = String(tint.tint[useColorScheme()]) as Color
   const [topRank, setTopRank] = useState<BangumiSubject[]>([])
   const [trending, setTrending] = useState<BangumiSubject[]>([])
   const [following, setFollowing] = useState<BangumiSubject[]>([])
@@ -224,10 +227,10 @@ export function HomeScreen() {
                               <HStack
                                 spacing={3}
                                 padding={{ horizontal: 6, vertical: 2 }}
-                                background={palette.blue}
+                                background={tint.tint}
                                 clipShape={rect(radius.tag)}
                               >
-                                <Text font="caption2" fontWeight="heavy" foregroundStyle="white">
+                                <Text font="caption2" fontWeight="heavy" foregroundStyle={tint.onTint}>
                                   TOP {item.rank}
                                 </Text>
                               </HStack>
@@ -321,7 +324,7 @@ export function HomeScreen() {
                         <VStack
                           frame={{ width: 6, height: 6 }}
                           glassEffect={{
-                            glass: UIGlass.regular().tint(palette.blue),
+                            glass: UIGlass.regular().tint(tintColor),
                             shape: capsule("circular"),
                           }}
                           offset={{ x: heroIndex * 16, y: 0 }}

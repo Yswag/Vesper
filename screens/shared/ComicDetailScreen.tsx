@@ -21,8 +21,10 @@ import {
   VStack,
   ZStack,
   useEffect,
+  useColorScheme,
   useMemo,
   useState,
+  type Color,
 } from "scripting"
 
 import { CoverImage } from "../../components/CoverImage"
@@ -38,7 +40,7 @@ import { CommentScreen } from "./CommentScreen"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { ReaderScreen, type ChapterRef } from "./ReaderScreen"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { badgePadding, cardBackground, capsule, fill, hairlineStroke, pageInsets, pageSpacing, palette, radius, rect, rowPadding, tagPadding } from "../../design/tokens"
 import { Card } from "../../design/layout"
 import { IconRow } from "../../design/rows"
@@ -97,6 +99,9 @@ export function ComicDetailScreen({
   }
 }) {
   const library = comicLibrary()
+  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
+  const tint = useTint()
+  const tintColor = String(tint.tint[useColorScheme()]) as Color
   const [detail, setDetail] = useState<ComicPage | null>(null)
   // 載入失敗的原因；null＝沒話要說（載入中也算，那一句在 render 時才算）。
   const [status, setStatus] = useState<string | null>(null)
@@ -593,7 +598,7 @@ export function ComicDetailScreen({
                   destination={<ReaderScreen {...readerProps} epId={targetEpId} initialPage={resumePage} />}
                   buttonStyle="plain"
                 >
-                  <GlassSurface shape={rect(radius.card)} tint={palette.blue} interactive={true}>
+                  <GlassSurface shape={rect(radius.card)} tint={tintColor} interactive={true}>
                     <HStack
                       spacing={10}
                       alignment="center"
@@ -604,13 +609,13 @@ export function ComicDetailScreen({
                       <Image
                         systemName="book.fill"
                         font="title3"
-                        foregroundStyle="white"
+                        foregroundStyle={tint.onTint}
                       />
                       <VStack alignment="leading" spacing={2}>
-                        <Text font="headline" fontWeight="bold" foregroundStyle="white">
+                        <Text font="headline" fontWeight="bold" foregroundStyle={tint.onTint}>
                           {resumed ? t("detail.resumeReading") : t("detail.startReading")}
                         </Text>
-                        <Text font="caption2" fontWeight="medium" foregroundStyle="rgba(255, 255, 255, 0.75)" lineLimit={1}>
+                        <Text font="caption2" fontWeight="medium" foregroundStyle={tint.onTint} opacity={0.75} lineLimit={1}>
                           {targetEpTitle
                             ? resumePage !== undefined
                               ? t("detail.chapterAtPage", { chapter: targetEpTitle, n: resumePage + 1 })
@@ -734,13 +739,13 @@ export function ComicDetailScreen({
                       action={() => setDescExpanded(!descExpanded)}
                     >
                       <HStack spacing={2} alignment="center">
-                        <Text font="caption2" foregroundStyle="accentColor" fontWeight="medium">
+                        <Text font="caption2" foregroundStyle={tint.tint} fontWeight="medium">
                           {descExpanded ? t("detail.collapse") : t("detail.expand")}
                         </Text>
                         <Image
                           systemName={descExpanded ? "chevron.up" : "chevron.down"}
                           font="caption2"
-                          foregroundStyle="accentColor"
+                          foregroundStyle={tint.tint}
                         />
                       </HStack>
                     </Button>
@@ -858,7 +863,7 @@ export function ComicDetailScreen({
                       systemName="arrow.up.arrow.down"
                       font="caption"
                       fontWeight="semibold"
-                      foregroundStyle={reverseOrder ? "accentColor" : "secondaryLabel"}
+                      foregroundStyle={reverseOrder ? tint.tint : "secondaryLabel"}
                     />
                   </HStack>
                 </Button>
@@ -874,16 +879,16 @@ export function ComicDetailScreen({
                   <HStack
                     spacing={4}
                     padding={{ horizontal: 10, vertical: 5 }}
-                    background={selecting ? "accentColor" : "ultraThinMaterial"}
+                    background={selecting ? tint.tint : "ultraThinMaterial"}
                     clipShape={capsule()}
                     overlay={selecting ? undefined : <Capsule stroke={hairlineStroke} />}
                   >
                     <Image
                       systemName={selecting ? "xmark" : "checkmark.circle"}
                       font="caption2"
-                      foregroundStyle={selecting ? "white" : "secondaryLabel"}
+                      foregroundStyle={selecting ? tint.onTint : "secondaryLabel"}
                     />
-                    <Text font="caption2" fontWeight="medium" foregroundStyle={selecting ? "white" : "secondaryLabel"}>
+                    <Text font="caption2" fontWeight="medium" foregroundStyle={selecting ? tint.onTint : "secondaryLabel"}>
                       {selecting ? t("common.cancel") : t("detail.select")}
                     </Text>
                   </HStack>
@@ -899,15 +904,15 @@ export function ComicDetailScreen({
                     <HStack
                       spacing={4}
                       padding={{ horizontal: 10, vertical: 5 }}
-                      background={pendingSelected.length > 0 ? "accentColor" : "quaternarySystemFill"}
+                      background={pendingSelected.length > 0 ? tint.tint : "quaternarySystemFill"}
                       clipShape={capsule()}
                     >
                       <Image
                         systemName="arrow.down.circle.fill"
                         font="caption2"
-                        foregroundStyle="white"
+                        foregroundStyle={tint.onTint}
                       />
-                      <Text font="caption2" fontWeight="bold" foregroundStyle="white">
+                      <Text font="caption2" fontWeight="bold" foregroundStyle={tint.onTint}>
                         {t("detail.downloadSelected", { n: pendingSelected.length })}
                       </Text>
                     </HStack>
@@ -928,7 +933,7 @@ export function ComicDetailScreen({
                       <Image
                         systemName="arrow.down.to.line"
                         font="caption2"
-                        foregroundStyle={pendingAll.length === 0 ? "tertiaryLabel" : "accentColor"}
+                        foregroundStyle={pendingAll.length === 0 ? "tertiaryLabel" : tint.tint}
                       />
                       <Text
                         font="caption2"
@@ -960,14 +965,14 @@ export function ComicDetailScreen({
                           <HStack
                             spacing={5}
                             padding={{ horizontal: 12, vertical: 6 }}
-                            background={isCurrentGroup ? "accentColor" : "ultraThinMaterial"}
+                            background={isCurrentGroup ? tint.tint : "ultraThinMaterial"}
                             clipShape={capsule()}
                             overlay={isCurrentGroup ? undefined : <Capsule stroke={hairlineStroke} />}
                           >
                             <Text
                               font="caption"
                               fontWeight={isCurrentGroup ? "semibold" : "regular"}
-                              foregroundStyle={isCurrentGroup ? "white" : "secondaryLabel"}
+                              foregroundStyle={isCurrentGroup ? tint.onTint : "secondaryLabel"}
                               lineLimit={1}
                             >
                               {group.name}
@@ -975,7 +980,7 @@ export function ComicDetailScreen({
                             <Text
                               font="caption2"
                               fontWeight="medium"
-                              foregroundStyle={isCurrentGroup ? "white" : "tertiaryLabel"}
+                              foregroundStyle={isCurrentGroup ? tint.onTint : "tertiaryLabel"}
                             >
                               {group.chapters.length}
                             </Text>
@@ -1002,7 +1007,7 @@ export function ComicDetailScreen({
                   const body = (
                     <HStack
                       padding={rowPadding}
-                      background={highlight ? fill.selectedRow : cardBackground}
+                      background={highlight ? tint.selectedRow : cardBackground}
                       clipShape={rect(radius.thumb)}
                       overlay={<RoundedRectangle cornerRadius={radius.thumb} stroke={hairlineStroke} />}
                       frame={{ maxWidth: "infinity" }}
@@ -1012,7 +1017,7 @@ export function ComicDetailScreen({
                         <Image
                           systemName={checked ? "checkmark.circle.fill" : "circle"}
                           fontWeight="medium"
-                          foregroundStyle={checked ? "accentColor" : "tertiaryLabel"}
+                          foregroundStyle={checked ? tint.tint : "tertiaryLabel"}
                         />
                       ) : null}
                       {locked ? (
@@ -1021,7 +1026,7 @@ export function ComicDetailScreen({
                       <Text
                         font="subheadline"
                         fontWeight={isCurrent ? "bold" : "regular"}
-                        foregroundStyle={isCurrent ? "accentColor" : "label"}
+                        foregroundStyle={isCurrent ? tint.tint : "label"}
                         lineLimit={1}
                       >
                         {chapter.title}
@@ -1032,15 +1037,15 @@ export function ComicDetailScreen({
                         <HStack
                           spacing={3}
                           padding={{ horizontal: 8, vertical: 3 }}
-                          background="accentColor"
+                          background={tint.tint}
                           clipShape={capsule()}
                         >
                           <Image
                             systemName="clock.arrow.circlepath"
                             font="caption2"
-                            foregroundStyle="white"
+                            foregroundStyle={tint.onTint}
                           />
-                          <Text font="caption2" foregroundStyle="white" fontWeight="semibold">
+                          <Text font="caption2" foregroundStyle={tint.onTint} fontWeight="semibold">
                             {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
                           </Text>
                         </HStack>
@@ -1110,16 +1115,17 @@ export function ComicDetailScreen({
 
 /** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
 function DownloadStateText({ state }: { state: ChapterDownloadState }) {
+  const tint = useTint()
   if (state.state === "queued") {
     return (
-      <Text font="caption2" foregroundStyle={palette.blue}>
+      <Text font="caption2" foregroundStyle={tint.tint}>
         {t("detail.downloadQueued")}
       </Text>
     )
   }
   if (state.state === "running") {
     return (
-      <Text font="caption2" foregroundStyle={palette.blue}>
+      <Text font="caption2" foregroundStyle={tint.tint}>
         {t("detail.downloadRunning", { done: state.completed, total: state.total })}
       </Text>
     )

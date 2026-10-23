@@ -1,9 +1,10 @@
 // 通用狀態元件：包含狀態橫幅（NoticeBanner）、載入指示（PageLoading）、頁尾（ListFooter）與空狀態（EmptyState）。
 
-import { HStack, Image, ProgressView, Spacer, Text, VStack, type Color } from "scripting"
+import { HStack, Image, ProgressView, Spacer, Text, VStack, type Color, type DynamicShapeStyle } from "scripting"
 
 import { t } from "../i18n"
-import { cardBackgroundSubtle, cardShape } from "./tokens"
+import { useTint } from "../app/theme"
+import { cardBackgroundStrong, cardBackgroundSubtle, cardShape } from "./tokens"
 
 export type NoticeTone = "info" | "success" | "pending" | "error"
 
@@ -31,11 +32,18 @@ export function statusTone(kind: StatusKind): NoticeTone {
   return STATUS_TONE[kind]
 }
 
-const NOTICE_STYLE: Record<NoticeTone, { icon: string; color: Color; background: Color }> = {
-  info: { icon: "info.circle.fill", color: "systemBlue", background: "rgba(10, 132, 255, 0.12)" },
-  success: { icon: "checkmark.circle.fill", color: "systemGreen", background: "rgba(48, 209, 88, 0.12)" },
-  pending: { icon: "hourglass", color: "systemOrange", background: "rgba(255, 159, 10, 0.12)" },
-  error: { icon: "exclamationmark.triangle.fill", color: "systemRed", background: "rgba(255, 69, 58, 0.12)" },
+const NOTICE_ICON: Record<NoticeTone, string> = {
+  info: "info.circle.fill",
+  success: "checkmark.circle.fill",
+  pending: "hourglass",
+  error: "exclamationmark.triangle.fill",
+}
+
+/** 語意色（不跟主題）：成功／等待／錯誤。 */
+const SEMANTIC_TONE: Record<Exclude<NoticeTone, "info">, { color: Color; background: Color }> = {
+  success: { color: "systemGreen", background: "rgba(48, 209, 88, 0.12)" },
+  pending: { color: "systemOrange", background: "rgba(255, 159, 10, 0.12)" },
+  error: { color: "systemRed", background: "rgba(255, 69, 58, 0.12)" },
 }
 
 /**
@@ -51,22 +59,28 @@ export function NoticeBanner({
   text: string
   detail?: string
 }) {
-  const style = NOTICE_STYLE[tone]
+  const tint = useTint()
+  const icon = NOTICE_ICON[tone]
+  // info 只讓圖示帶主題色：amber 的 tint 與 pending 的語意橘幾乎同色，背景與文字留在中性。
+  const info = tone === "info"
+  const color: Color | DynamicShapeStyle = info ? "label" : SEMANTIC_TONE[tone].color
+  const iconColor: Color | DynamicShapeStyle = info ? tint.tint : SEMANTIC_TONE[tone].color
+  const background: Color | DynamicShapeStyle = info ? cardBackgroundStrong : SEMANTIC_TONE[tone].background
   return (
     <VStack
       spacing={detail ? 6 : 0}
       padding={{ horizontal: 16, vertical: 12 }}
       alignment="leading"
       frame={{ maxWidth: "infinity" }}
-      background={style.background}
+      background={background}
       clipShape={cardShape}
     >
       <HStack spacing={10} alignment="center" frame={{ maxWidth: "infinity" }}>
-        <Image systemName={style.icon} foregroundStyle={style.color} />
+        <Image systemName={icon} foregroundStyle={iconColor} />
         <Text
           font="subheadline"
           fontWeight={detail ? "semibold" : "regular"}
-          foregroundStyle={style.color}
+          foregroundStyle={color}
           lineLimit={3}
           multilineTextAlignment="leading"
           frame={{ maxWidth: "infinity", alignment: "leading" }}

@@ -8,7 +8,8 @@ import { Divider, ScrollView, VStack } from "scripting"
 
 import { CardGroup } from "../../design/layout"
 import { OptionRow, SelectRow, rowSeparatorInset } from "../../design/rows"
-import { pageInsets, pageSpacing, palette } from "../../design/tokens"
+import { pageInsets, pageSpacing } from "../../design/tokens"
+import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import type { SearchOptionRow, SearchOptionValue } from "../../sources/searchOptions"
 
@@ -30,6 +31,7 @@ export function SearchFilterSheet({
   /** 第 index 列改成新值。 */
   onChanged: (index: number, value: SearchOptionValue) => void
 }) {
+  const tint = useTint()
   return (
     <ScrollView>
       <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
@@ -45,7 +47,7 @@ export function SearchFilterSheet({
               {row.type === "dropdown" ? (
                 <SelectRow
                   icon="chevron.up.chevron.down"
-                  iconColor={palette.blue}
+                  iconColor={tint.tint}
                   title={row.label ?? t("search.filterSelect")}
                   value={typeof value === "string" ? value : NONE}
                   options={[

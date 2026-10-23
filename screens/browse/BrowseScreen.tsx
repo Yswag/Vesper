@@ -10,7 +10,7 @@ import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { SourceScreen } from "./SourceScreen"
 import { SourceListScreen } from "../settings/SourceListScreen"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
 import { Footnote } from "../../design/text"
@@ -31,6 +31,7 @@ import {
 
 export function BrowseScreen() {
   const library = comicLibrary()
+  const tint = useTint()
   // 安裝／移除／啟用來源都由庫的單一訂閱通知（不必自己 reloadRegistry 或訂 subscribeSources）。
   // 語言是第二個訂閱源：導覽列標題與下面的字都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(library.onChange, subscribeLocale)
@@ -84,11 +85,11 @@ export function BrowseScreen() {
                   <HStack
                     spacing={6}
                     padding={{ horizontal: 16, vertical: 10 }}
-                    background={fill.selected}
+                    background={tint.selected}
                     clipShape={capsule("circular")}
                   >
-                    <Image systemName="plus" font="subheadline" fontWeight="semibold" foregroundStyle={palette.blue} />
-                    <Text font="subheadline" fontWeight="semibold" foregroundStyle={palette.blue}>
+                    <Image systemName="plus" font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint} />
+                    <Text font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint}>
                       {t("browse.pickSources")}
                     </Text>
                   </HStack>

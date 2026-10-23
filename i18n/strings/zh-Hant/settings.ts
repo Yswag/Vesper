@@ -81,12 +81,10 @@ export default {
     custom: "自訂",
     composition: {
       flat: { name: "純色", note: "全域基底色，沉靜無光，最低調" },
-      center: { name: "右下柔光", note: "柔光聚於右下方，避開中央與左側文字" },
-      diagonal: { name: "斜光帶", note: "光沿主對角線貫穿，空間感深邃自然" },
-      twin: { name: "對角雙光", note: "右上微光與左下柔光呼應，中央層次過渡" },
       edge: { name: "上緣光", note: "光自頂部流洩，導覽列下方微光漫射" },
-      spot: { name: "聚光", note: "上方偏左處聚光，像舞臺燈柔光漫射" },
-      field: { name: "色霧", note: "多階色漸層鋪散，柔和如霧氣環繞" },
+      long: { name: "長漸層", note: "光自頂部緩緩淡出，延伸到畫面中段" },
+      dusk: { name: "餘暉", note: "光自底部升起，頂部留一層淡色" },
+      twin: { name: "角光", note: "光聚於右上一角，左下與內容區留白" },
     },
     palette: {
       blue: "藍",

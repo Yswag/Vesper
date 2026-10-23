@@ -17,7 +17,8 @@ import {
 } from "scripting"
 
 import type { ChapterGroup } from "../screens/shared/chapterGrouping"
-import { fill, neutral, radius, rect } from "../design/tokens"
+import { useTint } from "../app/theme"
+import { neutral, radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
 export interface ChapterItem {
@@ -54,6 +55,7 @@ export function ChapterDrawer({
   onSelectChapter,
   onClose,
 }: ChapterDrawerProps) {
+  const tint = useTint()
   // 分組選取：預設為包含當前話的分組
   const initialGroup = useMemo(() => {
     if (!isGrouped) return ""
@@ -176,14 +178,14 @@ export function ChapterDrawer({
                     <HStack
                       spacing={5}
                       padding={{ horizontal: 12, vertical: 6 }}
-                      background={isCurrent ? "accentColor" : "rgba(255, 255, 255, 0.08)"}
+                      background={isCurrent ? tint.tint : "rgba(255, 255, 255, 0.08)"}
                       clipShape={rect(radius.chip)}
                       contentShape={rect(radius.chip)}
                     >
                       <Text
                         font="caption"
                         fontWeight={isCurrent ? "semibold" : "regular"}
-                        foregroundStyle={isCurrent ? "white" : neutral.secondary}
+                        foregroundStyle={isCurrent ? tint.onTint : neutral.secondary}
                         lineLimit={1}
                       >
                         {group.name}
@@ -191,7 +193,7 @@ export function ChapterDrawer({
                       <Text
                         font="caption2"
                         fontWeight="medium"
-                        foregroundStyle={isCurrent ? "white" : neutral.tertiary}
+                        foregroundStyle={isCurrent ? tint.onTint : neutral.tertiary}
                       >
                         {group.chapters.length}
                       </Text>
@@ -231,7 +233,7 @@ export function ChapterDrawer({
                       <HStack
                         alignment="center"
                         padding={{ horizontal: 14, vertical: 11 }}
-                        background={isCurrent ? fill.highlight : "clear"}
+                        background={isCurrent ? tint.highlight : "clear"}
                         clipShape={rect(radius.thumb)}
                         contentShape={rect(radius.thumb)}
                         frame={{ maxWidth: "infinity" }}
@@ -240,7 +242,7 @@ export function ChapterDrawer({
                         <Image
                           systemName={ch.locked ? "lock.fill" : isCurrent ? "bookmark.fill" : "doc.text"}
                           font={13}
-                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? "accentColor" : neutral.tertiary}
+                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? tint.tint : neutral.tertiary}
                         />
                         <Spacer frame={{ width: 8 }} />
                         <Text
@@ -255,10 +257,10 @@ export function ChapterDrawer({
                         {isCurrent ? (
                           <HStack
                             padding={{ horizontal: 7, vertical: 2 }}
-                            background="accentColor"
+                            background={tint.tint}
                             clipShape={{ type: "capsule", style: "circular" }}
                           >
-                            <Text font="caption2" fontWeight="semibold" foregroundStyle="white">
+                            <Text font="caption2" fontWeight="semibold" foregroundStyle={tint.onTint}>
                               {t("reader.readingBadge")}
                             </Text>
                           </HStack>
@@ -269,7 +271,7 @@ export function ChapterDrawer({
                         <RoundedRectangle
                           cornerRadius={radius.thumb}
                           stroke={{
-                            shapeStyle: fill.highlightBorder,
+                            shapeStyle: tint.highlightBorder,
                             strokeStyle: { lineWidth: 1.2 },
                           }}
                           allowsHitTesting={false}

@@ -74,12 +74,10 @@ export default {
     custom: "Custom",
     composition: {
       flat: { name: "Solid", note: "A single base color: quiet, unlit, the most understated" },
-      center: { name: "Soft glow (bottom right)", note: "Soft light gathers at the bottom right, away from the text in the center and on the left" },
-      diagonal: { name: "Diagonal band", note: "Light runs along the main diagonal for a deep sense of space" },
-      twin: { name: "Twin corners", note: "A faint highlight at the top right echoes a soft glow at the bottom left" },
       edge: { name: "Top edge light", note: "Light spills from the top, diffusing just below the navigation bar" },
-      spot: { name: "Spotlight", note: "A spotlight above and to the left, like a softly diffused stage light" },
-      field: { name: "Color mist", note: "Layered gradients spread out like soft mist" },
+      long: { name: "Long fade", note: "Light fades slowly from the top, reaching the middle of the screen" },
+      dusk: { name: "Afterglow", note: "Light rises from the bottom, with a faint wash at the top" },
+      twin: { name: "Corner light", note: "Light gathers in the top-right corner; the lower left and the content stay quiet" },
     },
     palette: {
       blue: "Blue",

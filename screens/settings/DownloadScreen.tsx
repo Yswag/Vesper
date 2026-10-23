@@ -26,6 +26,7 @@ import { Card, CardGroup, GroupHeader, PageScroll } from "../../design/layout"
 import { Chevron, IconBadge, IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
 import { cardBackground, fill, palette, radius, rect, rowPadding } from "../../design/tokens"
+import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
 import { chaptersForReader } from "../../engine/offline"
 import { t } from "../../i18n"
@@ -300,6 +301,7 @@ function ActiveDownloadRow({
   onCancel: () => void
 }) {
   const isQueued = record.state === "queued"
+  const tint = useTint()
   const progressRatio = record.total > 0 ? Math.min(1, record.completed / record.total) : undefined
 
   return (
@@ -309,7 +311,7 @@ function ActiveDownloadRow({
       alignment="center"
       frame={{ maxWidth: "infinity" }}
     >
-      <IconBadge icon="arrow.down.circle.fill" color={palette.blue} />
+      <IconBadge icon="arrow.down.circle.fill" color={tint.tint} />
       <VStack spacing={3} alignment="leading">
         <Text font="body" fontWeight="regular" foregroundStyle="label">
           {nameOf(record)}
