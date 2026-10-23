@@ -199,6 +199,8 @@ export default {
     unsupportedList: "List editing not supported yet",
     unsupportedAction: "Actions not supported yet",
     webLogin: "Sign in with browser",
+    oauthFailed: "Sign-in failed: {message}",
+    oauthMissingUrl: "The source did not provide an auth URL (or its urlKey setting is empty)",
     webLoginFinish: "Done",
     webLoginFailed: "Couldn't load the sign-in page: {message}",
     selected: { one: "{n} selected", other: "{n} selected" },

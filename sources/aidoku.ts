@@ -14,9 +14,11 @@ import {
   isAidokuHostError,
   loadAidokuPackage,
   loadedAidokuSourceKey,
+  notifyAidoku,
   processAidokuPageImage,
   resetAidokuHost,
   runAidokuExclusive,
+  setAidokuSettingWriter,
   type AidokuPackage,
   type AidokuPageImageRequest,
 } from "../engine/aidoku/host"
@@ -92,6 +94,15 @@ function writeInstalled(key: string, record: InstallRecord): void {
   writeText(join(dirOf(key), "installed.json"), JSON.stringify(record, null, 2))
 }
 
+// 源自己用 `defaults.set` 寫的設定（例如 oauth 刷新後的 token）：由宿主回流到 installed.json。
+setAidokuSettingWriter((key, name, value) => {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  if (value == null) delete settings[name]
+  else settings[name] = value
+  writeInstalled(key, { ...installedOf(key), settings })
+})
+
 /**
  * 顯示用的圖示：安裝時解出來的 `Payload/icon.png` 優先（沒網路也看得到），
  * 沒有才退回倉庫索引的網址。
@@ -165,6 +176,22 @@ function capabilitiesOf(): SourceCapabilities {
     loginWithWebview: false,
     loginWithCookies: false,
     translation: false,
+  }
+}
+
+/** 源的通知（`handle_notification`）：設定完成後叫一次；源沒匯出就是 no-op。失敗只記 log。 */
+export async function notify(source: InstalledSource, notification: string): Promise<void> {
+  try {
+    await withHealing(
+      source,
+      "handleNotification",
+      async () => {
+        await notifyAidoku(notification)
+      },
+      false
+    )
+  } catch (failure) {
+    log("warning", "aidoku", `${source.stored.key} 的 ${notification} 通知失敗`, failure)
   }
 }
 
@@ -333,10 +360,19 @@ export interface AidokuSettingItem {
   default?: unknown
   /** 源宣告改完要刷新什麼（`content` / `listings` / `settings`）；目前一律重載，見 `setSetting`。 */
   refreshes: string[]
-  /** `login` 的登入方式（`basic`／`webview`）。 */
+  /** `login` 的登入方式（`basic`／`webview`／`oauth`）。 */
   method?: string
-  /** `login`（webview）要開的登入網址。 */
+  /** `login`（oauth）的授權網址；`urlKey` 有值時優先讀那個設定。 */
   url?: string
+  urlKey?: string
+  /** `login`（oauth）的 callback scheme（預設 `aidoku`）。 */
+  callbackScheme?: string
+  /** `login`（oauth + pkce）的 token 交換網址。 */
+  tokenUrl?: string
+  /** `login`（oauth）是否走 PKCE。 */
+  pkce: boolean
+  /** `login` 完成後要叫源的 `handle_notification`。 */
+  notification?: string
   /** `login`（webview）要收的 localStorage 鍵；空陣列＝不讀 localStorage。 */
   localStorageKeys: string[]
   /** `login` 的帳號是 email（只是鍵盤提示）。 */
@@ -388,12 +424,14 @@ function controlOf(type: string, method: string | undefined): AidokuSettingContr
   if (type === "text") return "text"
   if (type === "slider") return "slider"
   if (type === "stepper") return "stepper"
-  if (type === "login") return method === "basic" || method === "webview" ? "login" : "unsupported"
+  if (type === "login") return method === "basic" || method === "webview" || method === "oauth" ? "login" : "unsupported"
   return "unsupported"
 }
 
 function unsupportedOf(type: string, method: string | undefined): AidokuSettingItem["unsupported"] {
-  if (type === "login") return method === "basic" || method === "webview" ? undefined : "login"
+  if (type === "login") {
+    return method === "basic" || method === "webview" || method === "oauth" ? undefined : "login"
+  }
   if (type === "editable-list") return "list"
   if (type === "button") return "action"
   return undefined
@@ -427,6 +465,11 @@ function itemOf(node: Record<string, unknown>): AidokuSettingItem | null {
     refreshes: Array.isArray(node.refreshes) ? node.refreshes.map(String) : [],
     method,
     url: textOf(node.url) || undefined,
+    urlKey: textOf(node.urlKey) || undefined,
+    callbackScheme: textOf(node.callbackScheme) || undefined,
+    tokenUrl: textOf(node.tokenUrl) || undefined,
+    pkce: node.pkce === true,
+    notification: textOf(node.notification) || undefined,
     localStorageKeys: Array.isArray(node.localStorageKeys) ? node.localStorageKeys.map(String).filter(Boolean) : [],
     useEmail: node.useEmail === true,
     logoutTitle: textOf(node.logoutTitle) || undefined,
@@ -609,6 +652,24 @@ export function logoutWebview(key: string, settingKey: string): void {
     if (name.startsWith(`${settingKey}.ls.`)) delete settings[name]
   }
   delete settings[settingKey]
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** oauth：把 token 原文（或 callback URL）寫到 key；`<key>.codeVerifier` 保留給源刷新用。 */
+export function loginOAuth(key: string, settingKey: string, value: string): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key), [settingKey]: value }
+  writeInstalled(key, { ...installedOf(key), settings })
+  forgetLoaded(key)
+}
+
+/** 登出 oauth：token 與 codeVerifier 一起拿掉。 */
+export function logoutOAuth(key: string, settingKey: string): void {
+  if (!exists(dirOf(key))) return
+  const settings = { ...settingsOf(key) }
+  delete settings[settingKey]
+  delete settings[`${settingKey}.codeVerifier`]
   writeInstalled(key, { ...installedOf(key), settings })
   forgetLoaded(key)
 }

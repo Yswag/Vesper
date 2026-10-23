@@ -193,6 +193,8 @@ export default {
     unsupportedList: "列表编辑尚未支持",
     unsupportedAction: "动作按钮尚未支持",
     webLogin: "用浏览器登录",
+    oauthFailed: "登录失败：{message}",
+    oauthMissingUrl: "源没有提供授权网址（或 urlKey 对应的设置为空）",
     webLoginFinish: "完成",
     webLoginFailed: "登录页加载失败：{message}",
     selected: { one: "已选 {n} 项", other: "已选 {n} 项" },

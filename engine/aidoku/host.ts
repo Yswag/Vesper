@@ -58,6 +58,15 @@ let pendingAix: Uint8Array | null = null
 let pendingPackage: AidokuPackage | null = null
 /** worker 裡現在載著哪一份源（重載判斷用；dispose 後歸零）。 */
 let loadedKey: string | null = null
+/** 載入中的源：載入期間源就可能寫設定，这时 loadedKey 還不是它。 */
+let loadingKey: string | null = null
+
+/** 源自己寫設定（`defaults.set`）的落地函式；由 `sources/aidoku.ts` 注冊。 */
+let settingsWriter: ((key: string, name: string, value: unknown) => void) | null = null
+
+export function setAidokuSettingWriter(writer: (key: string, name: string, value: unknown) => void): void {
+  settingsWriter = writer
+}
 
 /** 頁面被建立過幾次（探針用它數「只重建一次」）。 */
 let generation = 0
@@ -338,6 +347,16 @@ async function ensureServer(): Promise<number> {
     return staticResponse(pendingPackage.wasm, "application/octet-stream")
   })
   instance.registerAsyncHandler("/proxy", proxyResponse)
+  instance.registerAsyncHandler("/settings", async request => {
+    const payload = jsonBody(request)
+    const key = typeof payload?.sourceKey === "string" ? payload.sourceKey : ""
+    const name = typeof payload?.key === "string" ? payload.key : ""
+    if (!key || !name) return HttpResponse.badRequest()
+    // 只接目前這一份源（載入中的也算），避免交叉寫到別的源。
+    if (key !== loadedKey && key !== loadingKey) return HttpResponse.badRequest()
+    settingsWriter?.(key, name, payload.value)
+    return HttpResponse.raw(204, "No Content", {})
+  })
   instance.registerAsyncHandler("/job/:token", async request => pageJobResponse(request))
   instance.registerAsyncHandler("/result/:token", async request => pageResultResponse(request))
 
@@ -422,9 +441,14 @@ async function runTask(startScript: (id: number) => string, timeoutMs: number, l
 async function load(sourceKey: string, start: (id: number) => string): Promise<any> {
   await ensureHost()
   loadedKey = null
-  const result = await runTask(start, LOAD_TIMEOUT_MS, "aidoku load")
-  loadedKey = sourceKey
-  return result
+  loadingKey = sourceKey
+  try {
+    const result = await runTask(start, LOAD_TIMEOUT_MS, "aidoku load")
+    loadedKey = sourceKey
+    return result
+  } finally {
+    loadingKey = null
+  }
 }
 
 /** 從 `.aix` 原封不動載入（探針與舊路徑用）。 */
@@ -464,6 +488,15 @@ export async function aidokuSettingsSnapshot(): Promise<Record<string, unknown>>
 
 export async function initializeAidokuSource(): Promise<boolean> {
   return await runTask((id) => `return window.__aidoku.startInitialize(${id})`, CALL_TIMEOUT_MS, "aidoku initialize")
+}
+
+/** 源設定完成後的通知（`handle_notification`）；源沒匯出就是 no-op。 */
+export async function notifyAidoku(notification: string): Promise<void> {
+  await runTask(
+    (id) => `return window.__aidoku.startNotification(${id}, ${JSON.stringify(notification)})`,
+    CALL_TIMEOUT_MS,
+    "aidoku notification"
+  )
 }
 
 /** 源有沒有 `process_page_image`（頁面圖要解密／解拼）：載入後問一次。 */

@@ -12,7 +12,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingItem } from "../../sources/aidoku"
 import { harvestAidokuLogin } from "../../sources/aidokuLogin"
-import { loginAidokuWebview } from "../../sources/registry"
+import { loginAidokuWebview, notifyAidokuSource } from "../../sources/registry"
 
 export function AidokuWebLoginScreen({ sourceKey, item }: { sourceKey: string; item: AidokuSettingItem }) {
   const dismiss = Navigation.useDismiss()
@@ -61,6 +61,7 @@ export function AidokuWebLoginScreen({ sourceKey, item }: { sourceKey: string; i
         localStorageKeys: item.localStorageKeys,
       })
       loginAidokuWebview(sourceKey, item.key, data)
+      if (item.notification) await notifyAidokuSource(sourceKey, item.notification)
       dismiss()
     } catch (error) {
       setSaving(false)

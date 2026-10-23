@@ -256,6 +256,25 @@ export function logoutAidokuWebview(key: string, settingKey: string) {
   reloadRegistry()
 }
 
+/** Aidoku 源的 `method: "oauth"` 登入：寫入 token 原文（或 callback URL）後重載源。 */
+export function loginAidokuOAuth(key: string, settingKey: string, value: string) {
+  aidoku.loginOAuth(key, settingKey, value)
+  reloadRegistry()
+}
+
+/** Aidoku 源的 `method: "oauth"` 登出：token 與 codeVerifier 一起拿掉。 */
+export function logoutAidokuOAuth(key: string, settingKey: string) {
+  aidoku.logoutOAuth(key, settingKey)
+  reloadRegistry()
+}
+
+/** 叫源自己的 `handle_notification`（登入／設定完成後）；源沒匯出就是 no-op。 */
+export async function notifyAidokuSource(key: string, notification: string) {
+  const source = findSource(key)
+  if (!source) return
+  await aidoku.notify(source, notification)
+}
+
 /** 把 Aidoku 源的設定全部拿掉（回到 schema 預設）。 */
 export function resetAidokuSettings(key: string) {
   aidoku.resetSettings(key)

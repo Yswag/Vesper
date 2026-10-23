@@ -207,6 +207,8 @@ export default {
     unsupportedList: "清單編輯尚未支援",
     unsupportedAction: "動作按鈕尚未支援",
     webLogin: "用瀏覽器登入",
+    oauthFailed: "登入失敗：{message}",
+    oauthMissingUrl: "源沒有給授權網址（或 urlKey 對應的設定是空的）",
     webLoginFinish: "完成",
     webLoginFailed: "登入頁載入失敗：{message}",
     selected: { one: "已選 {n} 項", other: "已選 {n} 項" },

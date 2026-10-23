@@ -7,6 +7,9 @@ const loadSource = createLoadSource({ createCanvasImports, createHostImage, getH
 
 let current = null
 let currentSettings = {}
+let currentSourceKey = ""
+/** 載入期間源自己寫的值：buildSettings 重算後要補回去。 */
+const pendingWrites = new Map()
 
 const DEFAULT_TYPES = new Set([
   "select",
@@ -65,6 +68,34 @@ function buildSettings(schema, manifest, user) {
   applyUserSettings(settings, user)
   applyManifestDefaults(settings, manifest)
   return settings
+}
+
+/** 源自己寫設定（`defaults.set`）：先改記憶體，再用同步 XHR 交給宿主寫 `installed.json`。 */
+function writeSetting(key, value) {
+  if (value === null) delete currentSettings[key]
+  else currentSettings[key] = value
+  pendingWrites.set(key, value)
+  const persisted = persistableValue(value)
+  if (persisted === undefined) {
+    console.warn("[Aidoku] setting not persisted (unsupported value):", key)
+    return
+  }
+  try {
+    const xhr = new XMLHttpRequest()
+    xhr.open("POST", "/settings", false)
+    xhr.setRequestHeader("Content-Type", "application/json")
+    xhr.send(JSON.stringify({ sourceKey: currentSourceKey, key, value: persisted }))
+  } catch (error) {
+    console.warn("[Aidoku] persist setting failed:", error && error.message)
+  }
+}
+
+/** 只落地 JSON 能表示的型別；`Data`（Uint8Array）先不支援。 */
+function persistableValue(value) {
+  if (value === null) return null
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+  if (Array.isArray(value) && value.every(item => typeof item === "string")) return value
+  return undefined
 }
 
 function parseHeaders(raw) {
@@ -136,6 +167,8 @@ async function handle(message) {
   }
 
   if (message.type === "load") {
+    currentSourceKey = typeof message.sourceKey === "string" ? message.sourceKey : ""
+    pendingWrites.clear()
     // 兩種輸入：`.aix` 原檔（bytes），或已解開的檔案（components）。
     const input = message.components
       ? {
@@ -152,16 +185,29 @@ async function handle(message) {
     const source = await loadSource(input, message.sourceKey, {
       httpBridge,
       settingsGetter: (key) => currentSettings[key],
-      settingsSetter: () => {},
+      settingsSetter: writeSetting,
     })
     current = source
     currentSettings = buildSettings(source.settingsJson, source.manifest, user)
+    // 載入期間寫的值蓋回去（buildSettings 是重新算一份，不會保留 setter 的修改）。
+    for (const [key, value] of pendingWrites) {
+      if (value === null) delete currentSettings[key]
+      else currentSettings[key] = value
+    }
+    pendingWrites.clear()
     return { manifest: source.manifest, settingsJson: source.settingsJson ?? null, defaults: currentSettings }
   }
 
   // 唯讀：驗證「使用者值真的進到源看到的設定裡」用（探針）。
   if (message.type === "settingsSnapshot") {
     return { ...currentSettings }
+  }
+
+  // 設定完成通知（例如 oauth 登入）：源沒匯出就是 no-op。
+  if (message.type === "notification") {
+    if (!current || typeof current.handleNotification !== "function") return null
+    await current.handleNotification(String(message.name || ""))
+    return null
   }
 
   if (message.type === "initialize") {

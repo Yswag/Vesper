@@ -67,6 +67,7 @@ async function dispatch(kind, payload) {
     )
   }
   if (kind === "initialize") return await send({ type: "initialize" })
+  if (kind === "notification") return await send({ type: "notification", name: payload.name })
   if (kind === "settingsSnapshot") return await send({ type: "settingsSnapshot" })
   if (kind === "hasImageProcessor") return await send({ type: "hasImageProcessor" })
   if (kind === "processPageImage") return await send({ type: "processPageImage", token: payload.token, request: payload.request })
@@ -97,6 +98,9 @@ window.__aidoku = {
   },
   startInitialize(taskId) {
     return start(taskId, "initialize", {})
+  },
+  startNotification(taskId, name) {
+    return start(taskId, "notification", { name })
   },
   startSettingsSnapshot(taskId) {
     return start(taskId, "settingsSnapshot", {})

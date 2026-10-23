@@ -32,6 +32,7 @@ import {
   findSource,
   loginAidokuBasic,
   logoutAidokuBasic,
+  logoutAidokuOAuth,
   logoutAidokuWebview,
   reloadRegistry,
   resetAidokuSettings,
@@ -40,6 +41,7 @@ import {
   type InstalledSource,
 } from "../../sources/registry"
 import { AidokuWebLoginScreen } from "./AidokuWebLoginScreen"
+import { AidokuOAuthScreen } from "./AidokuOAuthScreen"
 import { AidokuLanguageScreen } from "./AidokuLanguageScreen"
 
 const CONTROL_ICON: Record<AidokuSettingControl, string> = {
@@ -127,8 +129,25 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     }
   }
 
+  async function oauthLogin(item: AidokuSettingItem) {
+    await Navigation.present({
+      element: (
+        <NavigationStack>
+          <AidokuOAuthScreen sourceKey={sourceKey} item={item} />
+        </NavigationStack>
+      ),
+      modalPresentationStyle: "fullScreen",
+    })
+    refresh()
+    const next = findSource(sourceKey)
+    if (typeof next?.stored.settings?.[item.key] === "string") {
+      setStatus({ kind: "ready", text: t("settings.aidokuSettings.loggedIn") })
+    }
+  }
+
   function logout(settingKey: string, method?: string) {
     if (method === "webview") logoutAidokuWebview(sourceKey, settingKey)
+    else if (method === "oauth") logoutAidokuOAuth(sourceKey, settingKey)
     else logoutAidokuBasic(sourceKey, settingKey)
     refresh()
     setStatus({ kind: "ready", text: t("settings.aidokuSettings.loggedOut") })
@@ -174,6 +193,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
             onApply={apply}
             onLogin={login}
             onWebLogin={item => void webLogin(item)}
+            onOAuth={item => void oauthLogin(item)}
             onLogout={logout}
           />
         ))
@@ -203,6 +223,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
 interface LoginActions {
   onLogin: (settingKey: string, username: string, password: string) => void
   onWebLogin: (item: AidokuSettingItem) => void
+  onOAuth: (item: AidokuSettingItem) => void
   onLogout: (settingKey: string, method?: string) => void
 }
 
@@ -221,6 +242,7 @@ function GroupCard({
   onApply,
   onLogin,
   onWebLogin,
+  onOAuth,
   onLogout,
 }: {
   group: AidokuSettingGroup
@@ -238,6 +260,7 @@ function GroupCard({
             onApply={value => onApply(item.key, value)}
             onLogin={onLogin}
             onWebLogin={onWebLogin}
+            onOAuth={onOAuth}
             onLogout={onLogout}
           />
         </VStack>
@@ -253,6 +276,7 @@ function ItemRows({
   onApply,
   onLogin,
   onWebLogin,
+  onOAuth,
   onLogout,
 }: {
   item: AidokuSettingItem
@@ -272,7 +296,22 @@ function ItemRows({
 
   if (item.control === "login") {
     const keys = loginKeys(item.key)
-    const loggedIn = overrides[keys.state] === "logged_in"
+    // oauth 存的是 token 原文（或 callback URL），不是 `logged_in`。
+    const loggedIn =
+      item.method === "oauth"
+        ? typeof overrides[item.key] === "string" && String(overrides[item.key]).length > 0
+        : overrides[keys.state] === "logged_in"
+
+    if (item.method === "oauth") {
+      return (
+        <WebLoginItem
+          item={item}
+          loggedIn={loggedIn}
+          onLogin={() => onOAuth(item)}
+          onLogout={() => onLogout(item.key, item.method)}
+        />
+      )
+    }
 
     if (item.method === "webview") {
       if (!item.url) {
