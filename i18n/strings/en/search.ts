@@ -23,6 +23,7 @@ export default {
   filterNone: "Unspecified",
   /** Ascending toggle of a sort filter. */
   filterAscending: "Ascending",
+  filterDescending: "Descending",
   /** Hint for tri-state filters. */
   filterTriState: "Tap to include, tap again to exclude",
 

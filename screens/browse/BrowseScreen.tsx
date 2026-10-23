@@ -15,7 +15,6 @@ import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
 import { Footnote } from "../../design/text"
 import {
-  avatarSize,
   cardBackground,
   cardBackgroundStrong,
   cardGap,
@@ -27,6 +26,7 @@ import {
   radius,
   rect,
   rowPadding,
+  sourceIconSize,
 } from "../../design/tokens"
 
 export function BrowseScreen() {
@@ -134,7 +134,7 @@ function SourceCard({ source }: { source: ComicSourceInfo }) {
       alignment="center"
     >
       {/* 來源圖標徽章（優先顯示網站圖標，失敗則圓形文字徽章） */}
-      <SourceAvatar sourceKey={source.key} name={name} size={avatarSize} iconUrl={source.iconUrl} />
+      <SourceAvatar sourceKey={source.key} name={name} size={sourceIconSize} iconUrl={source.iconUrl} />
 
       {/* 來源資訊 */}
       <VStack alignment="leading" spacing={3}>

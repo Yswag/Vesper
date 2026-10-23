@@ -49,7 +49,7 @@ export function PageScroll({
             : undefined
         }
       >
-        <ScrollView scrollContentBackground="hidden" refreshable={onRefresh ? () => Promise.resolve(onRefresh()) : undefined}>
+        <ScrollView axes="vertical" scrollContentBackground="hidden" refreshable={onRefresh ? () => Promise.resolve(onRefresh()) : undefined}>
           <VStack spacing={pageSpacing} padding={pageInsets}>
             {children}
           </VStack>

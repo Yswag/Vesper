@@ -164,6 +164,9 @@ export const badgeSize = 30
 /** 圓形首字頭像（源沒有封面時的身分標誌）—— 比 IconBadge 大一級。 */
 export const avatarSize = 36
 
+/** 漫畫源圖標邊長（iOS 圓角方塊 App Icon 風格）。 */
+export const sourceIconSize = 32
+
 /** 列表列內距（rowPadding 一般列；denseRowPadding 高密度列）。 */
 export const rowPadding = { horizontal: 16, vertical: 14 } as const
 export const denseRowPadding = { horizontal: 16, vertical: 10 } as const

@@ -5,9 +5,10 @@
 
 import {
   Button,
-  Divider,
+  FlowLayout,
   HStack,
   Image,
+  Menu,
   Navigation,
   ScrollView,
   Spacer,
@@ -16,12 +17,13 @@ import {
   ToolbarItem,
   VStack,
   useState,
+  type Color,
 } from "scripting"
 
 import { useSubscription } from "../../app/useSubscription"
 import { CardGroup } from "../../design/layout"
-import { OptionRow, SelectRow, TextInputRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
-import { pageInsets, pageSpacing, palette } from "../../design/tokens"
+import { FieldRow, IconBadge, ToggleRow } from "../../design/rows"
+import { capsule, fill, pageInsets, pageSpacing, palette, rowPadding } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuFilterRow, AidokuFilterValue } from "../../sources/aidokuFilters"
 
@@ -35,29 +37,130 @@ function copyValue(value: Value): Value {
   return value
 }
 
-/** multi 的三態：不選 / 包含 / 排除。 */
-function TriStateRow({ title, state, onTap }: { title: string; state: "none" | "included" | "excluded"; onTap: () => void }) {
+/** 多選與三態標籤膠囊：預設 / 包含（綠色勾號）/ 排除（紅色叉號）。 */
+function FilterChip({
+  label,
+  state,
+  onTap,
+}: {
+  label: string
+  state: "none" | "included" | "excluded"
+  onTap: () => void
+}) {
+  const isIncluded = state === "included"
+  const isExcluded = state === "excluded"
+
+  const bg: Color = isIncluded
+    ? "rgba(48, 209, 88, 0.18)"
+    : isExcluded
+      ? "rgba(255, 69, 58, 0.18)"
+      : fill.tag
+
+  const fg: Color = isIncluded
+    ? palette.green
+    : isExcluded
+      ? palette.red
+      : "secondaryLabel"
+
   return (
-    <HStack
-      spacing={8}
-      padding={{ horizontal: 16, vertical: 12 }}
-      alignment="center"
-      frame={{ maxWidth: "infinity" }}
-      contentShape="rect"
-      onTapGesture={onTap}
-    >
-      <Text
-        font="body"
-        fontWeight={state === "none" ? "regular" : "medium"}
-        foregroundStyle={state === "excluded" ? "secondaryLabel" : state === "included" ? "tintColor" : "label"}
+    <Button buttonStyle="plain" action={onTap} accessibilityLabel={label}>
+      <HStack
+        spacing={5}
+        padding={{ horizontal: 12, vertical: 7 }}
+        alignment="center"
+        background={bg}
+        clipShape={capsule("circular")}
       >
+        {isIncluded ? (
+          <Image systemName="checkmark" font="caption2" fontWeight="bold" foregroundStyle={palette.green} />
+        ) : null}
+        {isExcluded ? (
+          <Image systemName="xmark" font="caption2" fontWeight="bold" foregroundStyle={palette.red} />
+        ) : null}
+        <Text font="subheadline" fontWeight={state === "none" ? "regular" : "medium"} foregroundStyle={fg}>
+          {label}
+        </Text>
+      </HStack>
+    </Button>
+  )
+}
+
+/** 排序的升降序切換膠囊按鈕（無彩色，貼合設定頁風格）。 */
+function SortAscendButton({ ascending, onToggle }: { ascending: boolean; onToggle: () => void }) {
+  return (
+    <Button
+      buttonStyle="plain"
+      action={onToggle}
+      accessibilityLabel={ascending ? t("search.filterAscending") : t("search.filterDescending")}
+    >
+      <HStack
+        spacing={4}
+        padding={{ horizontal: 8, vertical: 4 }}
+        alignment="center"
+        background={fill.tag}
+        clipShape={capsule("circular")}
+      >
+        <Image
+          systemName={ascending ? "arrow.up" : "arrow.down"}
+          font="caption"
+          fontWeight="semibold"
+          foregroundStyle="secondaryLabel"
+        />
+        <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
+          {ascending ? t("search.filterAscending") : t("search.filterDescending")}
+        </Text>
+      </HStack>
+    </Button>
+  )
+}
+
+/** 單選下拉列（限制 lineLimit={1} 單行不折行；選單內選中項加打勾）。 */
+function SingleSelectRow({
+  icon,
+  title,
+  selectedValue,
+  options,
+  onSelect,
+}: {
+  icon: string
+  title: string
+  selectedValue: string
+  options: Array<{ value: string; text: string }>
+  onSelect: (value: string) => void
+}) {
+  const currentText = options.find(o => o.value === selectedValue)?.text ?? selectedValue
+
+  return (
+    <HStack spacing={14} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
+      <IconBadge icon={icon} />
+      <Text font="body" fontWeight="regular" foregroundStyle="label">
         {title}
       </Text>
       <Spacer />
-      {state === "included" ? (
-        <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle="tintColor" />
-      ) : null}
-      {state === "excluded" ? <Image systemName="minus.circle" font="subheadline" foregroundStyle="secondaryLabel" /> : null}
+      <Menu
+        label={
+          <HStack spacing={4} alignment="center">
+            <Text font="body" foregroundStyle="secondaryLabel" lineLimit={1}>
+              {currentText}
+            </Text>
+            <Image
+              systemName="chevron.up.chevron.down"
+              font="caption2"
+              fontWeight="semibold"
+              foregroundStyle="tertiaryLabel"
+            />
+          </HStack>
+        }
+      >
+        {options.map(option => (
+          <Button
+            key={option.value}
+            title={option.text}
+            systemImage={option.value === selectedValue ? "checkmark" : undefined}
+            action={() => onSelect(option.value)}
+          />
+        ))}
+      </Menu>
     </HStack>
   )
 }
@@ -87,49 +190,36 @@ export function AidokuFilterSheet({
     switch (row.kind) {
       case "text":
         return (
-          <TextInputRow
-            label={row.label}
-            prompt={row.label}
+          <FieldRow
+            icon={row.author ? "person" : "magnifyingglass"}
             value={typeof value === "string" ? value : ""}
+            prompt={row.label}
             onChanged={next => update(index, next)}
           />
         )
-      case "select":
+      case "select": {
+        const selected = typeof value === "string" ? value : (row.options[0]?.value ?? "")
         return (
-          <SelectRow
+          <SingleSelectRow
             icon="chevron.up.chevron.down"
-            iconColor={palette.blue}
             title={row.label}
-            value={typeof value === "string" ? value : (row.options[0]?.value ?? "")}
+            selectedValue={selected}
             options={row.options.map(option => ({ value: option.value, text: option.label }))}
-            onChanged={next => update(index, next)}
+            onSelect={next => update(index, next)}
           />
         )
+      }
       case "sort": {
         const sort =
           typeof value === "object" && value !== null && "index" in value ? value : { index: 0, ascending: false }
         return (
-          <VStack spacing={0}>
-            <SelectRow
-              icon="arrow.up.arrow.down"
-              iconColor={palette.blue}
-              title={row.label}
-              value={String(sort.index)}
-              options={row.options.map((option, at) => ({ value: String(at), text: option }))}
-              onChanged={next => update(index, { index: Number(next) || 0, ascending: sort.ascending })}
-            />
-            {row.canAscend ? (
-              <VStack spacing={0}>
-                <Divider padding={{ leading: rowSeparatorInset }} />
-                <ToggleRow
-                  icon="arrow.up"
-                  title={t("search.filterAscending")}
-                  value={sort.ascending}
-                  onChanged={ascending => update(index, { index: sort.index, ascending })}
-                />
-              </VStack>
-            ) : null}
-          </VStack>
+          <SingleSelectRow
+            icon="arrow.up.arrow.down"
+            title={row.label}
+            selectedValue={String(sort.index)}
+            options={row.options.map((option, at) => ({ value: String(at), text: option }))}
+            onSelect={next => update(index, { index: Number(next) || 0, ascending: sort.ascending })}
+          />
         )
       }
       case "check":
@@ -147,47 +237,35 @@ export function AidokuFilterSheet({
             ? value
             : { included: [] as string[], excluded: [] as string[] }
         return (
-          <VStack spacing={0}>
-            {row.options.map((option, at) => {
-              const state =
-                picked.included.includes(option.value)
-                  ? "included"
-                  : picked.excluded.includes(option.value)
-                    ? "excluded"
-                    : "none"
-              return (
-                <VStack key={`multi:${at}`} spacing={0}>
-                  {at > 0 ? <Divider padding={{ leading: rowSeparatorInset }} /> : null}
-                  {row.canExclude ? (
-                    <TriStateRow
-                      title={option.label}
-                      state={state}
-                      onTap={() => {
-                        const included = picked.included.filter(item => item !== option.value)
-                        const excluded = picked.excluded.filter(item => item !== option.value)
+          <VStack padding={12} alignment="leading" frame={{ maxWidth: "infinity" }}>
+            <FlowLayout horizontalSpacing={8} verticalSpacing={8}>
+              {row.options.map(option => {
+                const state =
+                  picked.included.includes(option.value)
+                    ? "included"
+                    : picked.excluded.includes(option.value)
+                      ? "excluded"
+                      : "none"
+                return (
+                  <FilterChip
+                    key={option.value}
+                    label={option.label}
+                    state={state}
+                    onTap={() => {
+                      const included = picked.included.filter(item => item !== option.value)
+                      const excluded = picked.excluded.filter(item => item !== option.value)
+                      if (row.canExclude) {
                         if (state === "none") included.push(option.value)
                         else if (state === "included") excluded.push(option.value)
-                        update(index, { included, excluded })
-                      }}
-                    />
-                  ) : (
-                    <OptionRow
-                      title={option.label}
-                      checked={state === "included"}
-                      onTap={() =>
-                        update(index, {
-                          included:
-                            state === "included"
-                              ? picked.included.filter(item => item !== option.value)
-                              : [...picked.included, option.value],
-                          excluded: picked.excluded,
-                        })
+                      } else {
+                        if (state === "none") included.push(option.value)
                       }
-                    />
-                  )}
-                </VStack>
-              )
-            })}
+                      update(index, { included, excluded })
+                    }}
+                  />
+                )
+              })}
+            </FlowLayout>
           </VStack>
         )
       }
@@ -202,32 +280,73 @@ export function AidokuFilterSheet({
       toolbar={
         <Toolbar>
           <ToolbarItem placement="topBarLeading">
-            <Button title={t("common.cancel")} action={dismiss} />
+            <Button
+              buttonStyle="plain"
+              action={dismiss}
+              accessibilityLabel={t("common.cancel")}
+            >
+              <Image systemName="xmark" font="body" fontWeight="medium" foregroundStyle="secondaryLabel" />
+            </Button>
           </ToolbarItem>
           <ToolbarItem placement="topBarTrailing">
             <Button
-              title={t("search.filterApply")}
+              buttonStyle="plain"
               action={() => {
                 onApply(draft)
                 dismiss()
               }}
-            />
+              accessibilityLabel={t("search.filterApply")}
+            >
+              <Image systemName="checkmark" font="body" fontWeight="semibold" foregroundStyle="secondaryLabel" />
+            </Button>
           </ToolbarItem>
         </Toolbar>
       }
     >
       <ScrollView>
         <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
-          {rows.map((row, index) => (
-            <CardGroup
-              key={`aidoku-filter:${index}`}
-              title={row.label}
-              footnote={row.kind === "multi" && row.canExclude ? t("search.filterTriState") : undefined}
-            >
-              {body(row, index, draft[index] ?? defaults[index])}
-            </CardGroup>
-          ))}
-          <Button title={t("search.filterReset")} action={() => setDraft(defaults.map(copyValue))} />
+          {rows.map((row, index) => {
+            const value = draft[index] ?? defaults[index]
+            const accessory =
+              row.kind === "sort" && row.canAscend ? (
+                <SortAscendButton
+                  ascending={
+                    typeof value === "object" && value !== null && "ascending" in value
+                      ? value.ascending
+                      : false
+                  }
+                  onToggle={() => {
+                    const current =
+                      typeof value === "object" && value !== null && "index" in value
+                        ? value
+                        : { index: 0, ascending: false }
+                    update(index, { index: current.index, ascending: !current.ascending })
+                  }}
+                />
+              ) : undefined
+
+            return (
+              <CardGroup key={`aidoku-filter:${index}`} title={row.label} headerAccessory={accessory}>
+                {body(row, index, value)}
+              </CardGroup>
+            )
+          })}
+          <HStack alignment="center" frame={{ maxWidth: "infinity" }} padding={{ top: 8, bottom: 20 }}>
+            <Button buttonStyle="plain" action={() => setDraft(defaults.map(copyValue))}>
+              <HStack
+                spacing={6}
+                padding={{ horizontal: 16, vertical: 10 }}
+                alignment="center"
+                background={fill.tag}
+                clipShape={capsule("circular")}
+              >
+                <Image systemName="arrow.counterclockwise" font="subheadline" foregroundStyle="secondaryLabel" />
+                <Text font="subheadline" fontWeight="medium" foregroundStyle="secondaryLabel">
+                  {t("search.filterReset")}
+                </Text>
+              </HStack>
+            </Button>
+          </HStack>
         </VStack>
       </ScrollView>
     </VStack>

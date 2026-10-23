@@ -359,15 +359,21 @@ function EntryRow({
       ) : (
         <IconBadge icon="shippingbox" />
       )}
-      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <VStack alignment="leading" spacing={2}>
         <HStack spacing={6} alignment="center">
           <Text font="body" fontWeight="medium" lineLimit={1}>
             {status.entry.name}
           </Text>
           {status.entry.nsfw ? <TagPill text={t("settings.repo.r18")} color={palette.red} /> : null}
         </HStack>
-        {status.entry.description ? <Caption>{status.entry.description}</Caption> : null}
-        <Footnote>{metaLine}</Footnote>
+        {status.entry.description ? (
+          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
+            {status.entry.description}
+          </Text>
+        ) : null}
+        <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
+          {metaLine}
+        </Text>
       </VStack>
       <Spacer />
       <Button

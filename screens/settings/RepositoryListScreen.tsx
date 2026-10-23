@@ -19,12 +19,12 @@ import {
 } from "scripting"
 
 import { Card, GroupHeader, PageScroll } from "../../design/layout"
-import { Chevron, IconBadge, TagPill, rowSeparatorInset } from "../../design/rows"
+import { Chevron, IconBadge, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { cardBackground, cardShape, fill, palette, radius, rect, rowPadding } from "../../design/tokens"
 import { t } from "../../i18n"
 import { addRepository, refreshRepository } from "../../sources/registry"
-import { kindOf, listRepositories, removeRepository, saveRepository, subscribeRepositories, type StoredRepository } from "../../sources/repository"
+import { listRepositories, removeRepository, saveRepository, subscribeRepositories, type StoredRepository } from "../../sources/repository"
 import { RepositoryDetailScreen } from "./RepositoryDetailScreen"
 
 export function RepositoryListScreen() {
@@ -171,7 +171,6 @@ export function RepositoryListScreen() {
           >
             {repositories.map((repository, index) => {
               const hasError = !!repository.error
-              const kindLabel = t(kindOf(repository) === "aidoku-index" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")
 
               return (
                 <VStack
@@ -215,13 +214,10 @@ export function RepositoryListScreen() {
                       />
 
                       {/* 倉庫名稱與網址 */}
-                      <VStack alignment="leading" spacing={2}>
-                        <HStack spacing={6} alignment="center">
-                          <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
-                            {repository.name}
-                          </Text>
-                          <TagPill text={kindLabel} />
-                        </HStack>
+                      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                        <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
+                          {repository.name}
+                        </Text>
                         <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
                           {repository.url.replace(/^https?:\/\//, "")}
                         </Text>

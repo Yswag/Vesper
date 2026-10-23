@@ -23,6 +23,7 @@ export default {
   filterNone: "不指定",
   /** 排序篩選的遞增開關。 */
   filterAscending: "递增",
+  filterDescending: "递减",
   /** 三態篩選的操作說明。 */
   filterTriState: "点一下包含，再点一下排除",
 

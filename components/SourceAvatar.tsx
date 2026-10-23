@@ -1,8 +1,8 @@
-// 來源圓形圖標或首字徽章元件
+// 來源圓角圖標或首字徽章元件（方案 B：iOS 圓角方塊 App Icon 樣式）
 // 顯示順序：源自己給的圖示（本機檔案最優先，沒網路也看得到）→ 網站 favicon 快取 → 首字徽章。
 
-import { Image, Text, VStack, ZStack, useEffect, useState } from "scripting"
-import { cardBackgroundStrong, capsule } from "../design/tokens"
+import { Image, Text, ZStack, useEffect, useState } from "scripting"
+import { cardBackgroundStrong, rect, sourceIconSize } from "../design/tokens"
 import { fetchAndCacheSourceIcon, getCachedSourceIcon } from "../engine/sourceicons"
 
 export interface SourceAvatarProps {
@@ -31,12 +31,14 @@ function localIconOf(iconUrl?: string): UIImage | null {
 export function SourceAvatar({
   sourceKey,
   name,
-  size = 40,
+  size = sourceIconSize,
   instance,
   iconUrl,
 }: SourceAvatarProps) {
   const [icon, setIcon] = useState<UIImage | null>(() => localIconOf(iconUrl) ?? getCachedSourceIcon(sourceKey))
   const firstLetter = (name.trim().slice(0, 1) || "?").toUpperCase()
+  const cornerRadius = Math.round(size * 0.22)
+  const iconShape = rect(cornerRadius)
 
   useEffect(() => {
     // 源自己給的本機圖示：直接讀，不必碰網路。
@@ -69,21 +71,19 @@ export function SourceAvatar({
     }
   }, [sourceKey, instance, iconUrl])
 
-  const innerSize = Math.round(size * 0.65)
-
   if (icon) {
     return (
       <ZStack
         alignment="center"
         frame={{ width: size, height: size }}
         background={cardBackgroundStrong}
-        clipShape={capsule("circular")}
+        clipShape={iconShape}
       >
         <Image
           image={icon}
           resizable={true}
-          aspectRatio={{ contentMode: "fit" }}
-          frame={{ width: innerSize, height: innerSize }}
+          aspectRatio={{ contentMode: "fill" }}
+          frame={{ width: size, height: size }}
         />
       </ZStack>
     )
@@ -91,13 +91,13 @@ export function SourceAvatar({
 
   const remoteIcon = iconUrl && isRemote(iconUrl) ? iconUrl : undefined
   if (remoteIcon) {
-    // 首字墊在下面：離線載不到圖時看到的是徽章，不是一個空圓。
+    // 首字墊在下面：離線載不到圖時看到的是徽章，不是一個空圓角方塊。
     return (
       <ZStack
         alignment="center"
         frame={{ width: size, height: size }}
         background={cardBackgroundStrong}
-        clipShape={capsule("circular")}
+        clipShape={iconShape}
       >
         <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
           {firstLetter}
@@ -105,25 +105,23 @@ export function SourceAvatar({
         <Image
           imageUrl={remoteIcon}
           resizable={true}
-          aspectRatio={{ contentMode: "fit" }}
-          frame={{ width: innerSize, height: innerSize }}
+          aspectRatio={{ contentMode: "fill" }}
+          frame={{ width: size, height: size }}
         />
       </ZStack>
     )
   }
 
   return (
-    <ZStack alignment="center" frame={{ width: size, height: size }}>
-      <VStack
-        alignment="center"
-        frame={{ width: size, height: size }}
-        background={cardBackgroundStrong}
-        clipShape={capsule("circular")}
-      >
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
-          {firstLetter}
-        </Text>
-      </VStack>
+    <ZStack
+      alignment="center"
+      frame={{ width: size, height: size }}
+      background={cardBackgroundStrong}
+      clipShape={iconShape}
+    >
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
+        {firstLetter}
+      </Text>
     </ZStack>
   )
 }

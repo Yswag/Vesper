@@ -132,12 +132,12 @@ export function InfoRow({
   valueColor?: Color
 }) {
   return (
-    <HStack spacing={14} padding={rowPadding}>
+    <HStack spacing={14} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
       <Text font="body" foregroundStyle="label">
         {label}
       </Text>
       <Spacer />
-      <Text font="subheadline" foregroundStyle={valueColor} lineLimit={1}>
+      <Text font="subheadline" foregroundStyle={valueColor} lineLimit={1} truncationMode="middle">
         {value}
       </Text>
     </HStack>
