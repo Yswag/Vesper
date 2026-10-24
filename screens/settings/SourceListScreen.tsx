@@ -5,7 +5,7 @@ import { Divider, HStack, Image, NavigationLink, ReorderableForEach, Spacer, Tex
 import { Card, CardGroup, GroupHeader, PageScroll } from "../../design/layout"
 import { Chevron, IconRow } from "../../design/rows"
 import { EmptyState, NoticeBanner } from "../../design/status"
-import { cardBackground, cardShape, dangerBadge, palette, rowPadding, sourceIconSize } from "../../design/tokens"
+import { rowPadding, sourceIconSize, toneText } from "../../design/tokens"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { appDataRoot, hasFileAccess } from "../../engine/fs"
 import { t } from "../../i18n"
@@ -143,6 +143,7 @@ export function SourceListScreen() {
         <GroupHeader title={t("settings.sources.installedGroup", { n: sources.length })} />
         {sources.length === 0 ? (
           <EmptyState
+            variant="page"
             icon="books.vertical"
             title={t("settings.sources.empty")}
             detail={t("settings.sources.emptyDetail")}
@@ -230,7 +231,7 @@ function SourceCardRow({ source }: { source: InstalledSource }) {
         <HStack spacing={4} alignment="center">
           <Text
             font="caption2"
-            foregroundStyle={source.error ? "systemRed" : "secondaryLabel"}
+            foregroundStyle={source.error ? toneText.danger : "secondaryLabel"}
             lineLimit={1}
           >
             {source.error ?? `${source.stored.key} · v${meta?.version ?? source.stored.version}`}
@@ -242,8 +243,8 @@ function SourceCardRow({ source }: { source: InstalledSource }) {
 
       {source.error ? (
         <HStack spacing={4} alignment="center">
-          <Image systemName="exclamationmark.triangle.fill" font="caption" foregroundStyle="systemRed" />
-          <Text foregroundStyle="systemRed" font="caption2" fontWeight="medium">
+          <Image systemName="exclamationmark.triangle.fill" font="caption" foregroundStyle={toneText.danger} />
+          <Text foregroundStyle={toneText.danger} font="caption2" fontWeight="medium">
             {t("settings.sources.failed")}
           </Text>
         </HStack>

@@ -19,9 +19,9 @@ import {
 } from "scripting"
 
 import { Card, GroupHeader, PageScroll } from "../../design/layout"
-import { Chevron, IconBadge, rowSeparatorInset } from "../../design/rows"
+import { Chevron } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
-import { cardBackground, cardShape, fill, palette, radius, rect, rowPadding } from "../../design/tokens"
+import { rowPadding, toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 import { addRepository, refreshRepository } from "../../sources/registry"
 import { listRepositories, removeRepository, saveRepository, subscribeRepositories, type StoredRepository } from "../../sources/repository"
@@ -157,18 +157,14 @@ export function RepositoryListScreen() {
 
         {repositories.length === 0 ? (
           <EmptyState
+            variant="page"
             icon="shippingbox"
             title={t("settings.repos.empty")}
             detail={t("settings.repos.emptyDetail")}
           />
         ) : (
-          <LazyVStack
-            spacing={0}
-            background={cardBackground}
-            clipShape={cardShape}
-            frame={{ maxWidth: "infinity" }}
-            swipeActionsContainer={true}
-          >
+          <Card swipeActionsContainer={true}>
+            <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
             {repositories.map((repository, index) => {
               const hasError = !!repository.error
 
@@ -210,7 +206,7 @@ export function RepositoryListScreen() {
                       <Image
                         systemName={hasError ? "exclamationmark.triangle" : "shippingbox"}
                         font="title3"
-                        foregroundStyle={hasError ? palette.red : "secondaryLabel"}
+                        foregroundStyle={hasError ? toneText.danger : "secondaryLabel"}
                       />
 
                       {/* 倉庫名稱與網址 */}
@@ -228,7 +224,7 @@ export function RepositoryListScreen() {
                       {/* 源數量（低調次級文字） */}
                       <Text
                         font="subheadline"
-                        foregroundStyle={hasError ? palette.red : "secondaryLabel"}
+                        foregroundStyle={hasError ? toneText.danger : "secondaryLabel"}
                       >
                         {hasError
                           ? t("settings.shared.readFailed")
@@ -243,6 +239,7 @@ export function RepositoryListScreen() {
               )
             })}
           </LazyVStack>
+          </Card>
         )}
       </VStack>
 

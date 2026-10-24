@@ -1,6 +1,6 @@
 // 卡片裡的一本書：小封面＋書名／副標／細節，右側箭頭。閱讀歷史與離線書庫共用，版面才會一致。
 
-import { HStack, Text, VStack, ZStack, type Color, type VirtualNode } from "scripting"
+import { HStack, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { CoverImage } from "./CoverImage"
 import { Chevron } from "../design/rows"
@@ -25,7 +25,7 @@ export function ComicListRow({
   cover?: string
   title: string
   subtitle?: string | null
-  subtitleColor?: Color
+  subtitleColor?: Color | DynamicShapeStyle
   detail?: string | null
   /** 文字下面再一行（例如閱讀進度條）。 */
   footer?: VirtualNode

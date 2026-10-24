@@ -8,6 +8,7 @@
 import { Button, Navigation, ProgressView, Spacer, Text, VStack, WebView, ZStack, useEffect, useRef, useState } from "scripting"
 
 import { NoticeBanner } from "../../design/status"
+import { Chip } from "../../design/chip"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingItem } from "../../sources/aidoku"
@@ -51,6 +52,23 @@ export function AidokuWebLoginScreen({ sourceKey, item }: { sourceKey: string; i
       }
     }
   }, [])
+
+  async function retryLoad() {
+    setMessage(null)
+    setLoading(true)
+    try {
+      await controller.loadURL(item.url ?? "")
+      await controller.waitForLoad()
+    } catch (error) {
+      setMessage(
+        t("settings.aidokuSettings.webLoginFailed", {
+          message: error instanceof Error ? error.message : String(error),
+        })
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
 
   async function finish() {
     if (saving || loading) return
@@ -108,9 +126,15 @@ export function AidokuWebLoginScreen({ sourceKey, item }: { sourceKey: string; i
       ) : null}
 
       {message ? (
-        <VStack spacing={0} padding={{ horizontal: 16, bottom: 24 }} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <VStack
+          spacing={8}
+          alignment="leading"
+          padding={{ horizontal: 16, bottom: 24 }}
+          frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        >
           <Spacer />
           <NoticeBanner tone="error" text={message} />
+          <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={() => void retryLoad()} />
         </VStack>
       ) : null}
     </ZStack>

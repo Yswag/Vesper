@@ -5,6 +5,7 @@ import { Button, Navigation, ProgressView, Spacer, Text, VStack, WebView, ZStack
 
 import { useSubscription } from "../../app/useSubscription"
 import { NoticeBanner } from "../../design/status"
+import { Chip } from "../../design/chip"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingItem } from "../../sources/aidoku"
 import { codeOf, exchangeToken, paramsOf, randomVerifier, withPkce } from "../../sources/aidokuOAuth"
@@ -43,6 +44,23 @@ export function AidokuOAuthScreen({ sourceKey, item }: { sourceKey: string; item
           message: error instanceof Error ? error.message : String(error),
         })
       )
+    }
+  }
+
+  async function retryLoad() {
+    setMessage(null)
+    setLoading(true)
+    try {
+      await controller.loadURL(authUrlRef.current)
+      await controller.waitForLoad()
+    } catch (error) {
+      setMessage(
+        t("settings.aidokuSettings.oauthFailed", {
+          message: error instanceof Error ? error.message : String(error),
+        })
+      )
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -126,9 +144,15 @@ export function AidokuOAuthScreen({ sourceKey, item }: { sourceKey: string; item
       ) : null}
 
       {message ? (
-        <VStack spacing={0} padding={{ horizontal: 16, bottom: 24 }} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+        <VStack
+          spacing={8}
+          alignment="leading"
+          padding={{ horizontal: 16, bottom: 24 }}
+          frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        >
           <Spacer />
           <NoticeBanner tone="error" text={message} />
+          <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={() => void retryLoad()} />
         </VStack>
       ) : null}
     </ZStack>

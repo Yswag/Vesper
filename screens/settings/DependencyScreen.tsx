@@ -14,7 +14,7 @@ import {
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconRow, rowSeparatorInset } from "../../design/rows"
 import { NoticeBanner, StatusLine, statusTone, type StatusNotice } from "../../design/status"
-import { palette } from "../../design/tokens"
+import { toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 
 /** `installed === null` ＝還沒量到。 */
@@ -88,12 +88,12 @@ export function DependencyScreen() {
               {index > 0 ? <Divider padding={{ leading: rowSeparatorInset }} /> : null}
               <IconRow
                 icon={!known ? "hourglass" : dep.installed ? "checkmark.circle" : "exclamationmark.triangle"}
-                iconColor={!known ? "secondaryLabel" : dep.installed ? palette.green : palette.red}
+                iconColor={!known ? "secondaryLabel" : dep.installed ? toneText.success : toneText.danger}
                 title={dep.name}
                 detail={t(
                   !known ? "settings.deps.checking" : dep.installed ? "settings.deps.installed" : "settings.deps.missing"
                 )}
-                detailColor={known && !dep.installed ? palette.red : "secondaryLabel"}
+                detailColor={known && !dep.installed ? toneText.danger : "secondaryLabel"}
               />
             </VStack>
           )

@@ -5,7 +5,7 @@
 
 import { HStack, Image, Text, type Color, type DynamicShapeStyle } from "scripting"
 
-import { badgePadding, fill, radius, rect, tagText, tagTone } from "./tokens"
+import { badgePadding, fill, radius, rect, tagTone, toneText } from "./tokens"
 
 export type TagTone = "neutral" | "danger" | "warning" | "love"
 
@@ -20,9 +20,9 @@ export interface TagProps {
 
 /** 有色 tone 的底色與字色；中性不進來（它用 `fill.tag` 與 `secondaryLabel`）。 */
 const TONES: Record<Exclude<TagTone, "neutral">, { background: Color; text: DynamicShapeStyle }> = {
-  danger: { background: tagTone.danger, text: tagText.danger },
-  warning: { background: tagTone.warning, text: tagText.warning },
-  love: { background: tagTone.love, text: tagText.love },
+  danger: { background: tagTone.danger, text: toneText.danger },
+  warning: { background: tagTone.warning, text: toneText.warning },
+  love: { background: tagTone.love, text: toneText.love },
 }
 
 export function Tag({ text, icon, tone = "neutral", accessibilityLabel }: TagProps) {

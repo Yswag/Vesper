@@ -1,6 +1,6 @@
 // 縮圖快取設定子頁：即時容量統計、手動清除確認，以及自動淘汰規則（天數與容量上限）。
 
-import { Button, Divider, useEffect, useState } from "scripting"
+import { Divider, useEffect, useState } from "scripting"
 
 import {
   MAX_AGE_DAYS_OPTIONS,
@@ -12,7 +12,7 @@ import {
 } from "../../app/cacheSetting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, SelectRow, rowSeparatorInset } from "../../design/rows"
-import { palette } from "../../design/tokens"
+import { toneText } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import { clearImageCache, getCacheStats } from "../../engine/imagecache"
 import { t } from "../../i18n"
@@ -74,14 +74,13 @@ export function ImageCacheSettingsScreen() {
           detail={statsDetail}
         />
         <Divider padding={{ leading: rowSeparatorInset }} />
-        <Button action={handleClearCache} buttonStyle="plain">
-          <IconRow
-            icon="trash"
-            iconColor={palette.red}
-            title={t("settings.root.clearThumbCache")}
-            titleColor={palette.red}
-          />
-        </Button>
+        <IconRow
+          icon="trash"
+          iconColor={toneText.danger}
+          title={t("settings.root.clearThumbCache")}
+          titleColor={toneText.danger}
+          onTap={() => void handleClearCache()}
+        />
       </CardGroup>
 
       {/* 2. 自動清理規則 */}

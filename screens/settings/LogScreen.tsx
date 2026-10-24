@@ -5,11 +5,11 @@ import { Divider, HStack, LazyVStack, Spacer, Text, VStack, useState } from "scr
 
 import { useSubscription } from "../../app/useSubscription"
 
-import { CardGroup, PageScroll } from "../../design/layout"
+import { Card, CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, SelectRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, StatusLine } from "../../design/status"
 import { Caption, Footnote } from "../../design/text"
-import { cardBackground, cardShape, denseRowPadding, palette } from "../../design/tokens"
+import { denseRowPadding } from "../../design/tokens"
 import { clearLog, logEntries, subscribeLog, type LogEntry, type LogLevel } from "../../engine/log"
 import { t } from "../../i18n"
 
@@ -34,7 +34,6 @@ export function LogScreen() {
       <CardGroup>
         <SelectRow
           icon="line.3.horizontal.decrease"
-          iconColor={palette.indigo}
           title={t("settings.log.level")}
           value={level}
           options={LEVELS.map(item => ({ value: item.id, text: item.label }))}
@@ -47,7 +46,6 @@ export function LogScreen() {
         <Divider padding={{ leading: rowSeparatorInset }} />
         <ActionRow
           icon="trash"
-          iconColor={palette.red}
           title={t("settings.log.clear")}
           tone="destructive"
           onTap={clearLog}
@@ -57,16 +55,18 @@ export function LogScreen() {
       <StatusLine text={t("settings.log.count", { shown: shown.length, total: entries.length })} />
 
       {shown.length === 0 ? (
-        <EmptyState icon="doc.text" title={t("settings.log.empty")} />
+        <EmptyState variant="page" icon="doc.text" title={t("settings.log.empty")} />
       ) : (
-        <LazyVStack spacing={0} background={cardBackground} clipShape={cardShape} frame={{ maxWidth: "infinity" }}>
-          {shown.slice(0, 300).map((entry, index) => (
-            <VStack key={entry.id} spacing={0}>
-              {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
-              <LogRow entry={entry} />
-            </VStack>
-          ))}
-        </LazyVStack>
+        <Card>
+          <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
+            {shown.slice(0, 300).map((entry, index) => (
+              <VStack key={entry.id} spacing={0}>
+                {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
+                <LogRow entry={entry} />
+              </VStack>
+            ))}
+          </LazyVStack>
+        </Card>
       )}
     </PageScroll>
   )

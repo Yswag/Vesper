@@ -219,7 +219,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
       ) : null}
 
       {!hasContent || !spec ? (
-        <EmptyState icon="slider.horizontal.3" title={t("settings.aidokuSettings.empty")} />
+        <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.aidokuSettings.empty")} />
       ) : (
         spec.groups.map((group, index) => (
           <GroupCard

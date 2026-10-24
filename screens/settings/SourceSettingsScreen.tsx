@@ -6,11 +6,11 @@
 // 這一頁是自架類的源能不能用的前提 —— komga / kavita / lanraragi 都只宣告一個
 // `base_url`（input），預設指向 demo 伺服器，使用者得填自己的位址。
 
-import { Divider, Text, VStack, type Color, useEffect, useState } from "scripting"
+import { Divider, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
-import { badgeOff, palette } from "../../design/tokens"
+import { toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
 import { t } from "../../i18n"
@@ -155,7 +155,7 @@ export function SourceSettingsView({
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
       {specs.length === 0 ? (
-        <EmptyState icon="slider.horizontal.3" title={t("settings.sourceSettings.empty")} />
+        <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.sourceSettings.empty")} />
       ) : (
         specs.map(spec => (
           <SpecCard
@@ -283,7 +283,7 @@ function SpecCard({
         title={t("common.save")}
         titleColor={dirty ? tint.tint : "secondaryLabel"}
         detail={dirty ? t("settings.sourceSettings.unsaved") : undefined}
-        detailColor="systemOrange"
+        detailColor={toneText.warning}
         onTap={() => onApply(spec.id, current)}
       />
 

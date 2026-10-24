@@ -1,5 +1,4 @@
 import { Button, ProgressView, Text, VStack } from "scripting"
-import { neutral } from "../design/tokens"
 import { t } from "../i18n"
 
 declare const require: {
@@ -78,7 +77,7 @@ export function PreparingView() {
       <Text font="headline" fontWeight="bold">
         {t("common.preparingEnv")}
       </Text>
-      <Text font="subheadline" foregroundStyle={neutral.secondary} multilineTextAlignment="center">
+      <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="center">
         {t("common.installingCoreDeps")}
       </Text>
     </VStack>
@@ -98,7 +97,7 @@ export function InstallFailedView({ onRetry }: { onRetry: () => void }) {
         title={t("common.depsRetryInstall")}
         systemImage="arrow.clockwise"
         action={onRetry}
-        buttonStyle="glassProminent"
+        buttonStyle="borderedProminent"
       />
     </VStack>
   )

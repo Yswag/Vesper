@@ -10,7 +10,7 @@ import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { Footnote } from "../../design/text"
-import { palette, radius, rect } from "../../design/tokens"
+import { radius, rect } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import { accountSpec, findSource, loginWithCookies, loginWithPassword, loginWithWebview, logoutSource, reloadRegistry, type AccountSpec, type InstalledSource } from "../../sources/registry"
@@ -62,7 +62,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
       {!spec ? (
-        <EmptyState icon="person.crop.circle" title={t("settings.account.noLoginNeeded")} />
+        <EmptyState variant="page" icon="person.crop.circle" title={t("settings.account.noLoginNeeded")} />
       ) : loggedIn ? (
         <CardGroup title={t("settings.shared.loggedIn")} footnote={t("settings.account.logoutFootnote")}>
           <InfoRow
@@ -72,7 +72,6 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
           <Divider padding={{ leading: rowSeparatorInset }} />
           <ActionRow
             icon="rectangle.portrait.and.arrow.right"
-            iconColor={palette.red}
             title={logout}
             tone="destructive"
             busy={busy}

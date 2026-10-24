@@ -8,7 +8,7 @@ import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useSta
 import { useSubscription } from "../../app/useSubscription"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow } from "../../design/rows"
-import { palette, rowPadding } from "../../design/tokens"
+import { rowPadding } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingItem } from "../../sources/aidoku"
 import { findSource, reloadRegistry, updateAidokuSetting, type InstalledSource } from "../../sources/registry"
@@ -61,7 +61,7 @@ export function AidokuEditableList({
                 {value}
               </Text>
               <Spacer />
-              <Button buttonStyle="borderless" tint={palette.red} action={() => remove(index)}>
+              <Button buttonStyle="borderless" tint="systemRed" action={() => remove(index)}>
                 <Image systemName="trash" font="subheadline" />
               </Button>
             </HStack>

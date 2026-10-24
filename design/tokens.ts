@@ -61,20 +61,27 @@ export const tagTone = {
   love: "rgba(255, 45, 85, 0.12)",
 } as const
 
-/** 有色標籤的字色：深色用 `palette`，淺色用系統「增強對比」那一階（亮橘、亮紅壓在淺底上讀不到）。 */
-export const tagText: Record<keyof typeof tagTone, DynamicShapeStyle> = {
+/**
+ * 語意文字色：深色用 `palette`，淺色用系統「增強對比」那一階（亮橘、亮紅壓在淺底上讀不到）。
+ * 只給「字」用；圖示色塊（`IconBadge` 的底）仍用 `palette`。
+ */
+export const toneText: Record<"danger" | "warning" | "love" | "success", DynamicShapeStyle> = {
   danger: { dark: palette.red, light: "#D70015" },
   warning: { dark: palette.orange, light: "#C93400" },
   love: { dark: palette.pink, light: "#D30F45" },
+  success: { dark: palette.green, light: "#248A3D" },
 }
+
+/** `toneText` 的舊名（3b／3c 的呼叫端）；新程式碼用 `toneText`。 */
+export const tagText = toneText
 
 /**
  * 多選／三態篩選的膠囊色：包含＝語意綠、排除＝danger、未選用中性的 `fill.tag`。
  * 標籤的 `tagTone` 只表達「這東西是什麼狀態」，篩選是使用者的選擇，所以字色淺色也再深一階。
  */
 export const filterTone: Record<"included" | "excluded", { background: Color; text: DynamicShapeStyle }> = {
-  included: { background: "rgba(48, 209, 88, 0.15)", text: { dark: palette.green, light: "#248A3D" } },
-  excluded: { background: tagTone.danger, text: tagText.danger },
+  included: { background: "rgba(48, 209, 88, 0.15)", text: toneText.success },
+  excluded: { background: tagTone.danger, text: toneText.danger },
 }
 
 /** 容器與狀態填色（非互動的部分）。互動色（選中底、描邊、榜單）在 `useTint()` 的 `Tint` 裡。 */

@@ -1,11 +1,12 @@
 // 單一源的詳情：基本資料、能力徽章、啟用/停用、移除。
 
-import { Button, Divider, Navigation, NavigationLink, VStack, useEffect, useState } from "scripting"
+import { Divider, Navigation, NavigationLink, VStack, useEffect, useState } from "scripting"
 
+import { Chip } from "../../design/chip"
 import { Card, CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner } from "../../design/status"
-import { badgeOff, palette } from "../../design/tokens"
+import { toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 import {
   accountSpec,
@@ -35,6 +36,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
     return (
       <PageScroll title={t("settings.sourceDetail.title")}>
         <EmptyState
+          variant="page"
           icon="questionmark.circle"
           title={t("settings.sourceDetail.notFound")}
           detail={t("settings.sourceDetail.notFoundDetail")}
@@ -50,7 +52,17 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
   return (
     <PageScroll title={meta?.name ?? source.stored.name}>
       {source.error ? (
-        <NoticeBanner tone="error" text={t("settings.shared.loadFailed")} detail={source.error} />
+        <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={t("settings.shared.loadFailed")} detail={source.error} />
+          <Chip
+            icon="arrow.clockwise"
+            text={t("common.retry")}
+            onTap={() => {
+              reloadRegistry()
+              setSource(findSource(sourceKey))
+            }}
+          />
+        </VStack>
       ) : null}
 
       {/* 1. 控制與操作 */}
@@ -139,9 +151,9 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
       <Card>
         <IconRow
           icon="trash"
-          iconColor="systemRed"
+          iconColor={toneText.danger}
           title={t("settings.sourceDetail.remove")}
-          titleColor="systemRed"
+          titleColor={toneText.danger}
           onTap={() => {
             void Dialog.confirm({
               title: t("settings.sourceDetail.removeTitle", { name: meta?.name ?? sourceKey }),

@@ -18,6 +18,7 @@
 - 根層 tint 實測會跟的：Toggle、borderless Button、`ProgressView`、tab bar 選中項；不跟的：segmented Picker。預覽沒有 App 的根層，要自己掛 `tint`，不然會拍成系統藍。
 - **文字**：`label` → `secondaryLabel` → `tertiaryLabel`。
 - **語意色**（`palette` 的 green／orange／red…）只表示狀態，不當裝飾。
+- 狀態色當**文字或無底圖示**用 `toneText`（`danger`／`warning`／`success`／`love`，淺色深一階）；`palette.*` 只給色塊底（例如 `IconBadge`）。
 - 透明色寫 `rgba(...)`，不用 8 位 hex（會變黑）。
 
 ## 圓角
@@ -104,3 +105,4 @@ sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，�
 - 2026-10-24 詳情頁：資訊標籤改 `Tag`、章節工具列改 `Chip compact`；頂部氛圍光暈維持原版（Canvas 淡出版實機壞掉，撤回）；網格書名改一行。
 - 2026-10-24 首頁：hero 白字改語意色；有色標籤字色淺色用深一階（`tagText`）；橫向卡片書名靠左；網格邊距 12→16；載入改骨架。
 - 2026-10-24 瀏覽／搜尋：錯誤／空／載入三種狀態統一；分類與排行 chip 列貼導覽列（safeAreaBar＋soft）；篩選 sheet 鋪頁面底色。
+- 2026-10-24 設定：`tagText` 擴成 `toneText`（加 `success`）；下載頁未完成＝中性暫停＋x/y、失敗才紅；刪掉頁面裡可有可無的說明 footnote。

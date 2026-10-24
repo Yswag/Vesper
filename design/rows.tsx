@@ -21,7 +21,7 @@ import {
 } from "scripting"
 
 import { useTint, type Tint } from "../app/theme"
-import { badgeOff, badgePadding, badgeShape, badgeSize, capsule, fill, palette, rowPadding } from "./tokens"
+import { badgeOff, badgePadding, badgeShape, badgeSize, capsule, fill, rowPadding, toneText } from "./tokens"
 import { t } from "../i18n"
 
 /** 列上的顏色可以給固定色（`Color`）或跟主題的 `DynamicShapeStyle`。 */
@@ -379,14 +379,14 @@ export function ActionRow({
 }) {
   const inactive = busy || disabled
   const tint = useTint()
-  const fallbackColor: RowColor = tone === "destructive" ? palette.red : tint.tint
+  const fallbackColor: RowColor = tone === "destructive" ? toneText.danger : tint.tint
 
   return (
     <IconRow
       icon={busy ? "hourglass" : icon}
       iconColor={inactive ? "secondaryLabel" : (iconColor ?? fallbackColor)}
       title={busy ? t("common.working") : title}
-      titleColor={tone === "destructive" ? palette.red : inactive ? "secondaryLabel" : tint.tint}
+      titleColor={tone === "destructive" ? toneText.danger : inactive ? "secondaryLabel" : tint.tint}
       detail={detail}
       onTap={inactive ? undefined : onTap}
     />

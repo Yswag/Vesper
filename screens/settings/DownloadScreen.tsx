@@ -13,7 +13,6 @@ import {
   Spacer,
   Text,
   VStack,
-  ZStack,
   useState,
 } from "scripting"
 import { Script } from "scripting"
@@ -21,11 +20,11 @@ import { Script } from "scripting"
 import { isActive, type ChapterRef, type DownloadRecord } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
-import { CoverImage } from "../../components/CoverImage"
+import { ComicListRow } from "../../components/ComicListRow"
 import { Card, CardGroup, GroupHeader, PageScroll } from "../../design/layout"
 import { Chevron, IconBadge, IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { cardBackground, fill, palette, radius, rect, rowPadding } from "../../design/tokens"
+import { fill, rowPadding, toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
 import { chaptersForReader } from "../../engine/offline"
@@ -176,7 +175,6 @@ export function DownloadSections({
       {pending.length > 0 ? (
         <CardGroup
           title={t("settings.downloads.pending", { n: pending.length })}
-          footnote={t("settings.downloads.pendingFootnote")}
           swipeActionsContainer={true}
         >
           {pending.map((record, index) => (
@@ -203,12 +201,15 @@ export function DownloadSections({
                 alignment="center"
                 frame={{ maxWidth: "infinity" }}
               >
-                <IconBadge icon="exclamationmark.triangle.fill" color={palette.orange} />
+                <IconBadge
+                  icon={record.state === "failed" ? "exclamationmark.triangle.fill" : "pause.circle"}
+                  color={record.state === "failed" ? toneText.danger : "secondaryLabel"}
+                />
                 <VStack spacing={2} alignment="leading">
                   <Text font="body" fontWeight="regular" foregroundStyle="label">
                     {nameOf(record)}
                   </Text>
-                  <Text font="caption" foregroundStyle={palette.orange}>
+                  <Text font="caption" foregroundStyle={record.state === "failed" ? toneText.danger : "secondaryLabel"}>
                     {reasonOf(record)}
                   </Text>
                 </VStack>
@@ -217,6 +218,7 @@ export function DownloadSections({
                   title=""
                   systemImage="trash"
                   role="destructive"
+                  foregroundStyle={toneText.danger}
                   action={() => onDelete(record.key)}
                 />
               </HStack>
@@ -241,9 +243,6 @@ export function DownloadSections({
               />
             )
           })}
-          <Text font="caption2" foregroundStyle="tertiaryLabel" padding={{ leading: 6, top: 2 }}>
-            {t("settings.downloads.doneFootnote")}
-          </Text>
         </VStack>
       ) : null}
 
@@ -274,7 +273,6 @@ export function DownloadSections({
         {canUseBackground ? (
           <ToggleRow
             icon="arrow.down.circle"
-            iconColor={palette.purple}
             title={t("settings.downloads.allowBackground")}
             value={background}
             onChanged={onToggleBackground}
@@ -282,7 +280,6 @@ export function DownloadSections({
         ) : (
           <IconRow
             icon="lock.fill"
-            iconColor={palette.purple}
             title={t("settings.downloads.allowBackground")}
             detail={t("settings.downloads.requiresPro")}
           />
@@ -330,6 +327,7 @@ function ActiveDownloadRow({
         title=""
         systemImage="xmark.circle"
         role="destructive"
+        foregroundStyle={toneText.danger}
         action={onCancel}
       />
     </HStack>
@@ -372,7 +370,6 @@ function ComicGroupCard({
       <VStack
         spacing={0}
         frame={{ maxWidth: "infinity" }}
-        onTapGesture={onToggle}
         trailingSwipeActions={{
           allowsFullSwipe: false,
           actions: [
@@ -386,45 +383,21 @@ function ComicGroupCard({
           ],
         }}
       >
-        <HStack
-          spacing={12}
-          padding={{ leading: 14, trailing: 16, vertical: 12 }}
-          alignment="center"
-          frame={{ maxWidth: "infinity" }}
-          background={fill.invisible}
-          contentShape={rect(0)}
-          onTapGesture={onToggle}
-        >
-          {group.cover ? (
-            <CoverImage
-              sourceKey={group.sourceKey}
-              url={group.cover}
-              width={40}
-              height={56}
-              cornerRadius={radius.sm}
+        <ComicListRow
+          sourceKey={group.sourceKey}
+          cover={group.cover}
+          title={group.comicTitle}
+          subtitle={`${t("settings.shared.countChapters", { n: group.records.length })} · ${formatBytes(group.totalBytes)}`}
+          trailing={
+            <Image
+              systemName={isExpanded ? "chevron.up" : "chevron.down"}
+              font="caption"
+              fontWeight="semibold"
+              foregroundStyle="tertiaryLabel"
             />
-          ) : (
-            <IconBadge icon="book.closed.fill" size={40} color="secondaryLabel" />
-          )}
-
-          <VStack spacing={4} alignment="leading">
-            <Text font="headline" fontWeight="medium" foregroundStyle="label">
-              {group.comicTitle}
-            </Text>
-            <Text font="subheadline" foregroundStyle="secondaryLabel">
-              {`${t("settings.shared.countChapters", { n: group.records.length })} · ${formatBytes(group.totalBytes)}`}
-            </Text>
-          </VStack>
-
-          <Spacer />
-
-          <Image
-            systemName={isExpanded ? "chevron.up" : "chevron.down"}
-            font="caption"
-            fontWeight="semibold"
-            foregroundStyle="tertiaryLabel"
-          />
-        </HStack>
+          }
+          onTap={onToggle}
+        />
       </VStack>
 
       {/* 展開後的章節子列表 */}
@@ -470,7 +443,7 @@ function ComicGroupCard({
                   <Image
                     systemName="checkmark.circle.fill"
                     font="subheadline"
-                    foregroundStyle={palette.green}
+                    foregroundStyle={toneText.success}
                   />
                   <Text font="body" fontWeight="regular" foregroundStyle="label">
                     {record.epTitle || record.key.epId}
@@ -503,9 +476,10 @@ function nameOf(record: DownloadRecord): string {
 
 /** 未完成的原因：有抓到幾張就誠實說幾張，加上失敗的原因。 */
 function reasonOf(record: DownloadRecord): string {
-  const done =
-    record.total > 0
-      ? t("settings.downloads.incomplete", { done: record.completed, total: record.total })
-      : t("settings.downloads.incompletePlain")
-  return record.error ? `${done} · ${record.error}` : done
+  if (record.state === "failed") {
+    return record.error ? `${t("bookshelf.downloadFailed")} · ${record.error}` : t("bookshelf.downloadFailed")
+  }
+  return record.total > 0
+    ? t("settings.downloads.incomplete", { done: record.completed, total: record.total })
+    : t("settings.downloads.incompletePlain")
 }

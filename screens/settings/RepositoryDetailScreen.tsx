@@ -3,10 +3,12 @@
 
 import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
-import { ActionRow, IconBadge, InfoRow, TagPill, rowSeparatorInset } from "../../design/rows"
+import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { Tag } from "../../design/Tag"
+import { Chip } from "../../design/chip"
 import { Caption, Footnote } from "../../design/text"
-import { palette, rect, rowPadding } from "../../design/tokens"
+import { radius, rect, rowPadding } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
@@ -229,6 +231,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     return (
       <PageScroll title={t("settings.shared.repository")}>
         <EmptyState
+          variant="page"
           icon="shippingbox"
           title={t("settings.repo.removed")}
           detail={t("settings.repo.removedDetail")}
@@ -268,7 +271,10 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       </CardGroup>
 
       {repository.error ? (
-        <NoticeBanner tone="error" text={t("settings.shared.readFailed")} detail={repository.error} />
+        <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={t("settings.shared.readFailed")} detail={repository.error} />
+          <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={() => void refresh()} />
+        </VStack>
       ) : null}
 
       <CardGroup
@@ -357,7 +363,7 @@ function EntryRow({
           resizable={true}
           scaleToFill={true}
           frame={{ width: 36, height: 36 }}
-          clipShape={rect(8)}
+          clipShape={rect(radius.md)}
         />
       ) : (
         <IconBadge icon="shippingbox" />
@@ -367,7 +373,7 @@ function EntryRow({
           <Text font="body" fontWeight="medium" lineLimit={1}>
             {status.entry.name}
           </Text>
-          {status.entry.nsfw ? <TagPill text={t("settings.repo.r18")} color={palette.red} /> : null}
+          {status.entry.nsfw ? <Tag text={t("settings.repo.r18")} tone="danger" /> : null}
         </HStack>
         {status.entry.description ? (
           <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
