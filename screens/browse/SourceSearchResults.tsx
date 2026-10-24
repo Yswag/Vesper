@@ -25,12 +25,12 @@ import {
 import type { ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { comicLibrary } from "../../app/services"
-import { loadSearchSelections } from "../../app/searchOptions"
+import { loadSearchSelections, saveSearchSelection } from "../../app/searchOptions"
 import { aidokuFilterRows, loadFilterValues, saveFilterValues } from "../../app/aidokuSearchFilters"
 import { PageBackground, useTint } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { decodeSearchOptions, encodeSearchOptions } from "../../sources/searchOptions"
+import { decodeSearchOptions, defaultSearchValues, encodeSearchOptions, type SearchOptionRow, type SearchOptionValue } from "../../sources/searchOptions"
 import {
   activeFilterCount,
   defaultFilterValues,
@@ -44,10 +44,20 @@ import { Chip } from "../../design/chip"
 import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
+import { SearchFilterSheet } from "../search/SearchFilterSheet"
 
 interface FilterState {
   rows: AidokuFilterRow[]
   values: AidokuFilterValue[]
+}
+
+/** 有幾列的篩選跟源的預設不一樣（chip 上的數字）。 */
+function customOptionCount(rows: SearchOptionRow[], values: SearchOptionValue[]): number {
+  return rows.filter(
+    (row, index) =>
+      JSON.stringify(encodeSearchOptions([row], [values[index]])) !==
+      JSON.stringify(encodeSearchOptions([row], [row.initial]))
+  ).length
 }
 
 export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; term: string }) {
@@ -60,14 +70,39 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   const [attempt, setAttempt] = useState(0)
   /** Aidoku 源的搜尋篩選（列＋值）；其他源留在 null。 */
   const [filters, setFilters] = useState<FilterState | null>(null)
+  /** Venera 源的篩選值：跟聚合搜尋讀同一份（`search-options.json`）。 */
+  const [selections, setSelections] = useState<Record<string, Array<string | null>>>(loadSearchSelections())
+  /** Venera 篩選 sheet 的草稿與開關（按下「套用」才存）。 */
   /** 這一輪搜尋的 epoch：換關鍵字或重試時舊的一輪作廢，在飛的請求真的被中止。 */
   const run = useRef({ id: 0, controller: null as AbortController | null })
 
-  /** 這個源要帶的搜尋 options：跟搜尋分頁同一套（存過的篩選優先，否則是源的預設）。 */
-  function searchOptions(): Array<string | null> {
-    const rows = library.source(sourceKey)?.searchOptions ?? []
-    if (rows.length === 0) return []
-    return encodeSearchOptions(rows, decodeSearchOptions(rows, loadSearchSelections()[sourceKey]))
+  // Venera 源的搜尋選項（`search.optionList`）：存過的優先，否則是源的預設。
+  const optionRows = library.source(sourceKey)?.searchOptions ?? []
+  const optionValues = decodeSearchOptions(optionRows, selections[sourceKey])
+  const optionRequest = encodeSearchOptions(optionRows, optionValues)
+  const optionKey = JSON.stringify(optionRequest)
+  const optionCount = customOptionCount(optionRows, optionValues)
+
+  /** 開 Venera 篩選 sheet（草稿從現在的值開始，「套用」以外的操作不會寫回）。 */
+  /** 開 Venera 源的篩選 sheet；套用後存回同一份設定，`optionKey` 一變搜尋 effect 就重跑。 */
+  async function openOptions() {
+    await Navigation.present({
+      element: (
+        <NavigationStack>
+          <SearchFilterSheet
+            rows={optionRows}
+            values={optionValues}
+            defaults={defaultSearchValues(optionRows)}
+            onApply={next => {
+              const options = encodeSearchOptions(optionRows, next)
+              saveSearchSelection(sourceKey, options)
+              setSelections(previous => ({ ...previous, [sourceKey]: options }))
+            }}
+          />
+        </NavigationStack>
+      ),
+      modalPresentationStyle: "pageSheet",
+    })
   }
 
   // Aidoku 源的篩選定義要問源（舊版讀 filters.json、v2 問 runtime），所以是非同步的。
@@ -103,7 +138,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     setError("")
     void (async () => {
       try {
-        const result = await library.searchSource(sourceKey, term, searchOptions(), {
+        const result = await library.searchSource(sourceKey, term, optionRequest, {
           signal: controller.signal,
           filters: encodedFilters,
         })
@@ -125,7 +160,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     return (): void => {
       run.current.controller?.abort()
     }
-  }, [sourceKey, term, attempt, filterKey])
+  }, [sourceKey, term, attempt, filterKey, optionKey])
 
   /** 開篩選 sheet；套用後寫回存檔，搜尋 effect 會因為 `filterKey` 變了重跑。 */
   async function openFilters() {
@@ -270,8 +305,26 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     }
   }
 
-  /** 上緣那一排：`[篩選]` 後面每個篩選一顆膠囊，改過的排前面（Aidoku 的 `sortedFilters`）。 */
+  /** 上緣那一排篩選：Venera 源一顆（開自己的 sheet），Aidoku 源是 `[篩選]` 加每個篩選一顆。 */
   function filterBar(): VirtualNode {
+    // `filters` 只有 Aidoku 源會有值，所以這一段不會跟下面那排打到。
+    if (optionRows.length > 0 && !filters) {
+      return (
+        <HStack
+          spacing={6}
+          padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}
+          frame={{ maxWidth: "infinity", alignment: "leading" }}
+        >
+          <Chip
+            icon="line.3.horizontal.decrease"
+            detail={optionCount > 0 ? String(optionCount) : undefined}
+            selected={optionCount > 0}
+            onTap={() => void openOptions()}
+            accessibilityLabel={t("search.filterTitle")}
+          />
+        </HStack>
+      )
+    }
     if (!filters) return <VStack spacing={0} />
     const count = activeFilterCount(filters.rows, filters.values)
     const touched = new Set(encodedFilters.map(descriptor => descriptor.name))
@@ -286,6 +339,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     return (
       <ScrollView axes="horizontal">
         <HStack spacing={6} padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}>
+          {/* 改過的排前面（Aidoku 的 `sortedFilters`）。 */}
           <Chip
             icon="line.3.horizontal.decrease"
             detail={count > 0 ? String(count) : undefined}
@@ -317,10 +371,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       return <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
     }
     return (
-      <ScrollView
-        scrollDismissesKeyboard="interactively"
-        safeAreaInset={{ top: { content: filterBar() } }}
-      >
+      <ScrollView scrollDismissesKeyboard="interactively">
         <VStack
           spacing={0}
           frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
@@ -347,7 +398,12 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   return (
     <ZStack>
       <PageBackground />
-      <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}>
+      <VStack
+        spacing={0}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}
+        // 篩選那排釘在導覽列下：還在載入、0 筆或失敗時也要進得去（那正是要改篩選的時候）。
+        safeAreaInset={{ top: { content: filterBar() } }}
+      >
         {body()}
       </VStack>
     </ZStack>

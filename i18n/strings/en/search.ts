@@ -3,16 +3,11 @@
 export default {
   keyword: "Keyword",
 
-  all: "All",
-  sourcesPending: { one: "{n} source to search", other: "{n} sources to search" },
   noSources: "No enabled sources",
-  running: "Searching… {done}/{total}",
   noResults: "No results",
-
-  filter: "Filter",
-  updating: "Updating…",
-  filterChanged: "· Filters changed",
-  filterLabel: "Search filters for {name}",
+  rowCount: { one: "{n} result", other: "{n} results" },
+  openSource: "Open all results from {name}",
+  closedTitle: "No results or failed ({n})",
 
   filterTitle: "Search filters",
   filterApply: "Apply",
@@ -28,9 +23,4 @@ export default {
   history: "Search history",
   historyEmpty: "Type a keyword to search every enabled source",
   historyClear: "Clear search history",
-
-  sidebarLabel: "{label}, {status}",
-  sidebarFailed: "search failed",
-  sidebarPending: "waiting for results",
-  sidebarCount: { one: "{n} result", other: "{n} results" },
 }

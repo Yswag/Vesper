@@ -1,54 +1,65 @@
-// 搜尋頁面：包含左側來源清單（含結果計數）與右側漫畫網格，支援個別來源自訂篩選。
+// 搜尋頁面：送出關鍵字後，每個源一排（標題列＋橫向卡片排），順序照源清單；
+// 0 筆與失敗的源不佔主清單，收在最底一個可展開的區塊。
 
-import { AbortController, Button, Divider, GeometryReader, HStack, Image, ProgressView, ScrollView, Spacer, Text, VStack, ZStack, useEffect, useRef, useObservable, useState } from "scripting"
+import {
+  AbortController,
+  Button,
+  Divider,
+  GeometryReader,
+  HStack,
+  Image,
+  LazyHStack,
+  NavigationLink,
+  ScrollView,
+  Spacer,
+  Text,
+  VStack,
+  ZStack,
+  useEffect,
+  useObservable,
+  useRef,
+  useState,
+} from "scripting"
 
 import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { loadHistory, pushHistory, clearHistory } from "../../app/searchHistory"
-import { loadSearchSelections, saveSearchSelection } from "../../app/searchOptions"
+import { loadSearchSelections } from "../../app/searchOptions"
 import { setSearchTriggerListener } from "../../app/navigation"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
-import { ComicGrid, type ComicGridEntry } from "../../components/ComicGrid"
+import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
-import { comicGridMetrics, H_PADDING, H_SPACING, V_SPACING } from "../../components/comicGridMetrics"
+import { PageBackground } from "../../app/theme"
 import { Card } from "../../design/layout"
+import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { ActionRow } from "../../design/rows"
+import { fill, pageInsets, radius, rect, toneText } from "../../design/tokens"
+import { type ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { log } from "../../engine/log"
 import { type SourceSearchResult } from "../../sources/search"
 import {
   decodeSearchOptions,
-  defaultSearchValues,
   encodeSearchOptions,
-  hasCustomSearchOptions,
   type SearchOptionRow,
   type SearchOptionValue,
 } from "../../sources/searchOptions"
-import { SearchFilterSheet } from "./SearchFilterSheet"
-import { sourceSidebarLabel } from "./sidebarLabel"
-import { PageBackground, useTint } from "../../app/theme"
-import { fill, pageInsets, radius, rect, tagText, toneText } from "../../design/tokens"
+import { SourceSearchResults } from "../browse/SourceSearchResults"
+import { ComicDetailScreen } from "../shared/ComicDetailScreen"
+import { bangumiCardSize, type CardSize } from "../shared/comicMetrics"
 
 export function SearchScreen() {
   const library = comicLibrary()
-  const tint = useTint()
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState("")
   const [results, setResults] = useState<SourceSearchResult[]>([])
-  const [progress, setProgress] = useState({ done: 0, total: 0 })
   const [running, setRunning] = useState(false)
-  const [selected, setSelected] = useState<string | null>(null)
   const [history, setHistory] = useState<string[]>([])
   // 每個源存下來的篩選（"sourceKey" → 送去源的 options 陣列）。
+  // 這頁只讀不寫：篩選入口在單源搜尋頁，這裡只負責把存過的值帶進請求。
   const [selections, setSelections] = useState<Record<string, Array<string | null>>>({})
-  const [filterKey, setFilterKey] = useState<string | null>(null)
-  const [filterShown, setFilterShown] = useState(false)
-  const [draft, setDraft] = useState<SearchOptionValue[]>([])
-  /** 正在重跑篩選的那個源。 */
-  const [rerunning, setRerunning] = useState<string | null>(null)
   // 搜尋框展開狀態由系統綁定（勿手動設為 false，否則將觸發取消並切換分頁）
   const presented = useObservable(false)
 
@@ -102,8 +113,6 @@ export function SearchScreen() {
     setSubmitted(text)
     setRunning(true)
     setResults([])
-    setSelected(null)
-    setProgress({ done: 0, total: list.length })
     setHistory(pushHistory(text))
     if (Keyboard.visible) Keyboard.hide()
     try {
@@ -113,7 +122,6 @@ export function SearchScreen() {
           // 舊的一輪的進度可能還在飛回來的路上，對不上就丟掉。
           if (!current()) return
           setResults(snapshot.results)
-          setProgress({ done: snapshot.done, total: snapshot.total })
         },
         { signal: controller.signal }
       )
@@ -143,61 +151,6 @@ export function SearchScreen() {
     return encodeSearchOptions(rowsOf(key), valuesOf(key))
   }
 
-  function openFilter(key: string) {
-    setFilterKey(key)
-    setDraft(valuesOf(key))
-    setFilterShown(true)
-  }
-
-  function applyFilter() {
-    const key = filterKey
-    setFilterShown(false)
-    if (!key) return
-    const options = encodeSearchOptions(rowsOf(key), draft)
-    saveSearchSelection(key, options)
-    setSelections(previous => ({ ...previous, [key]: options }))
-    void rerunSource(key, options)
-  }
-
-  /** 改完篩選只重跑這一個源，其他 29 個不動。 */
-  async function rerunSource(key: string, options: Array<string | null>) {
-    if (!submitted) return
-    const id = runRef.current.id
-    setRerunning(key)
-    try {
-      // 跟著這一輪的 controller：離開畫面或換關鍵字時，這個重跑也會被取消。
-      const result = await library.searchSource(key, submitted, options, {
-        signal: runRef.current.controller?.signal,
-      })
-      // 這一輪已經被換掉了（使用者又搜了別的關鍵字）→ 不要把它併進新的結果。
-      if (runRef.current.id !== id) return
-      setResults(previous =>
-        previous.some(item => item.key === result.key)
-          ? previous.map(item => (item.key === result.key ? result : item))
-          : previous.concat(result)
-      )
-    } catch (error) {
-      if (!isAbortError(error)) log("warning", "search", `${key} 重新搜尋失敗`, error)
-    } finally {
-      setRerunning(null)
-    }
-  }
-
-  const byKey = new Map(results.map(result => [result.key, result]))
-  const visible: ComicGridEntry[] = []
-  for (const source of sources) {
-    if (selected && source.key !== selected) continue
-    const result = byKey.get(source.key)
-    if (!result) continue
-    for (const comic of result.comics) visible.push({ sourceKey: source.key, sourceName: source.name, comic })
-  }
-
-  const total = results.reduce((sum, result) => sum + result.comics.length, 0)
-  const selectedInfo = selected ? sources.find(source => source.key === selected) : undefined
-  const filterRows = selectedInfo ? selectedInfo.searchOptions : []
-  const filterCustom = selectedInfo ? hasCustomSearchOptions(filterRows, valuesOf(selectedInfo.key)) : false
-  const filterName = selectedInfo?.name ?? ""
-
   function handleKeywordChange(text: string) {
     setKeyword(text)
     if (text.trim() === "") {
@@ -205,7 +158,6 @@ export function SearchScreen() {
       runRef.current.id++
       setSubmitted("")
       setResults([])
-      setSelected(null)
       setRunning(false)
     }
   }
@@ -223,251 +175,256 @@ export function SearchScreen() {
         // 送出事件用 onSubmit(triggers: "search")：跨 30 個源跑一次要好幾秒，不適合逐字搜。
         searchable={{ value: keyword, onChanged: handleKeywordChange, prompt: t("search.keyword"), presented }}
         onSubmit={{ triggers: "search", action: () => void run(keyword) }}
-        sheet={
-          filterKey
-            ? {
-                isPresented: filterShown,
-                onChanged: setFilterShown,
-                content: (
-                  <VStack
-                    spacing={0}
-                    frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-                    presentationBackground="clear"
-                    glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
-                    presentationDetents={["medium", "large"]}
-                    presentationDragIndicator="visible"
-                    presentationCornerRadius={24}
-                  >
-                    <HStack alignment="center" padding={{ top: 18, horizontal: 20, bottom: 12 }} spacing={12}>
-                      <VStack alignment="leading" spacing={2}>
-                        <Text font="headline" fontWeight="bold">
-                          {t("search.filterTitle")}
-                        </Text>
-                        <Text font="caption2" foregroundStyle="secondaryLabel">
-                          {filterName}
-                        </Text>
-                      </VStack>
-                      <Spacer />
-                      <Button title={t("search.filterApply")} buttonStyle="glassProminent" action={applyFilter} />
-                    </HStack>
-
-                    <SearchFilterSheet
-                      rows={rowsOf(filterKey)}
-                      values={draft}
-                      onChanged={(index, value) =>
-                        setDraft(previous => previous.map((item, at) => (at === index ? value : item)))
-                      }
-                    />
-
-                    <VStack spacing={0} padding={{ bottom: 10 }}>
-                      <Divider />
-                      <ActionRow
-                        icon="arrow.counterclockwise"
-                        iconColor={tint.tint}
-                        title={t("search.filterReset")}
-                        onTap={() => setDraft(defaultSearchValues(rowsOf(filterKey)))}
-                      />
-                    </VStack>
-                  </VStack>
-                ),
-              }
-            : undefined
-        }
       >
-      {submitted.length === 0 ? (
-        <HistoryPanel history={history} onPick={term => void run(term)} onClear={() => setHistory(clearHistory())} />
-      ) : (
-        <HStack spacing={0} frame={{ maxHeight: "infinity" }}>
-          <SourceSidebar
-            sources={sources}
-            byKey={byKey}
-            selected={selected}
-            total={total}
-            running={running}
-            progress={progress}
-            onSelect={setSelected}
-          />
-          <Divider />
-          <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
-            {selectedInfo ? (
-              <HStack spacing={6} padding={{ horizontal: 12, top: 4 }} alignment="center">
-                <Text font="footnote" fontWeight="medium" foregroundStyle="secondaryLabel" lineLimit={1}>
-                  {filterName}
-                </Text>
-                {filterCustom ? (
-                  <Text font="caption2" foregroundStyle="tertiaryLabel">
-                    {t("search.filterChanged")}
-                  </Text>
-                ) : null}
-                <Spacer />
-                {filterRows.length > 0 ? (
-                  <Button buttonStyle="plain" action={() => openFilter(selectedInfo.key)} accessibilityLabel={t("search.filterLabel", { name: filterName })}>
-                    <HStack spacing={4} frame={{ minHeight: 36 }}>
-                      <Image systemName="line.3.horizontal.decrease" font="footnote" fontWeight="medium" foregroundStyle={tint.tint} />
-                      <Text font="subheadline" fontWeight="medium" foregroundStyle={tint.tint}>
-                        {rerunning === selectedInfo.key ? t("search.updating") : t("search.filter")}
-                      </Text>
-                    </HStack>
-                  </Button>
-                ) : null}
-              </HStack>
-            ) : null}
-
-            {visible.length > 0 ? (
-              <ComicGrid entries={visible} showSource={selected === null} />
-            ) : running ? (
-              <VStack
-                spacing={0}
-                frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-                onTapGesture={() => {
-                  if (Keyboard.visible) Keyboard.hide()
-                }}
-              >
-                <HStack spacing={8} padding={{ horizontal: pageInsets.horizontal, top: 10 }} frame={{ maxWidth: "infinity" }}>
-                  <ProgressView />
-                  <Text font="caption" foregroundStyle="secondaryLabel">
-                    {t("search.running", { done: progress.done, total: progress.total })}
-                  </Text>
-                  <Spacer />
-                </HStack>
-                <ScrollView>
-                  <SearchSkeleton />
-                </ScrollView>
-              </VStack>
-            ) : (
-              <VStack
-                frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-                onTapGesture={() => {
-                  if (Keyboard.visible) Keyboard.hide()
-                }}
-              >
-                <EmptyState variant="page" icon="magnifyingglass" title={t("search.noResults")} />
-              </VStack>
-            )}
-          </VStack>
-        </HStack>
-      )}
-    </VStack>
-  </ZStack>
+        {submitted.length === 0 ? (
+          <HistoryPanel history={history} onPick={term => void run(term)} onClear={() => setHistory(clearHistory())} />
+        ) : (
+          <SearchResults sources={sources} results={results} running={running} term={submitted} />
+        )}
+      </VStack>
+    </ZStack>
   )
 }
 
-/** 側邊欄：全部 + 每個源，右對齊結果數。順序照源的順序，跑完不會跳位。 */
-function SourceSidebar({
+/** 一輪聚合搜尋的結果：每個源一排，順序照源清單（回來的先後不影響排法）。 */
+export function SearchResults({
   sources,
-  byKey,
-  selected,
-  total,
+  results,
   running,
-  progress,
-  onSelect,
+  term,
+  closedOpen = false,
 }: {
   sources: ComicSourceInfo[]
-  byKey: Map<string, SourceSearchResult>
-  selected: string | null
-  total: number
+  results: SourceSearchResult[]
+  /** 這一輪還在跑：還沒回來的源先畫骨架排。 */
   running: boolean
-  progress: { done: number; total: number }
-  onSelect: (key: string | null) => void
+  /** 推入單源結果頁時要重搜的關鍵字。 */
+  term: string
+  /** 底部收合區一開始就展開（預覽要拍展開的樣子）。 */
+  closedOpen?: boolean
 }) {
-  const hasResults = byKey.size > 0
+  // 每排一樣寬：整個捲動視窗量一次就夠，卡片尺寸沿用首頁 Bangumi 卡。
+  const [width, setWidth] = useState(0)
+  const size = bangumiCardSize(width)
+  const byKey = new Map(results.map(result => [result.key, result]))
+  const rows = sources.filter(source => {
+    const result = byKey.get(source.key)
+    return result === undefined ? running : result.comics.length > 0
+  })
+  const empty = results.filter(result => result.comics.length === 0 || !!result.error)
+  const hits = results.reduce((sum, result) => sum + result.comics.length, 0)
+  // 全部源都 0 筆：整頁空狀態；這一輪失敗的源仍然要能看得到，所以只留它們。
+  const allEmpty = !running && hits === 0
+  const closed = allEmpty ? empty.filter(result => !!result.error) : empty
+
+  if (sources.length === 0) {
+    return <EmptyState variant="page" icon="tray" title={t("search.noSources")} />
+  }
+
   return (
-    <ScrollView frame={{ width: 134 }} scrollDismissesKeyboard="interactively">
-      <VStack alignment="leading" spacing={2} padding={{ vertical: 6, horizontal: 4 }}>
-        {hasResults || running ? (
-          <SidebarRow label={t("search.all")} count={hasResults ? total : null} active={selected === null} onTap={() => onSelect(null)} />
-        ) : null}
+    <ScrollView
+      scrollDismissesKeyboard="interactively"
+      background={
+        <GeometryReader>
+          {geometry => <WidthReporter width={geometry.size.width} onWidth={w => setWidth(Math.round(w))} />}
+        </GeometryReader>
+      }
+    >
+      <VStack
+        spacing={24}
+        padding={{ top: 12, bottom: pageInsets.bottom }}
+        frame={{ maxWidth: "infinity" }}
+        onTapGesture={() => {
+          if (Keyboard.visible) Keyboard.hide()
+        }}
+      >
+        {allEmpty ? <EmptyState variant="page" icon="magnifyingglass" title={t("search.noResults")} /> : null}
 
-        {hasResults || running
-          ? sources.map(source => {
-              const result = byKey.get(source.key)
-              const hasError = !!result?.error
-              return (
-                <SidebarRow
-                  key={source.key}
-                  label={source.name}
-                  count={result ? (hasError ? 0 : result.comics.length) : null}
-                  failed={hasError}
-                  active={selected === source.key}
-                  onTap={() => onSelect(source.key)}
-                />
-              )
-            })
-          : null}
+        {rows.map(source => (
+          <SourceRow key={source.key} source={source} result={byKey.get(source.key)} size={size} term={term} />
+        ))}
 
-        {hasResults || running ? null : (
-          <Text font="caption" foregroundStyle="tertiaryLabel" padding={{ horizontal: 8 }}>
-            {sources.length > 0 ? t("search.sourcesPending", { n: sources.length }) : t("search.noSources")}
-          </Text>
-        )}
-
-        {running ? (
-          <Text font="caption2" foregroundStyle="tertiaryLabel" padding={{ horizontal: 8, top: 6 }}>
-            {progress.done}/{progress.total}
-          </Text>
-        ) : null}
+        {closed.length > 0 ? <ClosedRows entries={closed} defaultOpen={closedOpen} /> : null}
       </VStack>
     </ScrollView>
   )
 }
 
-function SidebarRow({
-  label,
-  count,
-  failed,
-  active,
-  onTap,
+/** 一個源的排：整列推入該源的完整結果，下面是它的橫向卡片排（還沒回來就是骨架）。 */
+function SourceRow({
+  source,
+  result,
+  size,
+  term,
 }: {
-  label: string
-  count: number | null
-  failed?: boolean
-  active: boolean
-  onTap: () => void
+  source: ComicSourceInfo
+  result?: SourceSearchResult
+  size: CardSize
+  term: string
 }) {
-  const tint = useTint()
-  const hasHits = count != null && count > 0
   return (
-    <Button
-      action={onTap}
-      buttonStyle="plain"
-      frame={{ maxWidth: "infinity" }}
-      accessibilityLabel={sourceSidebarLabel({ label, failed, count })}
-      accessibilityAddTraits={active ? "isSelected" : undefined}
-    >
-      <HStack
-        spacing={4}
-        padding={{ horizontal: 8, vertical: 6 }}
-        frame={{ maxWidth: "infinity", minHeight: 40 }}
-        background={active ? tint.selectedRow : "clear"}
-        clipShape={rect(radius.md)}
+    <VStack spacing={4} frame={{ maxWidth: "infinity" }}>
+      <NavigationLink
+        destination={<SourceResultsScreen source={source} term={term} />}
+        buttonStyle="plain"
+        frame={{ maxWidth: "infinity" }}
+        accessibilityLabel={t("search.openSource", { name: source.name })}
       >
+        <HStack spacing={6} alignment="center" padding={{ horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>
+          <Text font="headline" fontWeight="bold" lineLimit={1}>
+            {source.name}
+          </Text>
+          {result ? (
+            <>
+              <Text font="caption" foregroundStyle="tertiaryLabel">
+                ·
+              </Text>
+              <Text font="footnote" foregroundStyle="secondaryLabel">
+                {t("search.rowCount", { n: result.comics.length })}
+              </Text>
+            </>
+          ) : null}
+          <Spacer />
+          <Chevron />
+        </HStack>
+      </NavigationLink>
+
+      {result ? (
+        <ScrollView axes="horizontal">
+          <LazyHStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
+            {result.comics.map(comic => (
+              <ResultCard key={comic.id} sourceKey={source.key} comic={comic} size={size} />
+            ))}
+          </LazyHStack>
+        </ScrollView>
+      ) : (
+        <RowSkeleton size={size} />
+      )}
+    </VStack>
+  )
+}
+
+/** 推入的那一頁：單源完整結果（它自己會用存過的篩選重搜一次）。 */
+function SourceResultsScreen({ source, term }: { source: ComicSourceInfo; term: string }) {
+  return (
+    <VStack
+      spacing={0}
+      navigationTitle={source.name}
+      navigationBarTitleDisplayMode="inline"
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+    >
+      <SourceSearchResults sourceKey={source.key} term={term} />
+    </VStack>
+  )
+}
+
+/** 結果卡：跟首頁橫向卡片排同一種（封面 lifted、書名靠左一行），不顯示源名（這一排就是那個源）。 */
+function ResultCard({ sourceKey, comic, size }: { sourceKey: string; comic: ComicListItem; size: CardSize }) {
+  const { width, height } = size
+  return (
+    <NavigationLink
+      destination={<ComicDetailScreen sourceKey={sourceKey} comicId={comic.id} title={comic.title} />}
+      buttonStyle="plain"
+    >
+      <VStack alignment="leading" spacing={6} frame={{ width }}>
+        <CoverImage
+          sourceKey={sourceKey}
+          url={comic.cover}
+          width={width}
+          height={height}
+          cornerRadius={radius.md}
+          title={comic.title}
+          lifted
+        />
         <Text
-          font="footnote"
+          font="caption"
+          fontWeight="medium"
+          foregroundStyle="label"
           lineLimit={1}
-          foregroundStyle={failed ? "secondaryLabel" : active ? "label" : hasHits ? "label" : "secondaryLabel"}
+          multilineTextAlignment="leading"
+          frame={{ width, alignment: "leading" }}
         >
-          {label}
+          {comic.title}
         </Text>
-        <Spacer />
-        {failed ? (
-          <Image systemName="exclamationmark.triangle.fill" font="caption2" foregroundStyle={tagText.danger} />
-        ) : count == null ? (
-          <ProgressView controlSize="small" />
-        ) : count > 0 ? (
-          <Text
-            font="caption2"
-            fontWeight={active ? "bold" : "medium"}
-            foregroundStyle={active ? tint.tint : "secondaryLabel"}
-          >
-            {String(count)}
-          </Text>
-        ) : (
-          <Text font="caption2" foregroundStyle="quaternaryLabel">
-            0
-          </Text>
-        )}
+      </VStack>
+    </NavigationLink>
+  )
+}
+
+// 骨架的字條：redacted 會把它畫成一塊灰。內容不會顯示。
+const SKELETON_TEXT = "XXXXXXXX"
+
+/** 還沒回來的源：跟真的那排同尺寸，結果到了版面不會跳。 */
+function RowSkeleton({ size }: { size: CardSize }) {
+  return (
+    <ScrollView axes="horizontal" scrollDisabled={true}>
+      <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
+        {[0, 1, 2, 3].map(index => (
+          <VStack key={index} alignment="leading" spacing={6} frame={{ width: size.width }}>
+            <VStack frame={{ width: size.width, height: size.height }} background={fill.surface} clipShape={rect(radius.md)} />
+            <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
+              {SKELETON_TEXT}
+            </Text>
+          </VStack>
+        ))}
       </HStack>
-    </Button>
+    </ScrollView>
+  )
+}
+
+/** 底部收合區：0 筆與失敗的源。失敗的那列帶 danger 小圖示，展開看得到原因。 */
+function ClosedRows({ entries, defaultOpen = false }: { entries: SourceSearchResult[]; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const title = t("search.closedTitle", { n: entries.length })
+  return (
+    <VStack spacing={6} padding={{ horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>
+      <Button
+        action={() => setOpen(!open)}
+        buttonStyle="plain"
+        frame={{ maxWidth: "infinity" }}
+        accessibilityLabel={title}
+        accessibilityAddTraits={open ? "isSelected" : undefined}
+      >
+        <HStack spacing={6} alignment="center" padding={{ vertical: 4 }} frame={{ maxWidth: "infinity" }}>
+          <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={1}>
+            {title}
+          </Text>
+          <Spacer />
+          <Image
+            systemName={open ? "chevron.up" : "chevron.down"}
+            font="caption"
+            fontWeight="semibold"
+            foregroundStyle="tertiaryLabel"
+          />
+        </HStack>
+      </Button>
+
+      {open ? (
+        <Card>
+          {entries.map((entry, index) => (
+            <VStack key={entry.key} spacing={0} frame={{ maxWidth: "infinity" }}>
+              {index > 0 ? <Divider padding={{ leading: 14 }} /> : null}
+              <VStack alignment="leading" spacing={2} padding={{ horizontal: 14, vertical: 10 }} frame={{ maxWidth: "infinity" }}>
+                <HStack spacing={6} alignment="center" frame={{ maxWidth: "infinity" }}>
+                  <Text font="subheadline" lineLimit={1}>
+                    {entry.name}
+                  </Text>
+                  {entry.error ? (
+                    <Image systemName="exclamationmark.triangle.fill" font="caption2" foregroundStyle={toneText.danger} />
+                  ) : null}
+                  <Spacer />
+                </HStack>
+                {entry.error ? (
+                  <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={3}>
+                    {entry.error}
+                  </Text>
+                ) : null}
+              </VStack>
+            </VStack>
+          ))}
+        </Card>
+      ) : null}
+    </VStack>
   )
 }
 
@@ -548,43 +505,5 @@ function HistoryPanel({
         </Card>
       </VStack>
     </ScrollView>
-  )
-}
-
-/** 骨架的字條：redacted 會把它畫成一塊灰。 */
-const SKELETON_TEXT = "XXXXXXXX"
-
-/** 搜尋中的網格骨架：跟載入後的格子同尺寸，結果到了版面不會跳。 */
-function SearchSkeleton({ rows = 3 }: { rows?: number }) {
-  const [width, setWidth] = useState(0)
-  const { columns, cellWidth, cellHeight } = comicGridMetrics(width)
-  return (
-    <VStack
-      spacing={V_SPACING}
-      padding={{ horizontal: H_PADDING, top: 12 }}
-      frame={{ maxWidth: "infinity" }}
-      background={
-        <GeometryReader>
-          {geometry => <WidthReporter width={geometry.size.width} onWidth={setWidth} />}
-        </GeometryReader>
-      }
-    >
-      {Array.from({ length: rows }).map((_, row) => (
-        <HStack key={row} spacing={H_SPACING}>
-          {Array.from({ length: columns }).map((__, column) => (
-            <VStack key={column} alignment="leading" spacing={6} frame={{ width: cellWidth }}>
-              <VStack
-                frame={{ width: cellWidth, height: cellHeight }}
-                background={fill.surface}
-                clipShape={rect(radius.md)}
-              />
-              <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
-                {SKELETON_TEXT}
-              </Text>
-            </VStack>
-          ))}
-        </HStack>
-      ))}
-    </VStack>
   )
 }
