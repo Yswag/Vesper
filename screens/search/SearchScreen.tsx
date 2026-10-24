@@ -9,6 +9,7 @@ import {
   HStack,
   Image,
   LazyHStack,
+  LazyVStack,
   NavigationLink,
   ScrollView,
   Spacer,
@@ -50,6 +51,9 @@ import { SourceSearchResults } from "../browse/SourceSearchResults"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { bangumiCardSize, type CardSize } from "../shared/comicMetrics"
 
+/** 搜尋中：進度最多每 300ms 上一次畫面（合併更新）。 */
+const PROGRESS_FLUSH_MS = 300
+
 export function SearchScreen() {
   const library = comicLibrary()
   const [keyword, setKeyword] = useState("")
@@ -67,6 +71,10 @@ export function SearchScreen() {
    * 搜尋輪次管理（epoch + AbortController）：新關鍵字或離開畫面時作廢舊輪次並中止請求。
    */
   const runRef = useRef({ id: 0, controller: null as AbortController | null })
+  /** 還沒沖出去的最新進度快照（合併更新用）。 */
+  const pendingRef = useRef<SourceSearchResult[] | null>(null)
+  /** 排定的沖出計時器；0 是合法 handle，判斷用 `!== null`。 */
+  const flushTimerRef = useRef<number | null>(null)
 
   // 訂閱來源異動與語言切換
   useSubscription(library.onChange, subscribeLocale)
@@ -83,6 +91,7 @@ export function SearchScreen() {
       // 離開畫面：這一輪作廢（id 一換，回來的東西就不會再 setState）並取消在飛的請求。
       runRef.current.id++
       abortCurrentRun()
+      cancelFlush()
       setSearchTriggerListener(null)
     }
   }, [])
@@ -90,6 +99,15 @@ export function SearchScreen() {
   function abortCurrentRun() {
     runRef.current.controller?.abort()
     runRef.current.controller = null
+  }
+
+  /** 取消排定的沖出，並丟掉還沒沖出去的快照。 */
+  function cancelFlush() {
+    if (flushTimerRef.current !== null) {
+      clearTimeout(flushTimerRef.current)
+      flushTimerRef.current = null
+    }
+    pendingRef.current = null
   }
 
   async function run(term: string) {
@@ -101,8 +119,10 @@ export function SearchScreen() {
       return
     }
 
-    // 新的一輪：先把上一輪取消（在飛的請求真的中止，排隊中的源不再派出）。
+    // 新的一輪：先把上一輪取消（在飛的請求真的中止，排隊中的源不再派出），
+    // 上一輪還沒沖出去的進度一併丟掉。
     abortCurrentRun()
+    cancelFlush()
     const id = ++runRef.current.id
     const controller = new AbortController()
     runRef.current.controller = controller
@@ -115,13 +135,24 @@ export function SearchScreen() {
     setResults([])
     setHistory(pushHistory(text))
     if (Keyboard.visible) Keyboard.hide()
+
+    // 進度一次一源回來：先放著，最多每 300ms 才 setResults 一次（trailing）。
+    // 不然 30 個源就是幾秒內 30 次整頁重繪，搜尋中滑動會卡。
+    const flush = () => {
+      flushTimerRef.current = null
+      const snapshot = pendingRef.current
+      pendingRef.current = null
+      if (snapshot && current()) setResults(snapshot)
+    }
+
     try {
       await library.search(
         { keyword: text, optionsOf: key => requestOf(key) },
         snapshot => {
           // 舊的一輪的進度可能還在飛回來的路上，對不上就丟掉。
           if (!current()) return
-          setResults(snapshot.results)
+          pendingRef.current = snapshot.results
+          if (flushTimerRef.current === null) flushTimerRef.current = setTimeout(flush, PROGRESS_FLUSH_MS)
         },
         { signal: controller.signal }
       )
@@ -130,6 +161,12 @@ export function SearchScreen() {
       if (!isAbortError(error)) log("warning", "search", `「${text}」搜尋未完成`, error)
     } finally {
       if (current()) {
+        // 這一輪結束：排定中的沖出作廢，直接補上最後一份結果。
+        if (flushTimerRef.current !== null) clearTimeout(flushTimerRef.current)
+        flushTimerRef.current = null
+        const snapshot = pendingRef.current
+        pendingRef.current = null
+        if (snapshot) setResults(snapshot)
         setRunning(false)
         runRef.current.controller = null
       }
@@ -156,6 +193,7 @@ export function SearchScreen() {
     if (text.trim() === "") {
       abortCurrentRun()
       runRef.current.id++
+      cancelFlush()
       setSubmitted("")
       setResults([])
       setRunning(false)
@@ -230,7 +268,7 @@ export function SearchResults({
         </GeometryReader>
       }
     >
-      <VStack
+      <LazyVStack
         spacing={24}
         padding={{ top: 12, bottom: pageInsets.bottom }}
         frame={{ maxWidth: "infinity" }}
@@ -245,7 +283,7 @@ export function SearchResults({
         ))}
 
         {closed.length > 0 ? <ClosedRows entries={closed} defaultOpen={closedOpen} /> : null}
-      </VStack>
+      </LazyVStack>
     </ScrollView>
   )
 }
