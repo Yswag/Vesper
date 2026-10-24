@@ -61,6 +61,13 @@ export const tagTone = {
   love: "rgba(255, 45, 85, 0.12)",
 } as const
 
+/** 有色標籤的字色：深色用 `palette`，淺色用系統「增強對比」那一階（亮橘、亮紅壓在淺底上讀不到）。 */
+export const tagText: Record<keyof typeof tagTone, DynamicShapeStyle> = {
+  danger: { dark: palette.red, light: "#D70015" },
+  warning: { dark: palette.orange, light: "#C93400" },
+  love: { dark: palette.pink, light: "#D30F45" },
+}
+
 /** 容器與狀態填色（非互動的部分）。互動色（選中底、描邊、榜單）在 `useTint()` 的 `Tint` 裡。 */
 export const fill = {
   /** 次要容器（標籤、輸入框底）。 */
@@ -77,6 +84,8 @@ export const fill = {
   scrimSoft: "rgba(0, 0, 0, 0.18)",
   /** 封面上的「開啟中」遮罩（蓋住封面、中間放轉圈）。 */
   coverScrim: "rgba(0, 0, 0, 0.45)",
+  /** 中性玻璃底（分頁指示點的靜態圓點）：極輕灰，只留一點折射霧感。 */
+  glassNeutral: "rgba(128, 128, 128, 0.12)",
   /** 幾近透明但可命中測試的點擊層。 */
   invisible: "rgba(0, 0, 0, 0.001)",
   /** 閱讀器畫布：純黑。 */

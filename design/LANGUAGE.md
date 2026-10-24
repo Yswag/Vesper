@@ -55,7 +55,7 @@
 
 - 一律 `components/CoverImage`，傳 `title`：沒圖時用標題雜湊挑主題色盤畫漸層＋首字（同標題同色）；載入中是 surface 底＋小轉圈。
 - 圖上的短角標一律 `design/CoverBadge`（`tone="danger"` 給「來源已移除」）；頁面不自刻 `ultraThinMaterial` 膠囊。網格裡頁數在左上、時間／狀態在下緣。
-- 網格書名靠左、一行（兩行會讓同一排的格子高低不齊）；副標與來源一行。
+- 網格與橫向卡片排的書名靠左、一行（兩行會讓同一排的格子高低不齊）；副標與來源一行。
 
 ## 標籤與膠囊
 
@@ -70,7 +70,9 @@
 
 ## 間距
 
-`pageInsets`、`pageSpacing`、`sectionSpacing`、`cardGap`、`rowPadding` 等都在 `design/tokens.ts`，頁面直接用名字。
+`pageInsets`、`pageSpacing`、`sectionSpacing`、`cardGap`、`rowPadding` 等都在 `design/tokens.ts`，頁面直接用名字。左右邊距全 App 都是 `pageInsets.horizontal`（16），網格也一樣；網格卡片間距 9、橫向卡片排 12。
+
+載入中的區塊用「骨架」：跟載入後同尺寸的 `fill.surface` 封面塊＋`redacted="placeholder"` 的字，資料來了版面不跳。不要用一行「載入中…」的字佔位。
 
 ## 閱讀器
 
@@ -95,3 +97,4 @@
 - 2026-10-24 對話框預設按鈕用強調色；對話框拿掉陰影。
 - 2026-10-24 `Card` 一律帶高光邊（`hairlineStroke`），頁面手刻的卡片全部改用 `Card`；來源已移除改成封面下緣 danger 角標，下面不再重複來源名。
 - 2026-10-24 詳情頁：資訊標籤改 `Tag`、章節工具列改 `Chip compact`；頂部氛圍光暈維持原版（Canvas 淡出版實機壞掉，撤回）；網格書名改一行。
+- 2026-10-24 首頁：hero 白字改語意色；有色標籤字色淺色用深一階（`tagText`）；橫向卡片書名靠左；網格邊距 12→16；載入改骨架。

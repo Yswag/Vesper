@@ -11,7 +11,6 @@ import {
   LazyHStack,
   NavigationLink,
   ProgressView,
-  RoundedRectangle,
   ScrollView,
   Spacer,
   Text,
@@ -31,10 +30,12 @@ import { type SourceSearchResult } from "../../sources/search"
 import { defaultSearchValues, encodeSearchOptions } from "../../sources/searchOptions"
 import { bangumiSourceCardSize, heroCoverSize } from "../shared/comicMetrics"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
-import { CoverImage } from "../../components/CoverImage"
+import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
+import { CoverBadge } from "../../design/CoverBadge"
+import { Tag } from "../../design/Tag"
 import { EmptyState } from "../../design/status"
-import { badgePadding, capsule, fill, hairlineStroke, pageInsets, pageSpacing, palette, radius, rect, tagPadding } from "../../design/tokens"
+import { badgePadding, capsule, coverShadow, fill, pageInsets, pageSpacing, radius, rect } from "../../design/tokens"
 import { PageBackground, useTint } from "../../app/theme"
 import { navigateToSearch } from "../../app/navigation"
 
@@ -209,15 +210,12 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                   scaleToFill={true}
                   frame={{ width: hero.width, height: hero.height }}
                   clipShape={rect(radius.md)}
-                  shadow={{ color: "rgba(0, 0, 0, 0.45)", radius: 14, x: 0, y: 6 }}
+                  shadow={coverShadow}
                 />
               ) : (
-                <VStack
-                  frame={{ width: hero.width, height: hero.height }}
-                  background={fill.surface}
-                  clipShape={rect(radius.md)}
-                  shadow={{ color: "rgba(0, 0, 0, 0.45)", radius: 14, x: 0, y: 6 }}
-                />
+                <ZStack shadow={coverShadow}>
+                  <CoverPlaceholder title={title} width={hero.width} height={hero.height} cornerRadius={radius.md} />
+                </ZStack>
               )}
 
               <VStack
@@ -245,17 +243,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                 {/* 評分與榜單徽章 */}
                 <HStack spacing={6}>
                   {subject.score ? (
-                    <HStack
-                      spacing={4}
-                      padding={badgePadding}
-                      background={fill.score}
-                      clipShape={capsule()}
-                    >
-                      <Image systemName="star.fill" font="caption2" foregroundStyle={palette.orange} />
-                      <Text font="caption" fontWeight="bold" foregroundStyle={palette.orange}>
-                        {subject.score.toFixed(1)}
-                      </Text>
-                    </HStack>
+                    <Tag icon="star.fill" tone="warning" text={subject.score.toFixed(1)} />
                   ) : null}
 
                   {subject.rank && subject.rank > 0 ? (
@@ -292,17 +280,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
               <ScrollView axes="horizontal" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
                   {subject.tags.map((tag, i) => (
-                    <HStack
-                      key={`tag:${i}:${tag}`}
-                      padding={tagPadding}
-                      background="ultraThinMaterial"
-                      clipShape={rect(radius.md)}
-                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
-                    >
-                      <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
-                        #{tag}
-                      </Text>
-                    </HStack>
+                    <Tag key={`tag:${i}:${tag}`} text={`#${tag}`} />
                   ))}
                 </HStack>
               </ScrollView>
@@ -340,7 +318,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                     !isLongSummary || descExpanded
                       ? "secondaryLabel"
                       : {
-                          colors: ["secondaryLabel", "secondaryLabel", "rgba(142, 142, 147, 0.05)"],
+                          colors: ["secondaryLabel", "secondaryLabel", fill.fade],
                           startPoint: "top",
                           endPoint: "bottom",
                         }
@@ -424,15 +402,8 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                               height={sourceCard.height}
                               cornerRadius={radius.md}
                             />
-                            <HStack
-                              padding={{ horizontal: 6, vertical: 3 }}
-                              background="ultraThinMaterial"
-                              clipShape={rect(radius.sm)}
-                              offset={{ x: -6, y: -6 }}
-                            >
-                              <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                                {source.name}
-                              </Text>
+                            <HStack offset={{ x: -6, y: -6 }}>
+                              <CoverBadge text={source.name} maxWidth={source.name.length > 12 ? sourceCard.width - 12 : undefined} />
                             </HStack>
                           </ZStack>
 

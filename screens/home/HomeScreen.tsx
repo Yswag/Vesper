@@ -3,14 +3,16 @@
 import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color } from "scripting"
 
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
-import { CoverImage } from "../../components/CoverImage"
+import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
+import { CoverBadge } from "../../design/CoverBadge"
+import { Tag } from "../../design/Tag"
 import { WidthReporter } from "../../components/WidthReporter"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
 import { EmptyState } from "../../design/status"
-import { capsule, cardBackgroundStrong, coverStroke, fill, hairlineStroke, palette, radius, rect, sectionSpacing } from "../../design/tokens"
+import { capsule, coverShadow, coverStroke, fill, radius, rect } from "../../design/tokens"
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
@@ -187,7 +189,6 @@ export function HomeScreen() {
                         {item.image ? (
                           <ZStack
                             frame={{ width: 124, height: 179 }}
-                            shadow={{ color: "rgba(0, 0, 0, 0.30)", radius: 6, x: 0, y: 3 }}
                             matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
                           >
                             <Image
@@ -196,6 +197,7 @@ export function HomeScreen() {
                               scaleToFill={true}
                               frame={{ width: 124, height: 179 }}
                               clipShape={rect(radius.md)}
+                              shadow={coverShadow}
                               overlay={
                                 <RoundedRectangle
                                   cornerRadius={radius.md}
@@ -205,13 +207,18 @@ export function HomeScreen() {
                             />
                           </ZStack>
                         ) : (
-                          <VStack
+                          <ZStack
                             frame={{ width: 124, height: 179 }}
-                            background={fill.surface}
-                            clipShape={rect(radius.md)}
+                            shadow={coverShadow}
                             matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
-                            shadow={{ color: "rgba(0, 0, 0, 0.35)", radius: 6, x: 0, y: 3 }}
-                          />
+                          >
+                            <CoverPlaceholder
+                              title={item.name_cn || item.name}
+                              width={124}
+                              height={179}
+                              cornerRadius={radius.md}
+                            />
+                          </ZStack>
                         )}
 
                         {/* 右側資訊區 */}
@@ -236,29 +243,19 @@ export function HomeScreen() {
                             ) : null}
 
                             {item.score && item.score > 0 ? (
-                              <HStack
-                                spacing={4}
-                                padding={{ horizontal: 6, vertical: 2 }}
-                                background="rgba(255, 149, 0, 0.25)"
-                                clipShape={rect(radius.sm)}
-                              >
-                                <Image systemName="star.fill" font="caption2" foregroundStyle={palette.orange} />
-                                <Text font="caption2" fontWeight="bold" foregroundStyle={palette.orange}>
-                                  {item.score.toFixed(1)}
-                                </Text>
-                              </HStack>
+                              <Tag icon="star.fill" tone="warning" text={item.score.toFixed(1)} />
                             ) : null}
                           </HStack>
 
                           {/* 大標題（2 行上限，不遮擋）
                               用 title3 而不是 headline：它是這一頁最大的一本書，
-                              不該比「繼續閱讀／熱門新作」那些區塊標題（同為 title3）還小。 */}
+                              不該比「繼續閱讀／熱門新作」那些區塊標題（同為 title3）還小。
+                              字色吃系統語意色：hero 背後的模糊封面只有 0.35，淺色主題時白字讀不到。 */}
                           <Text
                             font="title3"
                             fontWeight="bold"
-                            foregroundStyle="white"
+                            foregroundStyle="label"
                             lineLimit={2}
-                            shadow={{ color: "rgba(0, 0, 0, 0.6)", radius: 4, x: 0, y: 1 }}
                           >
                             {item.name_cn || item.name}
                           </Text>
@@ -266,16 +263,16 @@ export function HomeScreen() {
                           {/* 標籤 · 作者 */}
                           <HStack spacing={4} alignment="center">
                             {item.tags && item.tags.length > 0 ? (
-                              <Text font="caption2" fontWeight="medium" foregroundStyle="rgba(255, 255, 255, 0.85)">
+                              <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
                                 {item.tags.slice(0, 2).join(" · ")}
                               </Text>
                             ) : null}
                             {item.author ? (
                               <>
-                                <Text font="caption2" foregroundStyle="rgba(255, 255, 255, 0.4)">
+                                <Text font="caption2" foregroundStyle="tertiaryLabel">
                                   ·
                                 </Text>
-                                <Text font="caption2" foregroundStyle="rgba(255, 255, 255, 0.75)" lineLimit={1}>
+                                <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
                                   {item.author}
                                 </Text>
                               </>
@@ -286,7 +283,7 @@ export function HomeScreen() {
                           {item.summary ? (
                             <Text
                               font="caption2"
-                              foregroundStyle="rgba(255, 255, 255, 0.65)"
+                              foregroundStyle="secondaryLabel"
                               lineLimit={2}
                               padding={{ top: 1 }}
                             >
@@ -305,14 +302,14 @@ export function HomeScreen() {
                     <Spacer />
                     <GlassEffectContainer spacing={6}>
                       <ZStack alignment="leading" frame={{ width: (heroItems.length - 1) * 16 + 6, height: 16 }}>
-                        {/* 靜態各圓點底座（極輕灰玻璃 0.12，去除厚重折射霧感） */}
+                        {/* 靜態各圓點底座（極輕灰玻璃，去除厚重折射霧感） */}
                         <HStack spacing={10} alignment="center" frame={{ height: 16 }}>
                           {heroItems.map((_, i) => (
                             <VStack
                               key={i}
                               frame={{ width: 6, height: 6 }}
                               glassEffect={{
-                                glass: UIGlass.regular().tint("rgba(128, 128, 128, 0.12)"),
+                                glass: UIGlass.regular().tint(fill.glassNeutral),
                                 shape: capsule("circular"),
                               }}
                             />
@@ -336,6 +333,7 @@ export function HomeScreen() {
                 ) : null}
               </VStack>
             )}
+            {heroItems.length === 0 && loadingFeed ? <HeroSkeleton /> : null}
 
             {/* 1. 繼續閱讀區塊（若有進度才展示，保留一鍵接續） */}
             {progress.length > 0 ? (
@@ -380,7 +378,7 @@ export function HomeScreen() {
                   </LazyHStack>
                 </ScrollView>
               ) : loadingFeed ? (
-                <FeedLoadingPlaceholder />
+                <RowSkeleton size={bangumiCard} onWidth={setBangumiCarouselWidth} />
               ) : (
                 <FeedEmptyPlaceholder />
               )}
@@ -409,7 +407,7 @@ export function HomeScreen() {
                   </LazyHStack>
                 </ScrollView>
               ) : loadingFeed ? (
-                <FeedLoadingPlaceholder />
+                <RowSkeleton size={bangumiCard} onWidth={setBangumiCarouselWidth} />
               ) : (
                 <FeedEmptyPlaceholder />
               )}
@@ -439,7 +437,7 @@ export function HomeScreen() {
                   </LazyHStack>
                 </ScrollView>
               ) : loadingFeed ? (
-                <FeedLoadingPlaceholder />
+                <RowSkeleton size={bangumiCard} onWidth={setBangumiCarouselWidth} />
               ) : (
                 <FeedEmptyPlaceholder />
               )}
@@ -481,15 +479,15 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
     .filter(Boolean)
     .join(" · ")
   const { width, height } = size
+  const episodeText = openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")
   const [opening, setOpening] = useState(false)
 
   const card = (
-    <VStack alignment="center" spacing={6} frame={{ width }}>
+    <VStack alignment="leading" spacing={6} frame={{ width }}>
       {/* 封面 + 懸浮閱讀話數標籤 */}
       <ZStack
         alignment="bottomTrailing"
         frame={{ width, height }}
-        shadow={{ color: "rgba(0, 0, 0, 0.35)", radius: 6, x: 0, y: 3 }}
       >
         {source ? (
           <CoverImage
@@ -498,20 +496,20 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
             width={width}
             height={height}
             cornerRadius={radius.md}
+            title={entry.title}
+            lifted={true}
           />
         ) : (
-          <VStack
-            frame={{ width, height }}
-            background={fill.surface}
-            clipShape={rect(radius.md)}
-          />
+          <ZStack shadow={coverShadow}>
+            <CoverPlaceholder title={entry.title} width={width} height={height} cornerRadius={radius.md} />
+          </ZStack>
         )}
 
         {/* 原位 In-place 微載入指示層（封面暗化 + 微轉圈） */}
         {opening ? (
           <ZStack
             frame={{ width, height }}
-            background="rgba(0, 0, 0, 0.45)"
+            background={fill.coverScrim}
             clipShape={rect(radius.md)}
             alignment="center"
           >
@@ -519,21 +517,9 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
           </ZStack>
         ) : null}
 
-        {/* 進度標籤：固定靠右下角，純話數精巧膠囊 */}
-        <HStack
-          offset={{ x: -6, y: -6 }}
-          frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
-        >
-          <HStack
-            padding={{ horizontal: 6, vertical: 3 }}
-            background="ultraThinMaterial"
-            clipShape={rect(radius.sm)}
-            frame={{ maxWidth: width - 12, alignment: "trailing" }}
-          >
-            <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-              {openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")}
-            </Text>
-          </HStack>
+        {/* 進度標籤：固定靠右下角，純話數精巧膠囊（源給的長標題才夾寬） */}
+        <HStack offset={{ x: -6, y: -6 }}>
+          <CoverBadge text={episodeText} maxWidth={episodeText.length > 12 ? width - 12 : undefined} />
         </HStack>
       </ZStack>
 
@@ -543,8 +529,8 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
         fontWeight="medium"
         foregroundStyle="label"
         lineLimit={1}
-        multilineTextAlignment="center"
-        frame={{ width, alignment: "center" }}
+        multilineTextAlignment="leading"
+        frame={{ width, alignment: "leading" }}
       >
         {entry.title}
       </Text>
@@ -554,7 +540,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
         font="caption2"
         foregroundStyle="tertiaryLabel"
         lineLimit={1}
-        frame={{ width, alignment: "center" }}
+        frame={{ width, alignment: "leading" }}
       >
         {sourceLabel}
       </Text>
@@ -614,7 +600,7 @@ function BangumiCard({
       buttonStyle="plain"
     >
       <VStack
-        alignment="center"
+        alignment="leading"
         spacing={6}
         frame={{ width }}
       >
@@ -622,7 +608,6 @@ function BangumiCard({
         <ZStack
           alignment="bottomTrailing"
           frame={{ width, height }}
-          shadow={{ color: "rgba(0, 0, 0, 0.35)", radius: 6, x: 0, y: 3 }}
           matchedTransitionSource={namespace ? { id: sourceID, namespace } : undefined}
         >
           {subject.image ? (
@@ -632,6 +617,7 @@ function BangumiCard({
               scaleToFill={true}
               frame={{ width, height }}
               clipShape={rect(radius.md)}
+              shadow={coverShadow}
               overlay={
                 <RoundedRectangle
                   cornerRadius={radius.md}
@@ -640,38 +626,18 @@ function BangumiCard({
               }
             />
           ) : (
-            <VStack
-              frame={{ width, height }}
-              background={fill.surface}
-              clipShape={rect(radius.md)}
-            />
+            <ZStack shadow={coverShadow}>
+              <CoverPlaceholder title={title} width={width} height={height} cornerRadius={radius.md} />
+            </ZStack>
           )}
 
-          {/* 評分或排名徽章：與探索頁 (ComicGrid) 完全一致的 ultraThinMaterial 毛玻璃 */}
-          <HStack offset={{ x: -6, y: -6 }}>
+          {/* 排名或評分角標（圖上的短角標一律 CoverBadge）；
+              fixedSize 讓它抱內容寬，不然 ZStack 會把它拉成整張封面寬、角標就跑到中左。 */}
+          <HStack offset={{ x: -6, y: -6 }} fixedSize={{ horizontal: true, vertical: false }}>
             {showRank && subject.rank && subject.rank > 0 ? (
-              <HStack
-                padding={{ horizontal: 6, vertical: 3 }}
-                background="ultraThinMaterial"
-                clipShape={rect(radius.sm)}
-              >
-                <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                  #{subject.rank}
-                </Text>
-              </HStack>
+              <CoverBadge text={`#${subject.rank}`} />
             ) : subject.score && subject.score > 0 ? (
-              <HStack
-                spacing={3}
-                padding={{ horizontal: 6, vertical: 3 }}
-                background="ultraThinMaterial"
-                clipShape={rect(radius.sm)}
-                alignment="center"
-              >
-                <Image systemName="star.fill" font="caption2" foregroundStyle={palette.orange} />
-                <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                  {subject.score.toFixed(1)}
-                </Text>
-              </HStack>
+              <CoverBadge icon="star.fill" text={subject.score.toFixed(1)} />
             ) : null}
           </HStack>
         </ZStack>
@@ -682,8 +648,8 @@ function BangumiCard({
           fontWeight="medium"
           foregroundStyle="label"
           lineLimit={1}
-          multilineTextAlignment="center"
-          frame={{ width, alignment: "center" }}
+          multilineTextAlignment="leading"
+          frame={{ width, alignment: "leading" }}
         >
           {title}
         </Text>
@@ -692,18 +658,46 @@ function BangumiCard({
   )
 }
 
-function FeedLoadingPlaceholder() {
+// 載入中的骨架：尺寸跟載入後的版面一樣，資料來了畫面不會跳。文字用 redacted 畫成灰條，內容不會顯示。
+const SKELETON_TEXT = "XXXXXXXXXXXX"
+
+/** hero 輪播的骨架：同樣 207 高的主體＋16 高的分頁點那一列。 */
+function HeroSkeleton() {
   return (
-    <VStack
-      alignment="center"
-      spacing={8}
-      padding={{ vertical: 36, horizontal: 20 }}
-      frame={{ maxWidth: "infinity" }}
-    >
-      <Text foregroundStyle="secondaryLabel" font="subheadline">
-        {t("home.feedLoading")}
-      </Text>
+    <VStack spacing={8} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("home.feedLoading")}>
+      <HStack
+        spacing={15}
+        alignment="center"
+        frame={{ maxWidth: "infinity", height: 207 }}
+        padding={{ horizontal: 16, vertical: 14 }}
+      >
+        <VStack frame={{ width: 124, height: 179 }} background={fill.surface} clipShape={rect(radius.md)} />
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }} redacted="placeholder">
+          <Text font="title3" fontWeight="bold" lineLimit={1}>{SKELETON_TEXT}</Text>
+          <Text font="caption2" lineLimit={1}>{SKELETON_TEXT}</Text>
+          <Text font="caption2" lineLimit={2}>{SKELETON_TEXT.repeat(4)}</Text>
+        </VStack>
+      </HStack>
+      <HStack frame={{ height: 16 }} />
     </VStack>
+  )
+}
+
+/** 橫向卡片排的骨架：跟真的卡片同尺寸，也替真的那排量寬。 */
+function RowSkeleton({ size, onWidth }: { size: CardSize; onWidth: (width: number) => void }) {
+  return (
+    <ScrollView axes="horizontal" scrollDisabled={true} background={carouselWidthProbe(onWidth)}>
+      <HStack spacing={12} padding={{ horizontal: 16, vertical: 8 }} accessibilityLabel={t("home.feedLoading")}>
+        {[0, 1, 2, 3].map(index => (
+          <VStack key={index} alignment="leading" spacing={6} frame={{ width: size.width }}>
+            <VStack frame={{ width: size.width, height: size.height }} background={fill.surface} clipShape={rect(radius.md)} />
+            <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
+              {SKELETON_TEXT}
+            </Text>
+          </VStack>
+        ))}
+      </HStack>
+    </ScrollView>
   )
 }
 

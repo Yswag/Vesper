@@ -1,4 +1,7 @@
-export const H_PADDING = 12
+import { pageInsets } from "../design/tokens"
+
+/** 跟頁面左右邊距一致，封面左緣才會對齊上面的標題與切換列。 */
+export const H_PADDING = pageInsets.horizontal
 export const H_SPACING = 9
 export const V_SPACING = 16
 /** Cover height / width. */
