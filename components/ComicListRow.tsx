@@ -20,6 +20,7 @@ export function ComicListRow({
   coverOverlay,
   trailing,
   onTap,
+  coverTransition,
 }: {
   sourceKey: string
   cover?: string
@@ -35,6 +36,8 @@ export function ComicListRow({
   trailing?: VirtualNode
   /** 整列可點時給；外面包了 Button／NavigationLink 就不要給。 */
   onTap?: () => void
+  /** 封面當 zoom 轉場的來源（推入的詳情頁用同一組 id／namespace）。 */
+  coverTransition?: { id: string; namespace: NamespaceID }
 }) {
   return (
     <HStack
@@ -45,7 +48,7 @@ export function ComicListRow({
       contentShape={onTap ? "rect" : undefined}
       onTapGesture={onTap}
     >
-      <ZStack frame={LIST_COVER}>
+      <ZStack frame={LIST_COVER} matchedTransitionSource={coverTransition}>
         <CoverImage
           sourceKey={sourceKey}
           url={cover}

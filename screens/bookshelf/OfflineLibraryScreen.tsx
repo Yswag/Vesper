@@ -6,7 +6,7 @@
 // 長按刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
 // 書架把它放在左右滑翻頁的容器裡，左滑會被刪除搶走，所以刪除收在長按選單。
 
-import { Button, LazyVStack, NavigationLink, VStack } from "scripting"
+import { Button, LazyVStack, NamespaceReader, NavigationLink, VStack } from "scripting"
 
 import { isActive } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -106,8 +106,12 @@ export function OfflineLibraryScreen() {
   }
 
   return (
+    <NamespaceReader>
+      {offlineNs => (
     <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
       {groups.map(group => {
+        // 封面 zoom 進離線作品頁（跟收藏、歷史推詳情一樣）。
+        const zoomID = `offline:${groupId(group.sourceKey, group.comicId)}`
         // 還在下載的章不能直接刪（任務跑完手上那一張會把 manifest 寫回去）：只能先取消。
         const downloads = group.chapters.map(chapter => comicLibrary().downloadState(chapter.key))
         const active = group.chapters.filter((_, index) => isActive(downloads[index].state))
@@ -143,6 +147,7 @@ export function OfflineLibraryScreen() {
                   comicId={group.comicId}
                   title={group.title}
                   cover={group.cover}
+                  zoomFrom={{ sourceID: zoomID, namespace: offlineNs }}
                 />
               }
             >
@@ -152,6 +157,7 @@ export function OfflineLibraryScreen() {
                   cover={group.cover}
                   title={group.title}
                   subtitle={group.sourceName}
+                  coverTransition={{ id: zoomID, namespace: offlineNs }}
                   detail={t("bookshelf.chapterStats", {
                     done: group.completedChapters,
                     total: group.chapters.length,
@@ -165,5 +171,7 @@ export function OfflineLibraryScreen() {
         )
       })}
     </LazyVStack>
+      )}
+    </NamespaceReader>
   )
 }

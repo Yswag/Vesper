@@ -21,6 +21,8 @@ export default {
   emptyHistoryDetail: "已閱讀的章節和作品會自動排在這裡。",
   emptyOfflineTitle: "沒有離線內容",
   emptyOfflineDetail: "在漫畫詳情頁下載章節，即可離線閱讀。",
+  /** 歷史列長按選單：推入漫畫詳情頁（點一下是直接續讀）。 */
+  openDetail: "前往詳情",
 
   /** 源被刪掉之後紀錄還留著（刪源不清書架）：收藏格子裡的來源名稱位置顯示這一句。 */
   sourceRemoved: "已移除",

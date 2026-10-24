@@ -41,10 +41,12 @@ export interface ComicGridProps {
   footer?: VirtualNode
   /** 最後一格出現在畫面上時呼叫（用在「捲到底自動載入下一頁」）。 */
   onLastAppear?: () => void
+  /** 長按一格跳出的選單項目（不給就沒有長按選單）。 */
+  menuItems?: (entry: ComicGridEntry) => VirtualNode
 }
 
 /** 只有格子，不含 ScrollView。 */
-export function ComicGridLayout({ entries, showSource = false, onLastAppear }: ComicGridProps) {
+export function ComicGridLayout({ entries, showSource = false, onLastAppear, menuItems }: ComicGridProps) {
   const [containerWidth, setContainerWidth] = useState(0)
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
   const measured = containerWidth > 0
@@ -89,6 +91,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                   // 見 dev/probe-cover-overflow.tsx 的 `mode:"wide"`（一排 6 張 765pt 會壞、3 張 378pt 正常）。
                   frame={{ width: cellWidth, maxHeight: "infinity", alignment: "top" }}
                   onAppear={containerWidth > 0 && index === lastIndex ? onLastAppear : undefined}
+                  contextMenu={menuItems ? { menuItems: menuItems(entry) } : undefined}
                 >
                   <ZStack
                     alignment="bottomTrailing"

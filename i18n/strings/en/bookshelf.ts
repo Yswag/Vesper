@@ -12,6 +12,7 @@ export default {
   emptyHistoryDetail: "Chapters and titles you read show up here automatically.",
   emptyOfflineTitle: "Nothing downloaded",
   emptyOfflineDetail: "Download chapters from a comic's detail page to read them offline.",
+  openDetail: "View details",
 
   sourceRemoved: "Removed",
   sourceRemovedTitle: "Source removed",

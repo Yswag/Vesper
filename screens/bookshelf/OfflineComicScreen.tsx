@@ -42,12 +42,15 @@ export function OfflineComicScreen({
   comicId,
   title,
   cover,
+  zoomFrom,
 }: {
   sourceKey: string
   comicId: string
   /** 推入時手上有（清單算好的）就用，沒有才從 manifest 找。 */
   title?: string
   cover?: string
+  /** 從書架列的封面 zoom 進來。 */
+  zoomFrom?: { sourceID: string; namespace: NamespaceID }
 }) {
   const library = comicLibrary()
   // 下載進度、刪除、書架進度都會讓這裡重繪（`onChange` 已含離線層）；語言也是訂閱源。
@@ -83,7 +86,7 @@ export function OfflineComicScreen({
   // 刪光了就留在這一頁說清楚（沒有可用的 pop；回上一頁是使用者的手勢）。
   if (rows.length === 0) {
     return (
-      <PageScroll title={comicTitle}>
+      <PageScroll title={comicTitle} zoomFrom={zoomFrom}>
         <EmptyState
           variant="page"
           icon="arrow.down.circle"
@@ -95,7 +98,7 @@ export function OfflineComicScreen({
   }
 
   return (
-    <PageScroll title={comicTitle}>
+    <PageScroll title={comicTitle} zoomFrom={zoomFrom}>
       <HStack spacing={16} alignment="top" frame={{ maxWidth: "infinity" }}>
         <CoverImage
           sourceKey={sourceKey}

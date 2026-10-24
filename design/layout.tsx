@@ -20,6 +20,7 @@ export function PageScroll({
   leading,
   trailing,
   onRefresh,
+  zoomFrom,
   children,
 }: {
   title?: string
@@ -29,12 +30,14 @@ export function PageScroll({
   trailing?: () => VirtualNode | null
   /** 下拉重整回呼。 */
   onRefresh?: () => Promise<void> | void
+  /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
+  zoomFrom?: { sourceID: string; namespace: NamespaceID }
   children: StackChildren
 }) {
   const Leading = leading
   const Trailing = trailing
   return (
-    <ZStack>
+    <ZStack navigationTransition={zoomFrom ? { type: "zoom", ...zoomFrom } : undefined}>
       <PageBackground />
       <VStack
         spacing={0}

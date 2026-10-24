@@ -12,6 +12,7 @@ export default {
   emptyHistoryDetail: "已阅读的章节和作品会自动排在这里。",
   emptyOfflineTitle: "没有离线内容",
   emptyOfflineDetail: "在漫画详情页下载章节，即可离线阅读。",
+  openDetail: "前往详情",
 
   sourceRemoved: "已移除",
   sourceRemovedTitle: "来源已移除",

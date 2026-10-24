@@ -5,7 +5,9 @@
 
 import {
   Button,
+  Group,
   LazyVStack,
+  NamespaceReader,
   ProgressView,
   ScrollView,
   TabView,
@@ -26,10 +28,12 @@ import { GlassFilter } from "../../design/GlassFilter"
 import { EmptyState } from "../../design/status"
 import { fill, palette, radius, rect } from "../../design/tokens"
 import { ComicListRow, LIST_COVER } from "../../components/ComicListRow"
+import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import {
   clearProgress,
   listFavorites,
   listProgress,
+  removeFavorite,
   type Favorite,
   type Progress,
 } from "../../library/bookshelf"
@@ -46,6 +50,8 @@ export function BookshelfScreen() {
   // TabView 的翻頁狀態是 Observable，picker 的值是 state：兩邊互相回寫（見下面的訂閱）。
   const selection = useObservable<string>("favorites")
   const [tab, setTab] = useState<BookshelfTab>("favorites")
+  // 歷史列長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
+  const [detailOf, setDetailOf] = useState<Progress | null>(null)
 
   // 源清單、書架（收藏／歷史）與離線層一變就重繪；回傳的 refresh 給 onAppear 用。
   // 語言是第三個訂閱源：三個分頁與每一列的字都在 render 時取自 `t()`（子元件跟著重繪）。
@@ -73,11 +79,31 @@ export function BookshelfScreen() {
       onAppear={() => refresh()}
     >
       <PageBackground />
+      <NamespaceReader>
+        {historyNs => (
       <VStack
         spacing={0}
         navigationTitle={t("common.tabs.bookshelf")}
         navigationBarTitleDisplayMode="inline"
         toolbar={{ topBarLeading: <LeadingToolbar /> }}
+        navigationDestination={{
+          content: detailOf ? (
+            // key 跟著漫畫換：同一個推頁位置會沿用上一本的狀態，先閃一下舊的詳情。
+            <ComicDetailScreen
+              key={`${detailOf.sourceKey}:${detailOf.comicId}`}
+              sourceKey={detailOf.sourceKey}
+              comicId={detailOf.comicId}
+              title={detailOf.title}
+              zoomTransition={{ sourceID: historyZoomID(detailOf), namespace: historyNs }}
+            />
+          ) : (
+            <VStack />
+          ),
+          isPresented: detailOf !== null,
+          onChanged: presented => {
+            if (!presented) setDetailOf(null)
+          },
+        }}
       >
         <VStack padding={{ horizontal: 16, vertical: 8 }}>
           <GlassFilter
@@ -124,6 +150,13 @@ export function BookshelfScreen() {
                     }
                   })}
                   showSource={true}
+                  menuItems={entry => (
+                    <Button
+                      title={t("detail.unfavorite")}
+                      role="destructive"
+                      action={() => removeFavorite(entry.sourceKey, entry.comic.id)}
+                    />
+                  )}
                 />
               )}
             </ScrollView>
@@ -144,6 +177,8 @@ export function BookshelfScreen() {
                       key={`${entry.sourceKey}:${entry.comicId}`}
                       entry={entry}
                       onDelete={() => clearProgress(entry.sourceKey, entry.comicId)}
+                      onOpenDetail={() => setDetailOf(entry)}
+                      zoomNamespace={historyNs}
                     />
                   ))}
                 </LazyVStack>
@@ -157,12 +192,31 @@ export function BookshelfScreen() {
           </VStack>
         </TabView>
       </VStack>
+        )}
+      </NamespaceReader>
     </ZStack>
   )
 }
 
 /** 閱讀歷史卡片：小封面 + 標題／來源·話數／頁數·時間，右側箭頭。 */
-export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: () => void }) {
+/** 歷史列封面 → 詳情頁的 zoom 配對 id。 */
+function historyZoomID(entry: Progress): string {
+  return `history:${entry.sourceKey}:${entry.comicId}`
+}
+
+export function HistoryCard({
+  entry,
+  onDelete,
+  onOpenDetail,
+  zoomNamespace,
+}: {
+  entry: Progress
+  onDelete?: () => void
+  /** 長按選單的「前往詳情」；源不在了就不給（詳情頁要源）。 */
+  onOpenDetail?: () => void
+  /** 給了就把封面當 zoom 來源（跟收藏網格推詳情一樣）。 */
+  zoomNamespace?: NamespaceID
+}) {
   const source = comicLibrary().source(entry.sourceKey)
   // 判斷是否可走離線續讀；若無離線則退回線上來源開啟
   const offline = canResumeOffline(
@@ -202,6 +256,7 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
         subtitle={meta}
         subtitleColor={openable ? "secondaryLabel" : palette.red}
         detail={detail}
+        coverTransition={zoomNamespace ? { id: historyZoomID(entry), namespace: zoomNamespace } : undefined}
         footer={barValue !== null ? <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} /> : undefined}
         coverOverlay={
           opening ? (
@@ -239,14 +294,20 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
     body
   )
 
-  if (!onDelete) return row
+  const canOpenDetail = onOpenDetail !== undefined && source !== undefined
+  if (!onDelete && !canOpenDetail) return row
 
-  // 刪除放長按選單、不給左滑：這一頁在左右滑翻頁的容器裡，左滑會被刪除搶走。
+  // 動作放長按選單、不給左滑：這一頁在左右滑翻頁的容器裡，左滑會被列的動作搶走。
   return (
     <VStack
       spacing={0}
       contextMenu={{
-        menuItems: <Button title={t("common.delete")} role="destructive" action={onDelete} />,
+        menuItems: (
+          <Group>
+            {canOpenDetail ? <Button title={t("bookshelf.openDetail")} action={onOpenDetail} /> : null}
+            {onDelete ? <Button title={t("common.delete")} role="destructive" action={onDelete} /> : null}
+          </Group>
+        ),
       }}
     >
       {row}
