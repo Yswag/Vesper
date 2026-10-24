@@ -8,7 +8,7 @@
 import { Divider, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
 import { radius, rect } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
@@ -23,6 +23,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
   const [password, setPassword] = useState("")
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     reloadRegistry()
@@ -31,6 +32,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
     const detected = found ? accountSpec(found) : null
     setSpec(detected)
     setValues(detected ? detected.cookieFields.map(() => "") : [])
+    setLoaded(true)
   }, [sourceKey])
 
   /** `label` 是動作本身（`settings.shared.login`…）：狀態與對話框標題都用它。 */
@@ -60,7 +62,9 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
     <PageScroll title={login}>
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
-      {!spec ? (
+      {!loaded ? (
+        <PageLoading />
+      ) : !spec ? (
         <EmptyState variant="page" icon="person.crop.circle" title={t("settings.account.noLoginNeeded")} />
       ) : loggedIn ? (
         <CardGroup title={t("settings.shared.loggedIn")} footnote={t("settings.account.logoutFootnote")}>

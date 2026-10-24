@@ -4,7 +4,7 @@
 import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
 import { Tag } from "../../design/Tag"
 import { Chip } from "../../design/chip"
 import { Caption, Footnote } from "../../design/text"
@@ -29,10 +29,12 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [status, setStatus] = useState<StatusNotice | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   function sync() {
     setRepository(getRepository(repositoryUrl))
     setEntries(repositoryEntries(repositoryUrl))
+    setLoaded(true)
   }
 
   useEffect(() => {
@@ -225,6 +227,14 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
     setBatchProgress(null)
     setBusy(false)
+  }
+
+  if (!loaded) {
+    return (
+      <PageScroll title={t("settings.shared.repository")}>
+        <PageLoading />
+      </PageScroll>
+    )
   }
 
   if (!repository) {

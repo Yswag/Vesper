@@ -5,7 +5,7 @@ import { Divider, Navigation, NavigationLink, VStack, useEffect, useState } from
 import { Chip } from "../../design/chip"
 import { Card, CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner } from "../../design/status"
+import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 import {
@@ -26,11 +26,21 @@ import { SourceSettingsScreen } from "./SourceSettingsScreen"
 export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
   const dismiss = Navigation.useDismiss()
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     reloadRegistry()
     setSource(findSource(sourceKey))
+    setLoaded(true)
   }, [sourceKey])
+
+  if (!loaded) {
+    return (
+      <PageScroll title={t("settings.sourceDetail.title")}>
+        <PageLoading />
+      </PageScroll>
+    )
+  }
 
   if (!source) {
     return (
