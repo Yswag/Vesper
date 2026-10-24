@@ -67,6 +67,7 @@
 - 頁面頂端的切換 chip 列（分類、排行週期）掛在捲動區的 `safeAreaBar`（edge top），貼在導覽列下；配 `scrollEdgeEffectStyle` soft。不要 `scrollEdgeEffectHidden`（導覽列標題會失去底）。
 - 圖上角標夾寬用 `CoverBadge maxWidth`，它會抱內容寬；不在角標外自己加 `frame maxWidth`。
 - 帶左滑的卡片列，外層也要 `clipShape={cardShape}`：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
+- 左右滑翻頁的容器（`TabView` page）裡不放左滑動作：列的左滑會吃掉翻頁；刪除改長按選單（`contextMenu`）。
 
 ## 浮層
 

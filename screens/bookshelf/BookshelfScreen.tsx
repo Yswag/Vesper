@@ -1,15 +1,18 @@
 // 書架：閱讀紀錄 + 收藏 + 離線內容。
-// 支援 segmented picker 切換「收藏庫」、「歷史紀錄」與「離線內容」，並支援 3 欄海報網格與列表視圖。
-// 離線分頁內嵌 OfflineLibraryScreen（純內容，共用這一頁的捲動區）。
+// 三個分區用 TabView 左右滑換頁，上方 segmented picker 雙向同步；收藏是 3 欄海報網格，歷史是列表。
+// 離線分頁內嵌 OfflineLibraryScreen（純內容，自己帶捲動區）。
+// 刪除放長按選單、不給左滑：列上有左滑動作時，左滑會被它搶走，翻不了頁。
 
 import {
   Button,
   LazyVStack,
   ProgressView,
   ScrollView,
+  TabView,
   VStack,
   ZStack,
   useEffect,
+  useObservable,
   useState,
 } from "scripting"
 
@@ -37,8 +40,12 @@ import { formatHistoryTime } from "./historyTime"
 import { comicCount, subscribeOffline } from "../../engine/offline"
 import { PageBackground } from "../../app/theme"
 
+type BookshelfTab = "favorites" | "history" | "offline"
+
 export function BookshelfScreen() {
-  const [tab, setTab] = useState<"favorites" | "history" | "offline">("favorites")
+  // TabView 的翻頁狀態是 Observable，picker 的值是 state：兩邊互相回寫（見下面的訂閱）。
+  const selection = useObservable<string>("favorites")
+  const [tab, setTab] = useState<BookshelfTab>("favorites")
 
   // 源清單、書架（收藏／歷史）與離線層一變就重繪；回傳的 refresh 給 onAppear 用。
   // 語言是第三個訂閱源：三個分頁與每一列的字都在 render 時取自 `t()`（子元件跟著重繪）。
@@ -46,6 +53,13 @@ export function BookshelfScreen() {
 
   useEffect(() => {
     refresh()
+  }, [])
+
+  // 左右滑只動 selection：回寫 state，上方 picker 才跟著換。
+  useEffect(() => {
+    const listener = (value: string) => setTab(value as BookshelfTab)
+    selection.subscribe(listener)
+    return () => selection.unsubscribe(listener)
   }, [])
 
   const progress = listProgress()
@@ -65,70 +79,85 @@ export function BookshelfScreen() {
         navigationBarTitleDisplayMode="inline"
         toolbar={{ topBarLeading: <LeadingToolbar /> }}
       >
-      <VStack padding={{ horizontal: 16, vertical: 8 }}>
-        <GlassFilter
-          title={t("bookshelf.pickerLabel")}
-          value={tab}
-          onChanged={setTab}
-          options={[
-            { value: "favorites", title: t("bookshelf.favoritesCount", { n: favorites.length }) },
-            { value: "history", title: t("bookshelf.historyCount", { n: progress.length }) },
-            { value: "offline", title: t("bookshelf.offlineCount", { n: offlineCount }) },
-          ]}
-        />
-      </VStack>
-
-      <ScrollView scrollContentBackground="hidden">
-        {tab === "favorites" ? (
-          favorites.length === 0 ? (
-            <EmptyState
-              variant="page"
-              icon="heart"
-              title={t("bookshelf.emptyFavoritesTitle")}
-              detail={t("bookshelf.emptyFavoritesDetail")}
-            />
-          ) : (
-            <ComicGridLayout
-              entries={favorites.map(item => {
-                const source = comicLibrary().source(item.sourceKey)
-                return {
-                  sourceKey: item.sourceKey,
-                  sourceName: source?.name,
-                  removed: source === undefined,
-                  comic: {
-                    id: item.comicId,
-                    title: item.title,
-                    cover: item.cover,
-                    tags: [],
-                  },
-                }
-              })}
-              showSource={true}
-            />
-          )
-        ) : tab === "offline" ? (
-          <OfflineLibraryScreen />
-        ) : progress.length === 0 ? (
-          <EmptyState
-            variant="page"
-            icon="clock.arrow.circlepath"
-            title={t("bookshelf.emptyHistoryTitle")}
-            detail={t("bookshelf.emptyHistoryDetail")}
+        <VStack padding={{ horizontal: 16, vertical: 8 }}>
+          <GlassFilter
+            title={t("bookshelf.pickerLabel")}
+            value={tab}
+            onChanged={(value: BookshelfTab) => {
+              setTab(value)
+              // 點選擇器：selection 一變 TabView 就翻頁（帶動畫）。
+              withAnimation(() => selection.setValue(value))
+            }}
+            options={[
+              { value: "favorites", title: t("bookshelf.favoritesCount", { n: favorites.length }) },
+              { value: "history", title: t("bookshelf.historyCount", { n: progress.length }) },
+              { value: "offline", title: t("bookshelf.offlineCount", { n: offlineCount }) },
+            ]}
           />
-          ) : (
-            <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
-              {progress.map(entry => (
-                <HistoryCard
-                  key={`${entry.sourceKey}:${entry.comicId}`}
-                  entry={entry}
-                  onDelete={() => clearProgress(entry.sourceKey, entry.comicId)}
+        </VStack>
+
+        {/* 每一頁各自一個捲動區：三頁的捲動位置互不影響。翻頁容器預設停在 tab bar 上緣，延伸到底下才跟其他 tab 一樣。 */}
+        <TabView selection={selection} tabViewStyle="pageNeverDisplayIndex" ignoresSafeArea={{ edges: "bottom" }}>
+          <VStack tag="favorites">
+            <ScrollView scrollContentBackground="hidden">
+              {favorites.length === 0 ? (
+                <EmptyState
+                  variant="page"
+                  icon="heart"
+                  title={t("bookshelf.emptyFavoritesTitle")}
+                  detail={t("bookshelf.emptyFavoritesDetail")}
                 />
-              ))}
-            </LazyVStack>
-          )}
-      </ScrollView>
-    </VStack>
-  </ZStack>
+              ) : (
+                <ComicGridLayout
+                  entries={favorites.map(item => {
+                    const source = comicLibrary().source(item.sourceKey)
+                    return {
+                      sourceKey: item.sourceKey,
+                      sourceName: source?.name,
+                      removed: source === undefined,
+                      comic: {
+                        id: item.comicId,
+                        title: item.title,
+                        cover: item.cover,
+                        tags: [],
+                      },
+                    }
+                  })}
+                  showSource={true}
+                />
+              )}
+            </ScrollView>
+          </VStack>
+          <VStack tag="history">
+            <ScrollView scrollContentBackground="hidden">
+              {progress.length === 0 ? (
+                <EmptyState
+                  variant="page"
+                  icon="clock.arrow.circlepath"
+                  title={t("bookshelf.emptyHistoryTitle")}
+                  detail={t("bookshelf.emptyHistoryDetail")}
+                />
+              ) : (
+                <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
+                  {progress.map(entry => (
+                    <HistoryCard
+                      key={`${entry.sourceKey}:${entry.comicId}`}
+                      entry={entry}
+                      onDelete={() => clearProgress(entry.sourceKey, entry.comicId)}
+                    />
+                  ))}
+                </LazyVStack>
+              )}
+            </ScrollView>
+          </VStack>
+          <VStack tag="offline">
+            <ScrollView scrollContentBackground="hidden">
+              <OfflineLibraryScreen />
+            </ScrollView>
+          </VStack>
+        </TabView>
+      </VStack>
+    </ZStack>
   )
 }
 
@@ -212,21 +241,12 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
 
   if (!onDelete) return row
 
-  // 左滑刪除：靠外層容器的 swipeActionsContainer（iOS 27）才對自訂列生效。
+  // 刪除放長按選單、不給左滑：這一頁在左右滑翻頁的容器裡，左滑會被刪除搶走。
   return (
     <VStack
       spacing={0}
-      trailingSwipeActions={{
-        allowsFullSwipe: true,
-        actions: [
-          <Button
-            key="delete"
-            title={t("common.delete")}
-            systemImage="trash"
-            role="destructive"
-            action={onDelete}
-          />,
-        ],
+      contextMenu={{
+        menuItems: <Button title={t("common.delete")} role="destructive" action={onDelete} />,
       }}
     >
       {row}

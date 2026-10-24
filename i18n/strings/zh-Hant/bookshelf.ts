@@ -49,7 +49,7 @@ export default {
   noDownloadedChapter: "還沒有下載完的章節",
   /** 離線章節列：下載失敗（只有這個狀態用紅字）。 */
   downloadFailed: "下載失敗",
-  /** 左滑刪除整部的確認；`{n}` 是章數。 */
+  /** 長按選單刪除整部的確認；`{n}` 是章數。 */
   deleteComicConfirm: "刪除《{title}》的 {n} 個離線章節？",
   /** 左滑刪除單章的確認。 */
   deleteChapterConfirm: "刪除「{chapter}」的離線內容？",

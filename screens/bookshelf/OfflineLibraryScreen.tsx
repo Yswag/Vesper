@@ -1,10 +1,10 @@
 // 離線書架：已下載內容的入口。整頁只讀離線層（標題／封面／頁數／大小都在 manifest 裡），
 // 點一部漫畫推入它的離線章節頁（OfflineComicScreen），不經過詳情頁、不發任何請求。
 //
-// 純內容元件（沒有自己的 ScrollView）：書架的「離線內容」分頁內嵌它，
-// 跟收藏／歷史共用同一個捲動區（見票 04）。
+// 純內容元件：自己的捲動區由書架那一頁提供（見票 04）。
 //
-// 左滑刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
+// 長按刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
+// 書架把它放在左右滑翻頁的容器裡，左滑會被刪除搶走，所以刪除收在長按選單。
 
 import { Button, LazyVStack, NavigationLink, VStack } from "scripting"
 
@@ -15,7 +15,6 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicListRow } from "../../components/ComicListRow"
 import { Card } from "../../design/layout"
 import { EmptyState } from "../../design/status"
-import { cardShape } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import {
   comicGroupKey,
@@ -107,28 +106,22 @@ export function OfflineLibraryScreen() {
   }
 
   return (
-    // 自訂列的左滑要靠外層容器的 swipeActionsContainer（iOS 27）才生效。
-    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
+    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
       {groups.map(group => {
         // 還在下載的章不能直接刪（任務跑完手上那一張會把 manifest 寫回去）：只能先取消。
         const downloads = group.chapters.map(chapter => comicLibrary().downloadState(chapter.key))
         const active = group.chapters.filter((_, index) => isActive(downloads[index].state))
 
         return (
-          // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
+          // 長按選單掛在外層（點一下仍然是 NavigationLink 的推入）。
           <VStack
             key={groupId(group.sourceKey, group.comicId)}
             spacing={0}
-            clipShape={cardShape}
-            trailingSwipeActions={{
-              allowsFullSwipe: false,
-              actions: [
+            contextMenu={{
+              menuItems:
                 active.length > 0 ? (
                   <Button
-                    key="cancel"
                     title={t("settings.downloads.cancel")}
-                    systemImage="xmark.circle.fill"
-                    role="destructive"
                     action={() => {
                       const library = comicLibrary()
                       for (const chapter of active) library.cancelDownload(chapter.key)
@@ -136,14 +129,11 @@ export function OfflineLibraryScreen() {
                   />
                 ) : (
                   <Button
-                    key="delete"
                     title={t("common.delete")}
-                    systemImage="trash.fill"
                     role="destructive"
                     action={() => void deleteComic(group)}
                   />
                 ),
-              ],
             }}
           >
             <NavigationLink
