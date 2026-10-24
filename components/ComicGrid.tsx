@@ -101,13 +101,13 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                       // 不能用 aspectRatio(fill)：橫式封面會被畫成比格子寬很多（1000×395 → 440pt），
                       // 外溢的區塊會蓋到鄰格、把第一格的點擊搶走（點第一本會開第二本）。
                       // 對照：dev/probe-nav-image.tsx（fill 壞、fit 正常、割好的 fill 正常）。
-                      cornerRadius={radius.cover}
+                      cornerRadius={radius.md}
                     />
                     {entry.comic.pageCount ? (
                       <HStack
                         padding={{ horizontal: 6, vertical: 3 }}
                         background="ultraThinMaterial"
-                        clipShape={rect(radius.tag)}
+                        clipShape={rect(radius.sm)}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
                         offset={{ x: 6, y: -6 }}
                       >
@@ -127,7 +127,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                         <HStack
                           padding={{ horizontal: 6, vertical: 3 }}
                           background="ultraThinMaterial"
-                          clipShape={rect(radius.tag)}
+                          clipShape={rect(radius.sm)}
                           frame={{ maxWidth: cellWidth - 12, alignment: "trailing" }}
                         >
                           <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>

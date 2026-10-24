@@ -401,7 +401,7 @@ function ComicGroupCard({
               url={group.cover}
               width={40}
               height={56}
-              cornerRadius={radius.tag}
+              cornerRadius={radius.sm}
             />
           ) : (
             <IconBadge icon="book.closed.fill" size={40} color="secondaryLabel" />

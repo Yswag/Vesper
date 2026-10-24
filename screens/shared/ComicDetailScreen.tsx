@@ -445,7 +445,7 @@ export function ComicDetailScreen({
                       url={comicCover}
                       width={hero.width}
                       height={hero.height}
-                      cornerRadius={radius.cover}
+                      cornerRadius={radius.md}
                     />
                   </ZStack>
                 </NavigationLink>
@@ -485,8 +485,8 @@ export function ComicDetailScreen({
                   <HStack
                     padding={badgePadding}
                     background="ultraThinMaterial"
-                    clipShape={rect(radius.tag)}
-                    overlay={<RoundedRectangle cornerRadius={radius.tag} stroke={hairlineStroke} />}
+                    clipShape={rect(radius.sm)}
+                    overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
                   >
                     <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
                       {t("detail.chapterCount", { n: chapters.length })}
@@ -496,8 +496,8 @@ export function ComicDetailScreen({
                   <HStack
                     padding={badgePadding}
                     background="ultraThinMaterial"
-                    clipShape={rect(radius.tag)}
-                    overlay={<RoundedRectangle cornerRadius={radius.tag} stroke={hairlineStroke} />}
+                    clipShape={rect(radius.sm)}
+                    overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
                   >
                     <Text font="caption2" foregroundStyle="secondaryLabel">
                       {detail.sourceName}
@@ -508,8 +508,8 @@ export function ComicDetailScreen({
                     <HStack
                       padding={badgePadding}
                       background="ultraThinMaterial"
-                      clipShape={rect(radius.tag)}
-                      overlay={<RoundedRectangle cornerRadius={radius.tag} stroke={hairlineStroke} />}
+                      clipShape={rect(radius.sm)}
+                      overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
                     >
                       <Text font="caption2" foregroundStyle="secondaryLabel">
                         {statusText(detail.status)}
@@ -598,7 +598,7 @@ export function ComicDetailScreen({
                   destination={<ReaderScreen {...readerProps} epId={targetEpId} initialPage={resumePage} />}
                   buttonStyle="plain"
                 >
-                  <GlassSurface shape={rect(radius.card)} tint={tintColor} interactive={true}>
+                  <GlassSurface shape={rect(radius.lg)} tint={tintColor} interactive={true}>
                     <HStack
                       spacing={10}
                       alignment="center"
@@ -629,7 +629,7 @@ export function ComicDetailScreen({
                 </NavigationLink>
               ) : chapters.length > 0 ? (
                 // 有章節但全部鎖定：不讓入口消失，改成看得懂的狀態。
-                <GlassSurface shape={rect(radius.card)}>
+                <GlassSurface shape={rect(radius.lg)}>
                   <HStack
                     spacing={10}
                     alignment="center"
@@ -659,7 +659,7 @@ export function ComicDetailScreen({
                   })
                 }}
               >
-                <GlassSurface shape={rect(radius.card)} interactive={true}>
+                <GlassSurface shape={rect(radius.lg)} interactive={true}>
                   <VStack alignment="center" spacing={4} frame={{ width: 54, height: 64 }}>
                     <Image
                       systemName={favorite ? "heart.fill" : "heart"}
@@ -686,7 +686,7 @@ export function ComicDetailScreen({
                   buttonStyle="plain"
                   accessibilityLabel={t("comments.title")}
                 >
-                  <GlassSurface shape={rect(radius.card)} interactive={true}>
+                  <GlassSurface shape={rect(radius.lg)} interactive={true}>
                     <VStack alignment="center" spacing={4} frame={{ width: 54, height: 64 }}>
                       <Image
                         systemName="bubble.left.and.bubble.right"
@@ -713,8 +713,8 @@ export function ComicDetailScreen({
                       key={`tag:${i}:${tag}`}
                       padding={tagPadding}
                       background="ultraThinMaterial"
-                      clipShape={rect(radius.chip)}
-                      overlay={<RoundedRectangle cornerRadius={radius.chip} stroke={hairlineStroke} />}
+                      clipShape={rect(radius.md)}
+                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
                     >
                       <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
                         {tag}
@@ -812,7 +812,7 @@ export function ComicDetailScreen({
                                 url={item.cover}
                                 width={recCard.width}
                                 height={recCard.height}
-                                cornerRadius={radius.thumb}
+                                cornerRadius={radius.md}
                               />
                             </ZStack>
                             <Text
@@ -1008,8 +1008,8 @@ export function ComicDetailScreen({
                     <HStack
                       padding={rowPadding}
                       background={highlight ? tint.selectedRow : cardBackground}
-                      clipShape={rect(radius.thumb)}
-                      overlay={<RoundedRectangle cornerRadius={radius.thumb} stroke={hairlineStroke} />}
+                      clipShape={rect(radius.md)}
+                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
                       frame={{ maxWidth: "infinity" }}
                       onTapGesture={selecting && !locked ? () => toggleSelected(chapter.id) : undefined}
                     >

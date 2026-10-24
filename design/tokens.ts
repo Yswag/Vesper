@@ -26,8 +26,11 @@ export const cardBackgroundSubtle: DynamicShapeStyle = {
 export const dangerBackground: Color = "rgba(255, 69, 58, 0.12)"
 /** 錯誤狀態的小徽章底（比橫幅重一點，縮到 36pt 還看得出來）。 */
 export const dangerBadge: Color = "rgba(255, 69, 58, 0.18)"
-/** 徽章的停用底。 */
-export const badgeOff: Color = "rgba(255, 255, 255, 0.12)"
+/** 徽章的停用底：深色淡白、淺色淡黑（淺色底上白 12% 幾乎看不見；黑 8% 也還是融在白卡上）。 */
+export const badgeOff: DynamicShapeStyle = {
+  dark: "rgba(255, 255, 255, 0.12)",
+  light: "rgba(0, 0, 0, 0.12)",
+}
 
 /** 語意色。頁面用名字，不寫 hex；互動色一律用 `useTint()`（跟主題），不在這裡。 */
 export const palette = {
@@ -53,8 +56,6 @@ export const fill = {
   tag: "quaternarySystemFill",
   /** 圖片載入中／沒有圖的底。 */
   surface: "secondarySystemBackground",
-  /** 封面 1px 描邊。 */
-  border: "rgba(255, 255, 255, 0.16)",
   /** 評分徽章底（橘）。 */
   score: "rgba(255, 149, 0, 0.15)",
   /** 彈窗後面的遮罩。 */
@@ -85,53 +86,16 @@ export const coverStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lineWi
   strokeStyle: { lineWidth: 0.5 },
 }
 
-/** 陰影階層（深色模式採用淺色光暈）。 */
-export const shadow = {
-  /** 卡片與內容卡的標準陰影（輕量、接近表面）。深色模式用淺色光暈。 */
-  card: {
-    color: "rgba(255, 255, 255, 0.06)",
-    radius: 16,
-    x: 0,
-    y: 0,
-  },
-  /** 浮動元素（HUD、彈窗、sheet）的陰影（中等、明顯懸浮）。 */
-  elevated: {
-    color: "rgba(255, 255, 255, 0.10)",
-    radius: 28,
-    x: 0,
-    y: 0,
-  },
-  /** 深度最強的陰影（警告彈窗、modal）。 */
-  modal: {
-    color: "rgba(255, 255, 255, 0.14)",
-    radius: 40,
-    x: 0,
-    y: 0,
-  },
-} as const
-
-/** 圓角規格階層。 */
+/** 圓角四級，同心：內層＝外層－內距。 */
 export const radius = {
-  /** 一行小標籤（「上次讀到」）。 */
-  pill: 4,
-  /** 短標籤（GlassBadge）。 */
-  tag: 6,
-  /** 30×30 圖示徽章。 */
-  icon: 7,
-  /** chip、小縮圖、側欄列。 */
-  chip: 8,
-  /** 網格封面、章節列縮圖。 */
-  thumb: 10,
-  /** 大封面、hero 區塊。 */
-  cover: 12,
-  /** 卡片。 */
-  card: 18,
-  /** 彈窗、sheet 這種大面積浮層。 */
-  sheet: 24,
-  /** HUD 面板、底部工具列。 */
-  panel: 20,
-  /** 懸浮小卡（閱讀設定）。 */
-  popover: 18,
+  /** 6：短標籤、圖示徽章、圖片上的角標。 */
+  sm: 6,
+  /** 10：chip、縮圖、封面。 */
+  md: 10,
+  /** 18：卡片、懸浮小卡。 */
+  lg: 18,
+  /** 26：sheet、HUD 面板、對話框。 */
+  xl: 26,
 } as const
 
 /** 由半徑做圓角矩形。 */
@@ -144,8 +108,8 @@ export function capsule(style: "circular" | "continuous" = "continuous"): Shape 
   return { type: "capsule", style }
 }
 
-export const cardShape: Shape = rect(radius.card)
-export const badgeShape: Shape = rect(radius.icon)
+export const cardShape: Shape = rect(radius.lg)
+export const badgeShape: Shape = rect(radius.sm)
 
 /** 圖示徽章邊長。列的高度、分隔線縮排都由它推導。 */
 export const badgeSize = 30

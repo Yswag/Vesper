@@ -209,14 +209,14 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                   resizable={true}
                   scaleToFill={true}
                   frame={{ width: hero.width, height: hero.height }}
-                  clipShape={rect(radius.cover)}
+                  clipShape={rect(radius.md)}
                   shadow={{ color: "rgba(0, 0, 0, 0.45)", radius: 14, x: 0, y: 6 }}
                 />
               ) : (
                 <VStack
                   frame={{ width: hero.width, height: hero.height }}
                   background={fill.surface}
-                  clipShape={rect(radius.cover)}
+                  clipShape={rect(radius.md)}
                   shadow={{ color: "rgba(0, 0, 0, 0.45)", radius: 14, x: 0, y: 6 }}
                 />
               )}
@@ -297,8 +297,8 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                       key={`tag:${i}:${tag}`}
                       padding={tagPadding}
                       background="ultraThinMaterial"
-                      clipShape={rect(radius.chip)}
-                      overlay={<RoundedRectangle cornerRadius={radius.chip} stroke={hairlineStroke} />}
+                      clipShape={rect(radius.md)}
+                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
                     >
                       <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
                         #{tag}
@@ -423,12 +423,12 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                               url={comic.cover}
                               width={sourceCard.width}
                               height={sourceCard.height}
-                              cornerRadius={radius.thumb}
+                              cornerRadius={radius.md}
                             />
                             <HStack
                               padding={{ horizontal: 6, vertical: 3 }}
                               background="ultraThinMaterial"
-                              clipShape={rect(radius.tag)}
+                              clipShape={rect(radius.sm)}
                               offset={{ x: -6, y: -6 }}
                             >
                               <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>

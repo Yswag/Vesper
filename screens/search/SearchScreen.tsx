@@ -228,7 +228,7 @@ export function SearchScreen() {
                     spacing={0}
                     frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
                     presentationBackground="clear"
-                    glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.sheet) }}
+                    glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
                     presentationDetents={["medium", "large"]}
                     presentationDragIndicator="visible"
                     presentationCornerRadius={24}
@@ -420,7 +420,7 @@ function SidebarRow({
         padding={{ horizontal: 8, vertical: 6 }}
         frame={{ maxWidth: "infinity", minHeight: 40 }}
         background={active ? fill.chip : "clear"}
-        clipShape={rect(radius.chip)}
+        clipShape={rect(radius.md)}
       >
         <Text
           font="footnote"
@@ -510,8 +510,8 @@ function HistoryPanel({
         <VStack
           spacing={0}
           background={cardBackground}
-          clipShape={rect(radius.card)}
-          overlay={<RoundedRectangle cornerRadius={radius.card} stroke={hairlineStroke} />}
+          clipShape={rect(radius.lg)}
+          overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={hairlineStroke} />}
           frame={{ maxWidth: "infinity" }}
         >
           {history.map((term, index) => (

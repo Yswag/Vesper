@@ -105,7 +105,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                 alignment="center"
                 frame={{ maxWidth: "infinity", minHeight: 50 }}
                 background={tint.tint}
-                clipShape={rect(radius.cover)}
+                clipShape={rect(radius.md)}
                 opacity={busy ? 0.75 : 1}
                 onTapGesture={busy ? undefined : () => void run(login, () => loginWithPassword(sourceKey, account.trim(), password))}
               >
@@ -159,7 +159,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
                 alignment="center"
                 frame={{ maxWidth: "infinity", minHeight: 50 }}
                 background={tint.tint}
-                clipShape={rect(radius.cover)}
+                clipShape={rect(radius.md)}
                 opacity={busy ? 0.75 : 1}
                 onTapGesture={busy ? undefined : () => void run(login, () => loginWithCookies(sourceKey, values.map(value => value.trim())))}
               >

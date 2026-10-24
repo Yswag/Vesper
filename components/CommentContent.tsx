@@ -225,7 +225,7 @@ function CommentImage({ sourceKey, src }: { sourceKey: string; src: string }) {
         image={image}
         resizable={true}
         aspectRatio={{ value: aspect, contentMode: "fit" }}
-        clipShape={rect(radius.chip)}
+        clipShape={rect(radius.md)}
       />
     )
   }

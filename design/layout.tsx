@@ -5,7 +5,7 @@
 import { HStack, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
-import { cardBackground, cardGap, cardShape, pageInsets, pageSpacing, shadow, type StackChildren } from "./tokens"
+import { cardBackground, cardGap, cardShape, pageInsets, pageSpacing, type StackChildren } from "./tokens"
 
 /**
  * 頁面殼：極光背景 + inline 標題 + 內容捲動區。
@@ -75,7 +75,6 @@ export function Card({
       background={background}
       clipShape={cardShape}
       frame={{ maxWidth: "infinity" }}
-      shadow={shadow.card}
       swipeActionsContainer={swipeActionsContainer}
     >
       {children}

@@ -11,7 +11,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
 import { GlassBadge } from "../../design/GlassBadge"
 import { EmptyState } from "../../design/status"
-import { capsule, cardBackgroundStrong, coverStroke, fill, hairlineStroke, palette, radius, rect, sectionSpacing, shadow } from "../../design/tokens"
+import { capsule, cardBackgroundStrong, coverStroke, fill, hairlineStroke, palette, radius, rect, sectionSpacing } from "../../design/tokens"
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
@@ -196,10 +196,10 @@ export function HomeScreen() {
                               resizable={true}
                               scaleToFill={true}
                               frame={{ width: 124, height: 179 }}
-                              clipShape={rect(radius.cover)}
+                              clipShape={rect(radius.md)}
                               overlay={
                                 <RoundedRectangle
-                                  cornerRadius={radius.cover}
+                                  cornerRadius={radius.md}
                                   stroke={coverStroke}
                                 />
                               }
@@ -209,7 +209,7 @@ export function HomeScreen() {
                           <VStack
                             frame={{ width: 124, height: 179 }}
                             background={fill.surface}
-                            clipShape={rect(radius.cover)}
+                            clipShape={rect(radius.md)}
                             matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
                             shadow={{ color: "rgba(0, 0, 0, 0.35)", radius: 6, x: 0, y: 3 }}
                           />
@@ -228,7 +228,7 @@ export function HomeScreen() {
                                 spacing={3}
                                 padding={{ horizontal: 6, vertical: 2 }}
                                 background={tint.tint}
-                                clipShape={rect(radius.tag)}
+                                clipShape={rect(radius.sm)}
                               >
                                 <Text font="caption2" fontWeight="heavy" foregroundStyle={tint.onTint}>
                                   TOP {item.rank}
@@ -241,7 +241,7 @@ export function HomeScreen() {
                                 spacing={4}
                                 padding={{ horizontal: 6, vertical: 2 }}
                                 background="rgba(255, 149, 0, 0.25)"
-                                clipShape={rect(radius.tag)}
+                                clipShape={rect(radius.sm)}
                               >
                                 <Image systemName="star.fill" font="caption2" foregroundStyle={palette.orange} />
                                 <Text font="caption2" fontWeight="bold" foregroundStyle={palette.orange}>
@@ -498,13 +498,13 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
             url={entry.cover}
             width={width}
             height={height}
-            cornerRadius={radius.cover}
+            cornerRadius={radius.md}
           />
         ) : (
           <VStack
             frame={{ width, height }}
             background={fill.surface}
-            clipShape={rect(radius.cover)}
+            clipShape={rect(radius.md)}
           />
         )}
 
@@ -513,7 +513,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
           <ZStack
             frame={{ width, height }}
             background="rgba(0, 0, 0, 0.45)"
-            clipShape={rect(radius.cover)}
+            clipShape={rect(radius.md)}
             alignment="center"
           >
             <ProgressView controlSize="small" />
@@ -528,7 +528,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
           <HStack
             padding={{ horizontal: 6, vertical: 3 }}
             background="ultraThinMaterial"
-            clipShape={rect(radius.tag)}
+            clipShape={rect(radius.sm)}
             frame={{ maxWidth: width - 12, alignment: "trailing" }}
           >
             <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
@@ -632,10 +632,10 @@ function BangumiCard({
               resizable={true}
               scaleToFill={true}
               frame={{ width, height }}
-              clipShape={rect(radius.cover)}
+              clipShape={rect(radius.md)}
               overlay={
                 <RoundedRectangle
-                  cornerRadius={radius.cover}
+                  cornerRadius={radius.md}
                   stroke={coverStroke}
                 />
               }
@@ -644,7 +644,7 @@ function BangumiCard({
             <VStack
               frame={{ width, height }}
               background={fill.surface}
-              clipShape={rect(radius.cover)}
+              clipShape={rect(radius.md)}
             />
           )}
 
@@ -654,7 +654,7 @@ function BangumiCard({
               <HStack
                 padding={{ horizontal: 6, vertical: 3 }}
                 background="ultraThinMaterial"
-                clipShape={rect(radius.tag)}
+                clipShape={rect(radius.sm)}
               >
                 <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
                   #{subject.rank}
@@ -665,7 +665,7 @@ function BangumiCard({
                 spacing={3}
                 padding={{ horizontal: 6, vertical: 3 }}
                 background="ultraThinMaterial"
-                clipShape={rect(radius.tag)}
+                clipShape={rect(radius.sm)}
                 alignment="center"
               >
                 <Image systemName="star.fill" font="caption2" foregroundStyle={palette.orange} />

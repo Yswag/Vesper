@@ -350,7 +350,7 @@ function MagazineSectionRow({
                           url={comic.cover}
                           width={card.width}
                           height={card.height}
-                          cornerRadius={radius.cover}
+                          cornerRadius={radius.md}
                         />
                         {comic.updateTime ? (
                           // 更新時間徽章（夾寬度避免長字串超出封面）
@@ -361,7 +361,7 @@ function MagazineSectionRow({
                             <HStack
                               padding={{ horizontal: 6, vertical: 3 }}
                               background="ultraThinMaterial"
-                              clipShape={rect(radius.tag)}
+                              clipShape={rect(radius.sm)}
                               frame={{ maxWidth: card.width - 12, alignment: "trailing" }}
                             >
                               <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>

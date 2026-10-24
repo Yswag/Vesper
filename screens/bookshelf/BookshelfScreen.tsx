@@ -172,11 +172,11 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
       spacing={14}
       padding={rowPadding}
       background={cardBackground}
-      clipShape={rect(radius.card)}
+      clipShape={rect(radius.lg)}
       shadow={{ color: "rgba(0, 0, 0, 0.28)", radius: 10, x: 0, y: 3 }}
       overlay={
         <RoundedRectangle
-          cornerRadius={radius.card}
+          cornerRadius={radius.lg}
           stroke={hairlineStroke}
         />
       }
@@ -191,13 +191,13 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
           url={entry.cover}
           width={56}
           height={80}
-          cornerRadius={radius.cover}
+          cornerRadius={radius.md}
         />
         {opening ? (
           <ZStack
             frame={{ width: 56, height: 80 }}
             background="rgba(0, 0, 0, 0.45)"
-            clipShape={rect(radius.cover)}
+            clipShape={rect(radius.md)}
             alignment="center"
           >
             <ProgressView controlSize="small" />

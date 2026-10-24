@@ -84,7 +84,7 @@ export function ChapterDrawer({
       environments={{ colorScheme: "dark" }}
       preferredColorScheme="dark"
       presentationBackground="clear"
-      glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.sheet) }}
+      glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
       ignoresSafeArea={{ edges: "bottom" }}
       presentationDetents={["medium", "large"]}
       presentationDragIndicator="visible"
@@ -179,8 +179,8 @@ export function ChapterDrawer({
                       spacing={5}
                       padding={{ horizontal: 12, vertical: 6 }}
                       background={isCurrent ? tint.tint : "rgba(255, 255, 255, 0.08)"}
-                      clipShape={rect(radius.chip)}
-                      contentShape={rect(radius.chip)}
+                      clipShape={rect(radius.md)}
+                      contentShape={rect(radius.md)}
                     >
                       <Text
                         font="caption"
@@ -234,8 +234,8 @@ export function ChapterDrawer({
                         alignment="center"
                         padding={{ horizontal: 14, vertical: 11 }}
                         background={isCurrent ? tint.highlight : "clear"}
-                        clipShape={rect(radius.thumb)}
-                        contentShape={rect(radius.thumb)}
+                        clipShape={rect(radius.md)}
+                        contentShape={rect(radius.md)}
                         frame={{ maxWidth: "infinity" }}
                         onTapGesture={ch.locked ? undefined : () => onSelectChapter(ch.id)}
                       >
@@ -269,7 +269,7 @@ export function ChapterDrawer({
 
                       {isCurrent ? (
                         <RoundedRectangle
-                          cornerRadius={radius.thumb}
+                          cornerRadius={radius.md}
                           stroke={{
                             shapeStyle: tint.highlightBorder,
                             strokeStyle: { lineWidth: 1.2 },

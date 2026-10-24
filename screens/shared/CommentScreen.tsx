@@ -187,8 +187,8 @@ export function LoginBanner({ sourceKey }: { sourceKey: string }) {
         alignment="center"
         padding={{ horizontal: 16, vertical: 12 }}
         background={tint.info}
-        clipShape={rect(radius.card)}
-        overlay={<RoundedRectangle cornerRadius={radius.card} stroke={tint.selected} />}
+        clipShape={rect(radius.lg)}
+        overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={tint.selected} />}
         frame={{ maxWidth: "infinity" }}
       >
         <ZStack alignment="center" frame={{ width: avatarSize, height: avatarSize }}>
@@ -419,8 +419,8 @@ export function CommentScreen({
                   <VStack
                     spacing={0}
                     background={cardBackground}
-                    clipShape={rect(radius.card)}
-                    overlay={<RoundedRectangle cornerRadius={radius.card} stroke={hairlineStroke} />}
+                    clipShape={rect(radius.lg)}
+                    overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={hairlineStroke} />}
                     frame={{ maxWidth: "infinity" }}
                   >
                     {comments.map((comment, index) => (

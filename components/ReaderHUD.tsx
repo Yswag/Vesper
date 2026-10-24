@@ -143,7 +143,7 @@ export function ReaderHUD({
         <VStack
           spacing={0}
           environments={{ colorScheme: "dark" }}
-          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.panel) }}
+          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
           ignoresSafeArea={true}
           frame={{ maxWidth: "infinity" }}
           offset={{ x: 0, y: hudVisible.value ? 0 : -HUD_SLIDE_TOP }}
@@ -285,7 +285,7 @@ export function ReaderHUD({
         <VStack
           spacing={0}
           environments={{ colorScheme: "dark" }}
-          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.panel) }}
+          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
           frame={{ maxWidth: "infinity" }}
           ignoresSafeArea={true}
           offset={{ x: 0, y: hudVisible.value ? 0 : HUD_SLIDE_BOTTOM }}

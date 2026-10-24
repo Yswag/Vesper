@@ -124,11 +124,11 @@ function SourceCard({ source }: { source: ComicSourceInfo }) {
       spacing={14}
       padding={rowPadding}
       background={cardBackground}
-      clipShape={rect(radius.card)}
+      clipShape={rect(radius.lg)}
       shadow={{ color: "rgba(0, 0, 0, 0.06)", radius: 6, x: 0, y: 2 }}
       overlay={
         <RoundedRectangle
-          cornerRadius={radius.card}
+          cornerRadius={radius.lg}
           stroke={hairlineStroke}
         />
       }

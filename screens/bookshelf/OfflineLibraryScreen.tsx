@@ -127,11 +127,11 @@ export function OfflineLibraryScreen() {
             key={id}
             spacing={0}
             background={cardBackground}
-            clipShape={rect(radius.card)}
+            clipShape={rect(radius.lg)}
             shadow={{ color: "rgba(0, 0, 0, 0.28)", radius: 10, x: 0, y: 3 }}
             overlay={
               <RoundedRectangle
-                cornerRadius={radius.card}
+                cornerRadius={radius.lg}
                 stroke={hairlineStroke}
               />
             }
@@ -174,7 +174,7 @@ function ComicHeader({ group, isOpen, onToggle }: { group: ComicGroup; isOpen: b
         frame={{ width: 60, height: 80 }}
         shadow={{ color: "rgba(0, 0, 0, 0.4)", radius: 6, x: 0, y: 3 }}
       >
-        <CoverImage sourceKey={group.sourceKey} url={group.cover} width={60} height={80} cornerRadius={radius.cover} />
+        <CoverImage sourceKey={group.sourceKey} url={group.cover} width={60} height={80} cornerRadius={radius.md} />
       </ZStack>
 
       <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>

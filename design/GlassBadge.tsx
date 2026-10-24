@@ -12,7 +12,7 @@ export interface GlassBadgeProps {
 // Only for short status overlays on media, not ordinary list metadata.
 export function GlassBadge({ text, icon, iconColor, children }: GlassBadgeProps) {
   return (
-    <GlassSurface variant="clear" shape={rect(radius.tag)}>
+    <GlassSurface variant="clear" shape={rect(radius.sm)}>
       <HStack spacing={3} padding={{ horizontal: 6, vertical: 2.5 }} alignment="center">
         {icon ? (
           <Image

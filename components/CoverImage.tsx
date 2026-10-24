@@ -48,7 +48,7 @@ export function CoverImage({
   width,
   height,
   mode = "fill",
-  cornerRadius = radius.thumb,
+  cornerRadius = radius.md,
 }: CoverImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [failed, setFailed] = useState(false)
