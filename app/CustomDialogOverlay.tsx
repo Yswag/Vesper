@@ -1,6 +1,6 @@
-import { HStack, Image, RoundedRectangle, ScrollView, Spacer, Text, TextField, VStack, ZStack, useEffect, useState } from "scripting"
+import { HStack, Capsule, Image, RoundedRectangle, ScrollView, Spacer, Text, TextField, VStack, ZStack, useEffect, useState } from "scripting"
 
-import { palette, rect } from "../design/tokens"
+import { capsule, dialog, palette, radius, rect } from "../design/tokens"
 import {
   activeCustomDialog,
   dismissCustomDialog,
@@ -9,6 +9,7 @@ import {
   type CustomDialogRequest,
 } from "./customDialog"
 import { t } from "../i18n"
+import { useTint } from "./theme"
 
 export function CustomDialogOverlay() {
   const [request, setRequest] = useState<CustomDialogRequest | undefined>(activeCustomDialog())
@@ -22,13 +23,10 @@ export function CustomDialogOverlay() {
 
   return (
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      {/* 遮罩背景：自適應深淺色 */}
+      {/* 遮罩：只有遮罩沒有陰影，卡片靠它跟頁面分開 */}
       <VStack
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-        background={{
-          dark: "rgba(0, 0, 0, 0.42)",
-          light: "rgba(0, 0, 0, 0.28)",
-        }}
+        background={dialog.scrim}
         onTapGesture={() => dismissCustomDialog()}
       />
       <DialogCard key={request.id} request={request} />
@@ -36,53 +34,18 @@ export function CustomDialogOverlay() {
   )
 }
 
-function DialogCard({ request }: { request: CustomDialogRequest }) {
-  // 原生 iOS Alert (深/淺色模式自適應)：
-  // 1. 卡片寬度：270pt，圓角 22pt
-  // 2. 修正修飾符順序：
-  //    先 background -> 再 clipShape -> 最後 glassEffect / overlay / shadow
-  //    保證 background 矩形完全被 clipShape 裁切，絕不溢出四個直角！
+/** 卡片本體。匯出只為了藝廊直畫三種卡片（不改對外行為）。 */
+export function DialogCard({ request }: { request: CustomDialogRequest }) {
+  // 修飾符順序不能換：background → clipShape → glassEffect → overlay，
+  // background 才會被裁進圓角、不溢出四個直角。
   return (
     <VStack
       spacing={0}
       frame={{ width: 270 }}
-      background={{
-        dark: {
-          colors: ["rgba(42, 42, 46, 0.72)", "rgba(24, 24, 26, 0.78)"],
-          startPoint: "top",
-          endPoint: "bottom",
-        },
-        light: {
-          colors: ["rgba(255, 255, 255, 0.78)", "rgba(242, 242, 247, 0.84)"],
-          startPoint: "top",
-          endPoint: "bottom",
-        },
-      }}
-      clipShape={rect(22)}
-      glassEffect={{ glass: UIGlass.regular(), shape: rect(22) }}
-      overlay={
-        <RoundedRectangle
-          cornerRadius={22}
-          stroke={{
-            dark: {
-              colors: ["rgba(255, 255, 255, 0.28)", "rgba(255, 255, 255, 0.08)"],
-              startPoint: "top",
-              endPoint: "bottom",
-            },
-            light: {
-              colors: ["rgba(255, 255, 255, 0.85)", "rgba(0, 0, 0, 0.08)"],
-              startPoint: "top",
-              endPoint: "bottom",
-            },
-          }}
-        />
-      }
-      shadow={{
-        color: "rgba(0, 0, 0, 0.28)",
-        radius: 32,
-        x: 0,
-        y: 12,
-      }}
+      background={dialog.card}
+      clipShape={rect(radius.xl)}
+      glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
+      overlay={<RoundedRectangle cornerRadius={radius.xl} stroke={dialog.cardBorder} />}
     >
       {request.kind === "input" ? <InputDialog request={request} /> : null}
       {request.kind === "message" ? <MessageDialog request={request} /> : null}
@@ -91,11 +54,7 @@ function DialogCard({ request }: { request: CustomDialogRequest }) {
   )
 }
 
-/** 
- * 原生 iOS 彈窗膠囊按鈕：
- * - 深色模式：微透白膠囊（rgba(255, 255, 255, 0.16)）+ 白字
- * - 淺色模式：微透黑/灰膠囊（rgba(0, 0, 0, 0.06)）+ 深灰/黑字
- */
+/** 膠囊按鈕：預設（role default）用 tint 實心底；取消與破壞性維持微透底。 */
 function NativeAlertButton({
   title,
   role,
@@ -107,34 +66,24 @@ function NativeAlertButton({
   width?: number
   onTap: () => void
 }) {
+  const tint = useTint()
+  const isDefault = role === "default"
   const textColor = role === "destructive" ? palette.red : "label"
-  const isBold = role === "default"
 
   return (
     <HStack
       alignment="center"
       frame={{ width, height: 44 }}
-      background={{
-        dark: "rgba(255, 255, 255, 0.16)",
-        light: "rgba(0, 0, 0, 0.06)",
-      }}
-      clipShape={rect(22)}
-      overlay={
-        <RoundedRectangle
-          cornerRadius={22}
-          stroke={{
-            dark: "rgba(255, 255, 255, 0.08)",
-            light: "rgba(0, 0, 0, 0.04)",
-          }}
-        />
-      }
+      background={isDefault ? tint.tint : dialog.button}
+      clipShape={capsule()}
+      overlay={isDefault ? undefined : <Capsule stroke={dialog.buttonBorder} />}
       onTapGesture={onTap}
     >
       <Spacer />
       <Text
         font="body"
-        fontWeight={isBold ? "semibold" : "regular"}
-        foregroundStyle={textColor}
+        fontWeight={isDefault ? "semibold" : "regular"}
+        foregroundStyle={isDefault ? tint.onTint : textColor}
       >
         {title}
       </Text>
@@ -189,27 +138,16 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
           <VStack
             alignment="center"
             padding={4}
-            background={{
-              dark: "rgba(0, 0, 0, 0.25)",
-              light: "rgba(0, 0, 0, 0.04)",
-            }}
-            clipShape={rect(8)}
-            overlay={
-              <RoundedRectangle
-                cornerRadius={8}
-                stroke={{
-                  dark: "rgba(255, 255, 255, 0.08)",
-                  light: "rgba(0, 0, 0, 0.08)",
-                }}
-              />
-            }
+            background={dialog.inset}
+            clipShape={rect(radius.md)}
+            overlay={<RoundedRectangle cornerRadius={radius.md} stroke={dialog.insetBorder} />}
             frame={{ width: 242 }}
           >
             <Image
               imageUrl={request.image}
               resizable
               scaleToFit
-              clipShape={rect(6)}
+              clipShape={rect(radius.sm)}
               frame={{ maxHeight: 90 }}
             />
           </VStack>
@@ -218,27 +156,16 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
           <VStack
             alignment="center"
             padding={4}
-            background={{
-              dark: "rgba(0, 0, 0, 0.25)",
-              light: "rgba(0, 0, 0, 0.04)",
-            }}
-            clipShape={rect(8)}
-            overlay={
-              <RoundedRectangle
-                cornerRadius={8}
-                stroke={{
-                  dark: "rgba(255, 255, 255, 0.08)",
-                  light: "rgba(0, 0, 0, 0.08)",
-                }}
-              />
-            }
+            background={dialog.inset}
+            clipShape={rect(radius.md)}
+            overlay={<RoundedRectangle cornerRadius={radius.md} stroke={dialog.insetBorder} />}
             frame={{ width: 242 }}
           >
             <Image
               image={request.image}
               resizable
               scaleToFit
-              clipShape={rect(6)}
+              clipShape={rect(radius.sm)}
               frame={{ maxHeight: 90 }}
             />
           </VStack>
@@ -248,20 +175,9 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
         <HStack
           alignment="center"
           padding={{ horizontal: 10, vertical: 7 }}
-          background={{
-            dark: "rgba(0, 0, 0, 0.35)",
-            light: "rgba(0, 0, 0, 0.05)",
-          }}
-          clipShape={rect(8)}
-          overlay={
-            <RoundedRectangle
-              cornerRadius={8}
-              stroke={{
-                dark: "rgba(255, 255, 255, 0.12)",
-                light: "rgba(0, 0, 0, 0.1)",
-              }}
-            />
-          }
+          background={dialog.field}
+          clipShape={rect(radius.md)}
+          overlay={<RoundedRectangle cornerRadius={radius.md} stroke={dialog.fieldBorder} />}
           frame={{ width: 242 }}
         >
           <TextField

@@ -48,7 +48,18 @@
 
 - 卡片與玻璃面**不用陰影**。層次＝表面亮度：`cardBackgroundSubtle`（空狀態）< `cardBackground`（卡片）< `cardBackgroundStrong`（卡片內再一層）；淺色再加 `hairlineStroke` 高光邊。
 - 理由：卡片底半透明，陰影照不透明度投 → 每個字後面各一團影（`compositingGroup` 也救不了）；玻璃的深度由系統材質負責。
-- 封面的投影屬於圖片本身（壓在任何底色上都是黑影），由封面元件負責。
+- 封面的投影屬於圖片本身（封面不透明，壓在任何底色上都是黑影）：`CoverImage lifted`（`coverShadow`），只掛在圖片那層。
+
+## 封面
+
+- 一律 `components/CoverImage`，傳 `title`：沒圖時用標題雜湊挑主題色盤畫漸層＋首字（同標題同色）；載入中是 surface 底＋小轉圈。
+- 圖上的短角標一律 `design/CoverBadge`（`tone="danger"` 給「來源已移除」）；頁面不自刻 `ultraThinMaterial` 膠囊。網格裡頁數在左上、時間／狀態在下緣。
+- 網格書名靠左，最多兩行；副標與來源一行。
+
+## 浮層
+
+- 對話框卡片 `radius.xl`、內層 `radius.md`、按鈕膠囊；顏色在 `dialog` token 群組；不加陰影，分離靠遮罩。
+- 預設按鈕＝`tint` 實心底＋`onTint` 字；取消微透底；破壞性紅字。
 
 ## 間距
 
@@ -60,7 +71,7 @@
 
 ## 守門
 
-- `scripting-ts run dev/design-lint.ts`：掃 `screens/`、`components/`、`app/`（不含 `app/theme.tsx`）的違規，跟 `dev/design-lint.baseline.json` 比。**每個檔每條規則只准減不准增**；減少後要更新基準。
+- `scripting-ts run dev/design-lint.ts`：掃 `screens/`、`components/`、`app/`（不含 `app/theme.tsx`）的違規，跟 `dev/design-lint.baseline.json` 比。**每個檔每條規則只准減不准增**；減少後要更新基準。新增或刪除 `.tsx` 要同步頁面清單（`.scratch/visual-polish/pages.md`），否則 FAIL。
 - 截圖基準：每批結束截 `dev/preview-design.tsx`（amber、ink × 深淺）與該批頁面，跟上一批比。
 - 玻璃截圖拍不出來：動到玻璃就 `scripting-ts run dev/show-glass.tsx`（淺／深上下並排），請使用者實機截圖。
 
@@ -72,3 +83,5 @@
 - 2026-10-24 字級三層，只用系統樣式。
 - 2026-10-24 卡片與玻璃拿掉陰影（深色的白光暈、淺色試過的淡黑影都不要）。
 - 2026-10-24 頁面裡既有的字面值記入 lint 基準，逐 tab 改頁面時再清。
+- 2026-10-24 封面佔位（標題雜湊色盤＋首字）、`CoverBadge`、`lifted` 投影；lint 加 `material`；刪 `GlassBadge`。
+- 2026-10-24 對話框預設按鈕用強調色；對話框拿掉陰影。

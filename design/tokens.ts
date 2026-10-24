@@ -58,8 +58,6 @@ export const fill = {
   surface: "secondarySystemBackground",
   /** 評分徽章底（橘）。 */
   score: "rgba(255, 149, 0, 0.15)",
-  /** 彈窗後面的遮罩。 */
-  scrim: "rgba(0, 0, 0, 0.42)",
   /** 閱讀器 HUD 的輕遮罩。 */
   scrimSoft: "rgba(0, 0, 0, 0.18)",
   /** 幾近透明但可命中測試的點擊層。 */
@@ -68,6 +66,58 @@ export const fill = {
   canvas: "#000000",
 } as const
 
+/**
+ * 對話框（`app/CustomDialogOverlay`）的表面：遮罩、卡片漸層與描邊、膠囊按鈕、輸入框。
+ * 卡片是半透明的，所以不加陰影（分離感靠遮罩），也不要再去別的地方寫 rgba。
+ */
+export const dialog: Record<
+  "scrim" | "card" | "cardBorder" | "button" | "buttonBorder" | "field" | "fieldBorder" | "inset" | "insetBorder",
+  DynamicShapeStyle
+> = {
+  /** 卡片後面的遮罩。深色比淺色重，淺色頁面才不會灰掉。 */
+  scrim: {
+    dark: "rgba(0, 0, 0, 0.42)",
+    light: "rgba(0, 0, 0, 0.28)",
+  },
+  /** 卡片本體：上亮下暗。 */
+  card: {
+    dark: { colors: ["rgba(42, 42, 46, 0.72)", "rgba(24, 24, 26, 0.78)"], startPoint: "top", endPoint: "bottom" },
+    light: { colors: ["rgba(255, 255, 255, 0.78)", "rgba(242, 242, 247, 0.84)"], startPoint: "top", endPoint: "bottom" },
+  },
+  /** 卡片 1px 描邊（上緣高光、下緣收暗）。 */
+  cardBorder: {
+    dark: { colors: ["rgba(255, 255, 255, 0.28)", "rgba(255, 255, 255, 0.08)"], startPoint: "top", endPoint: "bottom" },
+    light: { colors: ["rgba(255, 255, 255, 0.85)", "rgba(0, 0, 0, 0.08)"], startPoint: "top", endPoint: "bottom" },
+  },
+  /** 非預設的膠囊按鈕（取消、破壞性）。 */
+  button: {
+    dark: "rgba(255, 255, 255, 0.16)",
+    light: "rgba(0, 0, 0, 0.06)",
+  },
+  buttonBorder: {
+    dark: "rgba(255, 255, 255, 0.08)",
+    light: "rgba(0, 0, 0, 0.04)",
+  },
+  /** 輸入框底。 */
+  field: {
+    dark: "rgba(0, 0, 0, 0.35)",
+    light: "rgba(0, 0, 0, 0.05)",
+  },
+  fieldBorder: {
+    dark: "rgba(255, 255, 255, 0.12)",
+    light: "rgba(0, 0, 0, 0.10)",
+  },
+  /** 輸入框裡夾的圖片（驗證碼）底框。 */
+  inset: {
+    dark: "rgba(0, 0, 0, 0.25)",
+    light: "rgba(0, 0, 0, 0.04)",
+  },
+  insetBorder: {
+    dark: "rgba(255, 255, 255, 0.08)",
+    light: "rgba(0, 0, 0, 0.08)",
+  },
+}
+
 /** 卡片外層 1px 描邊：深色模式 8% 白線，淺色模式 65% 高光白邊（定義亞克力卡片邊緣）。 */
 export const hairlineStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lineWidth: number } } = {
   shapeStyle: {
@@ -75,6 +125,14 @@ export const hairlineStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lin
     light: "rgba(255, 255, 255, 0.65)",
   },
   strokeStyle: { lineWidth: 1 },
+}
+
+/** 封面投影。封面是不透明圖片，影子壓在任何底色上都是黑影，所以不屬於「卡片不加陰影」那條。 */
+export const coverShadow: { color: Color; radius: number; x: number; y: number } = {
+  color: "rgba(0, 0, 0, 0.35)",
+  radius: 6,
+  x: 0,
+  y: 3,
 }
 
 /** 漫畫封面 1px 微描邊：深色模式 8% 白線防融黑，淺色模式 6% 極淡暗線防白封面融白。 */

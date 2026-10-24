@@ -14,10 +14,11 @@
 
 import { t } from "../i18n"
 
-import { Image, RoundedRectangle, Text, VStack, ZStack, useEffect, useState } from "scripting"
+import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect, useState, type DynamicShapeStyle } from "scripting"
 
 import { comicLibrary } from "../app/services"
-import { coverStroke, fill, radius, rect } from "../design/tokens"
+import { PALETTES } from "../app/theme"
+import { coverShadow, coverStroke, fill, radius, rect } from "../design/tokens"
 
 export interface CoverImageProps {
   /** 哪個來源的圖（快取鍵與 Referer 都由它決定）。 */
@@ -28,6 +29,10 @@ export interface CoverImageProps {
   /** fill（預設）＝填滿並裁切（會先把圖裁成格子比例，見上方說明）；fit＝完整顯示，可能留白。 */
   mode?: "fill" | "fit"
   cornerRadius?: number
+  /** 沒圖時挑佔位色盤並顯示首字（同標題永遠同色）。 */
+  title?: string
+  /** 加上投影。只留在圖片這層：加到含角標的容器上，角標也會被投一份影。 */
+  lifted?: boolean
 }
 
 /** 把圖**中心裁**成目標寬高比：填滿格子唯一的正確做法（用 aspectRatio(fill) 會外溢去搶鄰居的點擊）。 */
@@ -42,6 +47,85 @@ function cropToAspect(image: UIImage, ratio: number): UIImage {
   return image.croppedTo({ x: 0, y: (image.height - height) / 2, width: image.width, height }) ?? image
 }
 
+/** 佔位色盤的選擇：同一個標題永遠落到同一盤（跨啟動、跨裝置都一樣，因為只吃字串）。 */
+function placeholderPalette(title: string) {
+  let hash = 0
+  for (let index = 0; index < title.length; index += 1) {
+    hash = (hash * 31 + title.charCodeAt(index)) | 0
+  }
+  return PALETTES[Math.abs(hash) % PALETTES.length]
+}
+
+/** 佔位底：色盤的 accent → mid 斜向漸層，深淺各取該模式的值。 */
+function placeholderBackground(title: string): DynamicShapeStyle {
+  const tone = placeholderPalette(title)
+  return {
+    dark: { colors: [tone.dark.accent, tone.dark.mid], startPoint: "topLeading", endPoint: "bottomTrailing" },
+    light: { colors: [tone.light.accent, tone.light.mid], startPoint: "topLeading", endPoint: "bottomTrailing" },
+  }
+}
+
+export interface CoverPlaceholderProps {
+  title?: string
+  width: number
+  height: number
+  cornerRadius?: number
+  /** true＝載入中（surface 底＋小轉圈）；false＝沒圖／失敗（色盤漸層＋首字）。 */
+  loading?: boolean
+}
+
+/** 沒有圖時的樣子。也給藝廊直接畫「載入中」那排（不必真的去跑一次圖片管線）。 */
+export function CoverPlaceholder({
+  title,
+  width,
+  height,
+  cornerRadius = radius.md,
+  loading = false,
+}: CoverPlaceholderProps) {
+  const trimmed = (title ?? "").trim()
+  const initial = Array.from(trimmed)[0] ?? ""
+
+  return (
+    <ZStack frame={{ width, height }}>
+      {loading ? (
+        <VStack
+          alignment="center"
+          spacing={0}
+          frame={{ width, height }}
+          background={fill.surface}
+          clipShape={rect(cornerRadius)}
+        >
+          <ProgressView controlSize="small" />
+        </VStack>
+      ) : (
+        <VStack
+          alignment="center"
+          spacing={0}
+          frame={{ width, height }}
+          background={placeholderBackground(trimmed)}
+          clipShape={rect(cornerRadius)}
+        >
+          {initial ? (
+            <Text
+              font={width < 60 ? "headline" : "title3"}
+              fontWeight="bold"
+              foregroundStyle="label"
+              lineLimit={1}
+            >
+              {initial}
+            </Text>
+          ) : (
+            <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
+              {t("common.noCover")}
+            </Text>
+          )}
+        </VStack>
+      )}
+      <RoundedRectangle cornerRadius={cornerRadius} stroke={coverStroke} frame={{ width, height }} />
+    </ZStack>
+  )
+}
+
 export function CoverImage({
   sourceKey,
   url,
@@ -49,6 +133,8 @@ export function CoverImage({
   height,
   mode = "fill",
   cornerRadius = radius.md,
+  title,
+  lifted = false,
 }: CoverImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [failed, setFailed] = useState(false)
@@ -80,9 +166,11 @@ export function CoverImage({
     }
   }, [url, sourceKey, mode, width, height])
 
+  const shadow = lifted ? coverShadow : undefined
+
   if (image) {
     return (
-      <ZStack frame={{ width, height }}>
+      <ZStack frame={{ width, height }} shadow={shadow}>
         <Image
           image={image}
           resizable={true}
@@ -97,19 +185,14 @@ export function CoverImage({
   }
 
   return (
-    <ZStack frame={{ width, height }}>
-      <VStack
-        alignment="center"
-        spacing={0}
-        frame={{ width, height }}
-        background={fill.surface}
-        clipShape={rect(cornerRadius)}
-      >
-        <Text foregroundStyle="tertiaryLabel" font="caption2">
-          {failed ? t("common.noCover") : "…"}
-        </Text>
-      </VStack>
-      <RoundedRectangle cornerRadius={cornerRadius} stroke={coverStroke} frame={{ width, height }} />
+    <ZStack frame={{ width, height }} shadow={shadow}>
+      <CoverPlaceholder
+        title={title}
+        width={width}
+        height={height}
+        cornerRadius={cornerRadius}
+        loading={!failed}
+      />
     </ZStack>
   )
 }

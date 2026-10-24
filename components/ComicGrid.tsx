@@ -14,7 +14,8 @@ import {
   type VirtualNode,
 } from "scripting"
 
-import { radius, rect } from "../design/tokens"
+import { CoverBadge } from "../design/CoverBadge"
+import { radius } from "../design/tokens"
 import type { ComicListItem } from "../engine/adapt"
 import { ComicDetailScreen } from "../screens/shared/ComicDetailScreen"
 import { CoverImage } from "./CoverImage"
@@ -89,7 +90,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                   <ZStack
                     alignment="bottomTrailing"
                     frame={{ width: cellWidth, height: cellHeight }}
-                    shadow={{ color: "rgba(0, 0, 0, 0.35)", radius: 6, x: 0, y: 3 }}
                     matchedTransitionSource={{ id: sourceID, namespace: gridNs }}
                   >
                     <CoverImage
@@ -97,6 +97,8 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                       url={entry.comic.cover}
                       width={cellWidth}
                       height={cellHeight}
+                      title={entry.comic.title}
+                      lifted
                       // 預設的 fill 會由 CoverImage 先把圖中心裁成格子比例（裁完再 fit）。
                       // 不能用 aspectRatio(fill)：橫式封面會被畫成比格子寬很多（1000×395 → 440pt），
                       // 外溢的區塊會蓋到鄰格、把第一格的點擊搶走（點第一本會開第二本）。
@@ -104,16 +106,12 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                       cornerRadius={radius.md}
                     />
                     {entry.comic.pageCount ? (
+                      // 頁數放左上：跟右下角的更新時間同排會互相擠，兩邊都只剩「3…」。
                       <HStack
-                        padding={{ horizontal: 6, vertical: 3 }}
-                        background="ultraThinMaterial"
-                        clipShape={rect(radius.sm)}
-                        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
-                        offset={{ x: 6, y: -6 }}
+                        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
+                        offset={{ x: 6, y: 6 }}
                       >
-                        <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                          {`${entry.comic.pageCount}P`}
-                        </Text>
+                        <CoverBadge text={`${entry.comic.pageCount}P`} />
                       </HStack>
                     ) : null}
                     {entry.comic.updateTime ? (
@@ -124,16 +122,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                         offset={{ x: -6, y: -6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
                       >
-                        <HStack
-                          padding={{ horizontal: 6, vertical: 3 }}
-                          background="ultraThinMaterial"
-                          clipShape={rect(radius.sm)}
-                          frame={{ maxWidth: cellWidth - 12, alignment: "trailing" }}
-                        >
-                          <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                            {entry.comic.updateTime}
-                          </Text>
-                        </HStack>
+                        <CoverBadge text={entry.comic.updateTime} maxWidth={cellWidth - 12} />
                       </HStack>
                     ) : null}
                   </ZStack>
@@ -141,19 +130,19 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                     font="caption"
                     fontWeight="medium"
                     foregroundStyle="label"
-                    lineLimit={1}
-                    multilineTextAlignment="center"
-                    frame={{ width: cellWidth, alignment: "center" }}
+                    lineLimit={2}
+                    multilineTextAlignment="leading"
+                    frame={{ width: cellWidth, alignment: "leading" }}
                   >
                     {entry.comic.title}
                   </Text>
                   {entry.comic.subtitle ? (
-                    <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} multilineTextAlignment="center" frame={{ width: cellWidth, alignment: "center" }}>
+                    <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} multilineTextAlignment="leading" frame={{ width: cellWidth, alignment: "leading" }}>
                       {entry.comic.subtitle}
                     </Text>
                   ) : null}
                   {showSource ? (
-                    <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1} multilineTextAlignment="center" frame={{ width: cellWidth, alignment: "center" }}>
+                    <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1} multilineTextAlignment="leading" frame={{ width: cellWidth, alignment: "leading" }}>
                       {entry.sourceName ?? ""}
                     </Text>
                   ) : null}
