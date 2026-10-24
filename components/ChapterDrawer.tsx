@@ -18,7 +18,7 @@ import {
 
 import type { ChapterGroup } from "../screens/shared/chapterGrouping"
 import { useTint } from "../app/theme"
-import { neutral, radius, rect } from "../design/tokens"
+import { cardBackgroundStrong, radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
 export interface ChapterItem {
@@ -93,10 +93,10 @@ export function ChapterDrawer({
       {/* 標題列 */}
       <HStack alignment="center" padding={{ top: 18, horizontal: 20, bottom: 12 }}>
         <VStack alignment="leading" spacing={2}>
-          <Text font="headline" fontWeight="bold" foregroundStyle="white">
+          <Text font="headline" fontWeight="bold" foregroundStyle="label">
             {t("reader.chaptersTitle")}
           </Text>
-          <Text font="caption2" foregroundStyle={neutral.secondary}>
+          <Text font="caption2" foregroundStyle="secondaryLabel">
             {isGrouped
               ? `${displayChapters.length} / ${chapters.length}`
               : t("reader.chapterCount", { n: chapters.length })}
@@ -114,11 +114,11 @@ export function ChapterDrawer({
           <HStack spacing={4} frame={{ minHeight: 44 }} contentShape="rect">
             <Image
               systemName="scope"
-              font={11}
+              font="caption2"
               fontWeight="medium"
-              foregroundStyle={neutral.secondary}
+              foregroundStyle="secondaryLabel"
             />
-            <Text font="caption" fontWeight="medium" foregroundStyle={neutral.secondary}>
+            <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
               {t("reader.locateCurrent")}
             </Text>
           </HStack>
@@ -133,11 +133,11 @@ export function ChapterDrawer({
           <HStack spacing={4} frame={{ minHeight: 44 }} contentShape="rect">
             <Image
               systemName="arrow.up.arrow.down"
-              font={11}
+              font="caption2"
               fontWeight="medium"
-              foregroundStyle={neutral.secondary}
+              foregroundStyle="secondaryLabel"
             />
-            <Text font="caption" fontWeight="medium" foregroundStyle={neutral.secondary}>
+            <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
               {reversed ? t("reader.sortDescendingShort") : t("reader.sortAscendingShort")}
             </Text>
           </HStack>
@@ -153,7 +153,7 @@ export function ChapterDrawer({
             systemName="xmark"
             frame={{ width: 44, height: 44 }}
             contentShape="rect"
-            font={15}
+            font="subheadline"
             fontWeight="medium"
             foregroundStyle="secondaryLabel"
           />
@@ -178,14 +178,14 @@ export function ChapterDrawer({
                     <HStack
                       spacing={5}
                       padding={{ horizontal: 12, vertical: 6 }}
-                      background={isCurrent ? tint.tint : "rgba(255, 255, 255, 0.08)"}
+                      background={isCurrent ? tint.selected : cardBackgroundStrong}
                       clipShape={rect(radius.md)}
                       contentShape={rect(radius.md)}
                     >
                       <Text
                         font="caption"
                         fontWeight={isCurrent ? "semibold" : "regular"}
-                        foregroundStyle={isCurrent ? tint.onTint : neutral.secondary}
+                        foregroundStyle={isCurrent ? tint.tint : "secondaryLabel"}
                         lineLimit={1}
                       >
                         {group.name}
@@ -193,7 +193,7 @@ export function ChapterDrawer({
                       <Text
                         font="caption2"
                         fontWeight="medium"
-                        foregroundStyle={isCurrent ? tint.onTint : neutral.tertiary}
+                        foregroundStyle={isCurrent ? tint.tint : "tertiaryLabel"}
                       >
                         {group.chapters.length}
                       </Text>
@@ -210,8 +210,8 @@ export function ChapterDrawer({
       {/* 離線模式提示 */}
       {offlineMode && hiddenChapters > 0 ? (
         <HStack spacing={8} padding={{ horizontal: 20, vertical: 10 }} frame={{ maxWidth: "infinity" }}>
-          <Image systemName="info.circle" font={12} foregroundStyle={neutral.secondary} />
-          <Text font="caption2" foregroundStyle={neutral.secondary}>
+          <Image systemName="info.circle" font="caption" foregroundStyle="secondaryLabel" />
+          <Text font="caption2" foregroundStyle="secondaryLabel">
             {t("reader.offlineOnlyDownloaded")}
           </Text>
           <Spacer />
@@ -241,14 +241,14 @@ export function ChapterDrawer({
                       >
                         <Image
                           systemName={ch.locked ? "lock.fill" : isCurrent ? "bookmark.fill" : "doc.text"}
-                          font={13}
-                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? tint.tint : neutral.tertiary}
+                          font="footnote"
+                          foregroundStyle={ch.locked ? "secondaryLabel" : isCurrent ? tint.tint : "tertiaryLabel"}
                         />
                         <Spacer frame={{ width: 8 }} />
                         <Text
                           font="subheadline"
                           fontWeight={isCurrent ? "semibold" : "regular"}
-                          foregroundStyle={ch.locked ? neutral.secondary : isCurrent ? "white" : "label"}
+                          foregroundStyle={ch.locked ? "secondaryLabel" : "label"}
                           lineLimit={1}
                         >
                           {ch.title}

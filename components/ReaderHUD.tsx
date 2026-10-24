@@ -10,13 +10,16 @@ import {
   Toggle,
   VStack,
   ZStack,
+  useEffect,
   useObservable,
+  useRef,
+  useState,
 } from "scripting"
 
 type Observable<T> = ReturnType<typeof useObservable<T>>
 
 import { t } from "../i18n"
-import { fill, neutral, radius, rect } from "../design/tokens"
+import { capsule, fill, radius, rect, toneText } from "../design/tokens"
 import type { ReaderSettings } from "../library/readerSettings"
 
 /** 控制列滑入／滑出的彈性動畫 */
@@ -27,6 +30,53 @@ export const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
  */
 export const HUD_SLIDE_TOP = 130
 export const HUD_SLIDE_BOTTOM = 145
+
+/** HUD 收起時右下角的「頁碼 · 時間」；時鐘自己走，不讓閱讀頁每分鐘重繪。 */
+export function ReaderCornerInfo({
+  visible,
+  currentPage,
+  pageCount,
+  safeAreaInsets,
+}: {
+  visible: boolean
+  currentPage: number
+  pageCount: number
+  safeAreaInsets: { bottom: number; trailing: number }
+}) {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const untilNextMinute = 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds())
+    const timer = setTimeout(() => setNow(new Date()), untilNextMinute)
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, [now])
+
+  if (pageCount === 0) return null
+  const pad = (value: number) => String(value).padStart(2, "0")
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+
+  return (
+    <VStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
+      padding={{ trailing: safeAreaInsets.trailing + 12, bottom: Math.max(safeAreaInsets.bottom, 12) }}
+      allowsHitTesting={false}
+      opacity={visible ? 1 : 0}
+      animation={{ animation: HUD_ANIM, value: visible }}
+    >
+      <Text
+        font="caption2"
+        fontWeight="medium"
+        monospacedDigit={true}
+        foregroundStyle="label"
+        padding={{ horizontal: 8, vertical: 3 }}
+        background={{ style: fill.coverScrim, shape: capsule() }}
+      >
+        {`${currentPage}/${pageCount} · ${time}`}
+      </Text>
+    </VStack>
+  )
+}
 
 export interface ChapterSummary {
   id: string
@@ -103,6 +153,19 @@ export function ReaderHUD({
   const lastPage = Math.max(pageCount - 1, 0)
   const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
 
+  // 拖動時每換一頁輕震一下；按下的第一個值只當起點。
+  const scrubPage = clampPage(scrubValue.value)
+  const lastScrubPageRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!scrubbing) {
+      lastScrubPageRef.current = null
+      return
+    }
+    const last = lastScrubPageRef.current
+    if (last !== null && last !== scrubPage) HapticFeedback.selection()
+    lastScrubPageRef.current = scrubPage
+  }, [scrubbing, scrubPage])
+
   return (
     <ZStack
       alignment="top"
@@ -164,10 +227,10 @@ export function ReaderHUD({
             <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
               {/* 標題居中層：以螢幕物理中心為準嚴格置中，兩側夾 padding 避開按鈕 */}
               <VStack alignment="center" spacing={2} padding={{ horizontal: 96 }}>
-                <Text font="headline" fontWeight="bold" foregroundStyle="white" lineLimit={1}>
+                <Text font="headline" fontWeight="bold" foregroundStyle="label" lineLimit={1}>
                   {comicTitle}
                 </Text>
-                <Text font="caption2" foregroundStyle={neutral.secondary} lineLimit={1}>
+                <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
                   {chapterTitle}
                 </Text>
               </VStack>
@@ -175,7 +238,7 @@ export function ReaderHUD({
               {/* 兩側按鈕層：左返回、右選單 */}
               <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
                 <Button action={onDismiss} buttonStyle="plain" accessibilityLabel={t("reader.backToDetails")}>
-                  <Image systemName="chevron.left" font={18} frame={{ width: 44, height: 44 }} foregroundStyle="white" />
+                  <Image systemName="chevron.left" font="body" frame={{ width: 44, height: 44 }} foregroundStyle="label" />
                 </Button>
 
                 <Spacer />
@@ -189,9 +252,9 @@ export function ReaderHUD({
                     <Image
                       frame={{ width: 44, height: 44 }}
                       systemName="list.bullet"
-                      font={15}
+                      font="subheadline"
                       fontWeight="medium"
-                      foregroundStyle="white"
+                      foregroundStyle="label"
                     />
                   </Button>
 
@@ -201,9 +264,9 @@ export function ReaderHUD({
                       <Image
                         frame={{ width: 44, height: 44 }}
                         systemName="gearshape"
-                        font={15}
+                        font="subheadline"
                         fontWeight="medium"
-                        foregroundStyle="white"
+                        foregroundStyle="label"
                       />
                     }
                   >
@@ -321,7 +384,7 @@ export function ReaderHUD({
               <Text
                 font="caption"
                 fontWeight="semibold"
-                foregroundStyle={neutral.secondary}
+                foregroundStyle="secondaryLabel"
                 monospacedDigit={true}
                 frame={{ maxWidth: "infinity", alignment: "center" }}
               >
@@ -366,9 +429,9 @@ export function ReaderHUD({
               {/* 頁碼維持置中（以面板中心為準，跟頂部 HUD 的標題同一個套路），收藏貼齊右緣。 */}
               <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
                 {pageCount > 1 ? (
-                  <Text font="caption2" fontWeight="medium" foregroundStyle={neutral.secondary}>
+                  <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
                     {t("reader.pageProgress", {
-                      page: scrubbing ? clampPage(scrubValue.value) + 1 : currentPage,
+                      page: scrubbing ? scrubPage + 1 : currentPage,
                       total: pageCount,
                     })}
                   </Text>
@@ -382,11 +445,11 @@ export function ReaderHUD({
                   >
                     <Image
                       systemName={favorite ? "heart.fill" : "heart"}
-                      font={15}
+                      font="subheadline"
                       fontWeight="medium"
                       // 高度取 32 配合緊湊進度膠囊面板高度
                       frame={{ width: 44, height: 32 }}
-                      foregroundStyle={favorite ? "systemRed" : "white"}
+                      foregroundStyle={favorite ? toneText.love : "label"}
                     />
                   </Button>
                 </HStack>
@@ -424,13 +487,13 @@ function ChapterLink({
     >
       <HStack frame={{ minHeight: 44 }} spacing={5} alignment="center" contentShape="rect">
         {systemImage && !isTrailingIcon ? (
-          <Image systemName={systemImage} font={11} foregroundStyle="white" />
+          <Image systemName={systemImage} font="caption2" foregroundStyle="label" />
         ) : null}
-        <Text font="subheadline" fontWeight="medium" foregroundStyle="white" lineLimit={1}>
+        <Text font="subheadline" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
           {label}
         </Text>
         {systemImage && isTrailingIcon ? (
-          <Image systemName={systemImage} font={11} foregroundStyle="white" />
+          <Image systemName={systemImage} font="caption2" foregroundStyle="label" />
         ) : null}
       </HStack>
     </Button>
@@ -448,12 +511,12 @@ function ChapterLinkDisabled({
 }) {
   return (
     <Button action={() => {}} buttonStyle="plain" disabled={true} accessibilityLabel={label}>
-      <HStack spacing={5} frame={{ minHeight: 44 }} foregroundStyle={neutral.tertiary}>
-        {!isTrailingIcon ? <Image systemName={systemImage} font={11} /> : null}
+      <HStack spacing={5} frame={{ minHeight: 44 }} foregroundStyle="tertiaryLabel">
+        {!isTrailingIcon ? <Image systemName={systemImage} font="caption2" /> : null}
         <Text font="subheadline" lineLimit={1}>
           {label}
         </Text>
-        {isTrailingIcon ? <Image systemName={systemImage} font={11} /> : null}
+        {isTrailingIcon ? <Image systemName={systemImage} font="caption2" /> : null}
       </HStack>
     </Button>
   )

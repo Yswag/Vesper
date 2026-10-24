@@ -21,7 +21,7 @@ import {
 } from "scripting"
 
 import { useTint, type Tint } from "../app/theme"
-import { badgeOff, badgePadding, badgeShape, badgeSize, capsule, fill, rowPadding, toneText } from "./tokens"
+import { badgeOff, badgeShape, badgeSize, rowPadding, toneText } from "./tokens"
 import { t } from "../i18n"
 
 /** 列上的顏色可以給固定色（`Color`）或跟主題的 `DynamicShapeStyle`。 */
@@ -69,17 +69,6 @@ export function IconBadge({
 /** 列表右侧的箭頭。只在「會進下一頁」時用。 */
 export function Chevron() {
   return <Image systemName="chevron.right" font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
-}
-
-/** 只做資訊的小標籤（來源類型、R18），不可點。 */
-export function TagPill({ text, color = "secondaryLabel" }: { text: string; color?: RowColor }) {
-  return (
-    <HStack padding={badgePadding} background={fill.tag} clipShape={capsule("circular")}>
-      <Text font="caption2" fontWeight="medium" foregroundStyle={color}>
-        {text}
-      </Text>
-    </HStack>
-  )
 }
 
 /** 有圖示的一列。color 預設為 secondaryLabel（相容深淺色模式），onTap 不給就是純資訊列。 */

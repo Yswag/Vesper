@@ -106,3 +106,4 @@ sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，�
 - 2026-10-24 首頁：hero 白字改語意色；有色標籤字色淺色用深一階（`tagText`）；橫向卡片書名靠左；網格邊距 12→16；載入改骨架。
 - 2026-10-24 瀏覽／搜尋：錯誤／空／載入三種狀態統一；分類與排行 chip 列貼導覽列（safeAreaBar＋soft）；篩選 sheet 鋪頁面底色。
 - 2026-10-24 設定：`tagText` 擴成 `toneText`（加 `success`）；下載頁未完成＝中性暫停＋x/y、失敗才紅；刪掉頁面裡可有可無的說明 footnote。
+- 2026-10-24 閱讀器：HUD／目錄字級與文字色歸零（面板釘 dark，用 `label` 系）；目錄分組膠囊在玻璃抽屜裡，不用 `Chip`（玻璃疊玻璃），只套 `tint.selected` 階梯；狀態畫面黑底版 `PageLoading`／`EmptyState`／`NoticeBanner`＋`Chip` 重試。

@@ -18,7 +18,6 @@ import {
   LazyVStack,
   MagnifyGesture,
   Navigation,
-  ProgressView,
   RoundedRectangle,
   ScrollView,
   ScrollViewReader,
@@ -40,8 +39,10 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
-import { ReaderHUD } from "../../components/ReaderHUD"
+import { ReaderCornerInfo, ReaderHUD } from "../../components/ReaderHUD"
 import { ZoomableView } from "../../components/ZoomableView"
+import { Chip } from "../../design/chip"
+import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { fill, neutral, radius, rect } from "../../design/tokens"
 import { isFavorite, setProgress, toggleFavorite } from "../../library/bookshelf"
 import {
@@ -117,6 +118,52 @@ type ReaderStatus =
   | { kind: "error"; message: string }
   | null
 
+/**
+ * 開章狀態（蓋在純黑畫布上）：載入＝`PageLoading`、空章＝`EmptyState`、失敗＝錯誤橫幅＋重試。
+ * 跟其他頁同一套狀態語言，就是不出頁面底色。
+ */
+export function ReaderStatusOverlay({
+  status,
+  size,
+  onRetry,
+}: {
+  /** 要顯示的狀態；`null` 不畫任何東西。 */
+  status: ReaderStatus
+  /** 畫布大小（畫廊模式要跟一頁一樣大，不然捲動區會被撐歪）。 */
+  size?: { width: number; height: number }
+  onRetry?: () => void
+}) {
+  if (status === null) return null
+  const box = size
+    ? { width: size.width, height: size.height }
+    : { maxWidth: "infinity" as const, maxHeight: "infinity" as const }
+
+  if (status.kind === "loading") {
+    return (
+      <VStack frame={box}>
+        <PageLoading />
+      </VStack>
+    )
+  }
+
+  if (status.kind === "empty") {
+    return (
+      <VStack frame={box}>
+        <EmptyState variant="page" icon="photo.on.rectangle.angled" title={t("reader.noImages")} />
+      </VStack>
+    )
+  }
+
+  return (
+    <VStack frame={box}>
+      <VStack spacing={10} padding={{ horizontal: 24 }} frame={{ maxWidth: 380 }}>
+        <NoticeBanner tone="error" text={t("common.loadFailed", { message: status.message })} />
+        {onRetry ? <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={onRetry} /> : null}
+      </VStack>
+    </VStack>
+  )
+}
+
 export function ReaderScreen(props: ReaderProps) {
   const hudVisible = useObservable(false)
 
@@ -168,6 +215,8 @@ function ReaderContent({
   // 這一話的取圖 session（頁數、圖片鍵、離線狀態都在裡面）；換話就整個換掉。
   const [session, setSession] = useState<ChapterSession | undefined>(undefined)
   const [status, setStatus] = useState<ReaderStatus>({ kind: "loading" })
+  // 重試：把開章流程再跑一次（換 key 讓 effect 重跑，不動翻頁與進度狀態）。
+  const [reloadKey, setReloadKey] = useState(0)
   // 目前正在讀的一話。換話只改這個 state、不推新頁（詳見 ChapterLink）。
   const [currentEpId, setCurrentEpId] = useState(epId)
 
@@ -324,7 +373,7 @@ function ReaderContent({
       // 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求 + 把正文的記憶體快取放掉。
       opened?.dispose()
     }
-  }, [sourceKey, comicId, currentEpId, offlineMode])
+  }, [sourceKey, comicId, currentEpId, offlineMode, reloadKey])
 
   // 頁碼落定 → 補預取（以這一頁為中心往前 3）。兩種閱讀模式都吃這一條（leadingPage 是共用的）。
   // 拖曳頁碼列時只動 scrubValue，leadingPage 要放開（commitScrub）才會變 → 拖曳中不會重排。
@@ -625,17 +674,6 @@ function ReaderContent({
       ? Math.min(Math.max(leadingPage + 1, 1), Math.max(pageCount, 1))
       : 1
 
-  // 遮罩上那句話：載入與空章的文案在 render 時求值（切語言要跟著換）；
-  // 錯誤訊息是源自己的字，原樣顯示。
-  const statusText =
-    status === null
-      ? ""
-      : status.kind === "loading"
-        ? t("common.loading")
-        : status.kind === "empty"
-          ? t("reader.noImages")
-          : status.message
-
   // HUD 的進出場全部走屬性動畫（offset / opacity）+ animation modifier，
   // 不用 transition + withAnimation——那條路徑在這塊 overlay 上會退化成淡入淡出。
   function toggleHUD() {
@@ -800,16 +838,7 @@ function ReaderContent({
           }}
         >
           {status !== null ? (
-            <VStack
-              alignment="center"
-              spacing={14}
-              frame={{ width: pageSize.width, height: pageSize.height }}
-            >
-              <ProgressView />
-              <Text foregroundStyle="secondaryLabel" font="subheadline">
-                {statusText}
-              </Text>
-            </VStack>
+            <ReaderStatusOverlay status={status} size={pageSize} onRetry={() => setReloadKey(key => key + 1)} />
           ) : vertical ? (
             <LazyVStack
               spacing={0}
@@ -930,6 +959,14 @@ function ReaderContent({
             </HStack>
           )
         ) : null}
+
+        {/* 1.2 HUD 收起時的頁碼與時間 */}
+        <ReaderCornerInfo
+          visible={!hudVisible.value && status === null}
+          currentPage={currentPage}
+          pageCount={pageCount}
+          safeAreaInsets={safeAreaInsets}
+        />
 
         {/* 2. 全螢幕 HUD Overlay */}
         <ReaderHUD
