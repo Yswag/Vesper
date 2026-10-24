@@ -55,7 +55,13 @@
 
 - 一律 `components/CoverImage`，傳 `title`：沒圖時用標題雜湊挑主題色盤畫漸層＋首字（同標題同色）；載入中是 surface 底＋小轉圈。
 - 圖上的短角標一律 `design/CoverBadge`（`tone="danger"` 給「來源已移除」）；頁面不自刻 `ultraThinMaterial` 膠囊。網格裡頁數在左上、時間／狀態在下緣。
-- 網格書名靠左，最多兩行；副標與來源一行。
+- 網格書名靠左、一行（兩行會讓同一排的格子高低不齊）；副標與來源一行。
+
+## 標籤與膠囊
+
+- 頁面上（不在圖上）的資訊標籤一律 `design/Tag`（`neutral`／`danger`／`warning`／`love`）；有色 tone 的底只放在 `tagTone` token。
+- 可點的膠囊一律 `design/chip` 的 `Chip`（選中＝`tint.selected` 階梯）；同一行擠多顆用 `compact`，文字 chip 不再加 icon。
+- 帶左滑的卡片列，外層也要 `clipShape={cardShape}`：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
 
 ## 浮層
 
@@ -74,7 +80,8 @@
 
 - `scripting-ts run dev/design-lint.ts`：掃 `screens/`、`components/`、`app/`（不含 `app/theme.tsx`）的違規，跟 `dev/design-lint.baseline.json` 比。**每個檔每條規則只准減不准增**；減少後要更新基準。新增或刪除 `.tsx` 要同步頁面清單（`.scratch/visual-polish/pages.md`），否則 FAIL。規則裡的 `card` 抓的是頁面自刻的 `stroke={hairlineStroke}`（該用 `Card`）。
 - 截圖基準：每批結束截 `dev/preview-design.tsx`（amber、ink × 深淺）與該批頁面，跟上一批比。
-- 玻璃截圖拍不出來：動到玻璃就 `scripting-ts run dev/show-glass.tsx`（淺／深上下並排），請使用者實機截圖。
+- 玻璃截圖拍不出來：動到玻璃就 `scripting-ts run dev/show-glass.tsx`（淺／深上下並排），請使用者實機截圖。頁面裡有帶色玻璃時，`--screenshot` 整頁失真，要暫時拿掉 tint 才拍得到其他部分。
+- 動到背景層（模糊、漸層、Canvas）一定要實機看：預覽正常不代表實機正常。
 
 ## 決定紀錄
 
@@ -87,3 +94,4 @@
 - 2026-10-24 封面佔位（標題雜湊色盤＋首字）、`CoverBadge`、`lifted` 投影；lint 加 `material`；刪 `GlassBadge`。
 - 2026-10-24 對話框預設按鈕用強調色；對話框拿掉陰影。
 - 2026-10-24 `Card` 一律帶高光邊（`hairlineStroke`），頁面手刻的卡片全部改用 `Card`；來源已移除改成封面下緣 danger 角標，下面不再重複來源名。
+- 2026-10-24 詳情頁：資訊標籤改 `Tag`、章節工具列改 `Chip compact`；頂部氛圍光暈維持原版（Canvas 淡出版實機壞掉，撤回）；網格書名改一行。

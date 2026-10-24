@@ -142,7 +142,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                     font="caption"
                     fontWeight="medium"
                     foregroundStyle="label"
-                    lineLimit={2}
+                    lineLimit={1}
                     multilineTextAlignment="leading"
                     frame={{ width: cellWidth, alignment: "leading" }}
                   >

@@ -48,6 +48,19 @@ export const neutral = {
   tertiary: "#636366",
 } as const
 
+/**
+ * 頁面上的資訊標籤（`design/Tag`）的有色底：一色一個意思，頁面不寫 rgba。
+ * 中性標籤用 `fill.tag`，不需要這裡的底色。
+ */
+export const tagTone = {
+  /** 危險／分級 NSFW。 */
+  danger: "rgba(255, 69, 58, 0.12)",
+  /** 提醒／分級建議／評分。 */
+  warning: "rgba(255, 149, 0, 0.15)",
+  /** 喜愛數。 */
+  love: "rgba(255, 45, 85, 0.12)",
+} as const
+
 /** 容器與狀態填色（非互動的部分）。互動色（選中底、描邊、榜單）在 `useTint()` 的 `Tint` 裡。 */
 export const fill = {
   /** 次要容器（標籤、輸入框底）。 */
@@ -56,8 +69,10 @@ export const fill = {
   tag: "quaternarySystemFill",
   /** 圖片載入中／沒有圖的底。 */
   surface: "secondarySystemBackground",
-  /** 評分徽章底（橘）。 */
-  score: "rgba(255, 149, 0, 0.15)",
+  /** 評分徽章底（跟資訊標籤的 warning 同一個顏色）。 */
+  score: tagTone.warning,
+  /** 長簡介收合時末端的淡出點（跟 `secondaryLabel` 接成漸層）。 */
+  fade: "rgba(142, 142, 147, 0.05)",
   /** 閱讀器 HUD 的輕遮罩。 */
   scrimSoft: "rgba(0, 0, 0, 0.18)",
   /** 封面上的「開啟中」遮罩（蓋住封面、中間放轉圈）。 */
@@ -200,6 +215,8 @@ export const cardGap = 8
 /** 短標籤、chip 與徽章內距。 */
 export const tagPadding = { horizontal: 10, vertical: 5 } as const
 export const chipPadding = { horizontal: 16, vertical: 8 } as const
+/** 緊湊版 chip（章節工具列）：同一行要擠下排序、選取、下載與標題，所以左右再收窄。 */
+export const chipCompactPadding = { horizontal: 8, vertical: 5 } as const
 export const badgePadding = { horizontal: 8, vertical: 4 } as const
 
 /** 輸入框（TextField）自己的內距：比 chip 窄一點，文字才不會離游標太遠。 */

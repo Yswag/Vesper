@@ -13,6 +13,7 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ZoomableView } from "../../components/ZoomableView"
+import { fill, neutral } from "../../design/tokens"
 
 export function CoverViewerScreen({
   sourceKey,
@@ -67,7 +68,7 @@ export function CoverViewerScreen({
     <ZStack
       alignment="topTrailing"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      background="#000000"
+      background={fill.canvas}
       // 推入頁面：跟閱讀器一樣把導覽列與 tab bar 都藏起來——全出血看圖時
       // 底部那條 tab bar 會壓在圖片上，也會誤觸換 tab。
       navigationBarVisibility="hidden"
@@ -91,8 +92,8 @@ export function CoverViewerScreen({
         </ZoomableView>
       ) : (
         <VStack alignment="center" spacing={8} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-          <Text font="body" foregroundStyle="#8e8e93">{failed ? t("detail.coverFailed") : t("common.loading")}</Text>
-          {title ? <Text font="caption2" foregroundStyle="#48484a">{title}</Text> : null}
+          <Text font="body" foregroundStyle={neutral.secondary}>{failed ? t("detail.coverFailed") : t("common.loading")}</Text>
+          {title ? <Text font="caption2" foregroundStyle={neutral.tertiary}>{title}</Text> : null}
         </VStack>
       )}
 

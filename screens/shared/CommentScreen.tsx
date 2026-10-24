@@ -37,11 +37,8 @@ import { EmptyState, ListFooter, NoticeBanner, PageLoading, statusTone, type Sta
 import {
   avatarSize,
   capsule,
-  cardBackground,
   cardGap,
   fill,
-  hairlineStroke,
-  palette,
   radius,
   rect,
 } from "../../design/tokens"
@@ -416,13 +413,7 @@ export function CommentScreen({
                 ) : null}
 
                 {comments.length > 0 ? (
-                  <VStack
-                    spacing={0}
-                    background={cardBackground}
-                    clipShape={rect(radius.lg)}
-                    overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={hairlineStroke} />}
-                    frame={{ maxWidth: "infinity" }}
-                  >
+                  <Card>
                     {comments.map((comment, index) => (
                       <CommentRow
                         key={`${index}:${comment.id}`}
@@ -431,7 +422,7 @@ export function CommentScreen({
                         isLast={index === comments.length - 1}
                       />
                     ))}
-                  </VStack>
+                  </Card>
                 ) : null}
 
                 {hasMore ? (

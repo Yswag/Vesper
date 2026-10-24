@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Capsule,
   Divider,
   GeometryReader,
   HStack,
@@ -11,7 +10,6 @@ import {
   LazyHStack,
   NamespaceReader,
   NavigationLink,
-  RoundedRectangle,
   ScrollView,
   Spacer,
   Text,
@@ -41,9 +39,10 @@ import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { ReaderScreen, type ChapterRef } from "./ReaderScreen"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { PageBackground, useTint } from "../../app/theme"
-import { badgePadding, cardBackground, capsule, fill, hairlineStroke, pageInsets, pageSpacing, palette, radius, rect, rowPadding, tagPadding } from "../../design/tokens"
+import { cardBackground, cardShape, capsule, fill, pageInsets, pageSpacing, palette, radius, rect, rowPadding } from "../../design/tokens"
 import { Card } from "../../design/layout"
-import { IconRow } from "../../design/rows"
+import { Tag } from "../../design/Tag"
+import { Chip } from "../../design/chip"
 import { PageLoading } from "../../design/status"
 import { GlassSurface } from "../../design/GlassSurface"
 
@@ -394,6 +393,9 @@ export function ComicDetailScreen({
               setShowNavTitle(!(ids as string[]).includes("hero-title"))
             },
           }}
+          // 量到的容器寬（hero 封面尺寸用）。`maxWidth: "infinity"` 會讓圖片拿自己的寬高比
+          // （380 × 寬/高）當理想寬度，橫式封面就變成整頁寬度，把整頁推歪
+          // （見 dev/probe-cover-overflow.tsx：同一個橫式封面，量寬前 798、量寬後 402）。
           background={
             <GeometryReader>
               {geometry => (
@@ -438,7 +440,6 @@ export function ComicDetailScreen({
                   <ZStack
                     alignment="center"
                     matchedTransitionSource={{ id: `detail-hero:${sourceKey}:${comicId}`, namespace: heroNs }}
-                    shadow={{ color: "rgba(0, 0, 0, 0.45)", radius: 14, x: 0, y: 6 }}
                   >
                     <CoverImage
                       sourceKey={sourceKey}
@@ -446,6 +447,8 @@ export function ComicDetailScreen({
                       width={hero.width}
                       height={hero.height}
                       cornerRadius={radius.md}
+                      title={comicTitle}
+                      lifted={true}
                     />
                   </ZStack>
                 </NavigationLink>
@@ -480,102 +483,39 @@ export function ComicDetailScreen({
                   </Text>
                 ) : null}
 
-                {/* 狀態徽章 */}
+                {/* 狀態標籤：章數／來源／連載狀態都是中性（不搶注意力）。 */}
                 <HStack spacing={6}>
-                  <HStack
-                    padding={badgePadding}
-                    background="ultraThinMaterial"
-                    clipShape={rect(radius.sm)}
-                    overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
-                  >
-                    <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
-                      {t("detail.chapterCount", { n: chapters.length })}
-                    </Text>
-                  </HStack>
-
-                  <HStack
-                    padding={badgePadding}
-                    background="ultraThinMaterial"
-                    clipShape={rect(radius.sm)}
-                    overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
-                  >
-                    <Text font="caption2" foregroundStyle="secondaryLabel">
-                      {detail.sourceName}
-                    </Text>
-                  </HStack>
-
-                  {detail.status ? (
-                    <HStack
-                      padding={badgePadding}
-                      background="ultraThinMaterial"
-                      clipShape={rect(radius.sm)}
-                      overlay={<RoundedRectangle cornerRadius={radius.sm} stroke={hairlineStroke} />}
-                    >
-                      <Text font="caption2" foregroundStyle="secondaryLabel">
-                        {statusText(detail.status)}
-                      </Text>
-                    </HStack>
-                  ) : null}
+                  <Tag text={t("detail.chapterCount", { n: chapters.length })} />
+                  <Tag text={detail.sourceName} />
+                  {detail.status ? <Tag text={statusText(detail.status)} /> : null}
                 </HStack>
 
                 {/* 唯讀星等、分級與喜愛數：源有給才出現。 */}
                 {rating || (detail.contentRating && detail.contentRating !== "safe") || (detail.likesCount != null && detail.likesCount > 0) ? (
                   <HStack spacing={8} alignment="center">
                     {detail.contentRating && detail.contentRating !== "safe" ? (
-                      <HStack
-                        spacing={4}
-                        padding={badgePadding}
-                        background={detail.contentRating === "nsfw" ? "rgba(255, 45, 85, 0.12)" : fill.score}
-                        clipShape={capsule()}
-                      >
-                        <Image
-                          systemName={detail.contentRating === "nsfw" ? "exclamationmark.triangle.fill" : "info.circle"}
-                          font="caption2"
-                          foregroundStyle={detail.contentRating === "nsfw" ? palette.red : palette.orange}
-                        />
-                        <Text
-                          font="caption2"
-                          fontWeight="bold"
-                          foregroundStyle={detail.contentRating === "nsfw" ? palette.red : palette.orange}
-                        >
-                          {ratingText(detail.contentRating)}
-                        </Text>
-                      </HStack>
+                      <Tag
+                        icon={detail.contentRating === "nsfw" ? "exclamationmark.triangle.fill" : "info.circle"}
+                        text={ratingText(detail.contentRating)}
+                        tone={detail.contentRating === "nsfw" ? "danger" : "warning"}
+                      />
                     ) : null}
 
-                    {rating ? (
-                      <HStack
-                        spacing={6}
-                        padding={badgePadding}
-                        background={fill.score}
-                        clipShape={capsule()}
-                      >
-                        <Text font="caption" fontWeight="bold" foregroundStyle={palette.orange}>
-                          {rating.glyphs}
-                        </Text>
-                        <Text font="caption2" fontWeight="bold" foregroundStyle={palette.orange}>
-                          {rating.score}
-                        </Text>
-                      </HStack>
-                    ) : null}
+                    {rating ? <Tag text={`${rating.glyphs} ${rating.score}`} tone="warning" /> : null}
 
                     {detail.likesCount != null && detail.likesCount > 0 ? (
-                      <HStack
-                        spacing={4}
-                        padding={badgePadding}
-                        background="rgba(255, 45, 85, 0.12)"
-                        clipShape={capsule()}
+                      <Tag
+                        icon="heart.fill"
+                        tone="love"
                         accessibilityLabel={t("detail.likesCount", { n: detail.likesCount })}
-                      >
-                        <Image systemName="heart.fill" font="caption2" foregroundStyle={palette.pink} />
-                        <Text font="caption2" fontWeight="bold" foregroundStyle={palette.pink}>
-                          {detail.likesCount >= 10000
+                        text={
+                          detail.likesCount >= 10000
                             ? `${(detail.likesCount / 10000).toFixed(1)}w`
                             : detail.likesCount >= 1000
                             ? `${(detail.likesCount / 1000).toFixed(1)}k`
-                            : String(detail.likesCount)}
-                        </Text>
-                      </HStack>
+                            : String(detail.likesCount)
+                        }
+                      />
                     ) : null}
                   </HStack>
                 ) : null}
@@ -709,17 +649,7 @@ export function ComicDetailScreen({
               <ScrollView axes="horizontal" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
                   {allTags.map((tag, i) => (
-                    <HStack
-                      key={`tag:${i}:${tag}`}
-                      padding={tagPadding}
-                      background="ultraThinMaterial"
-                      clipShape={rect(radius.md)}
-                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
-                    >
-                      <Text font="caption" fontWeight="medium" foregroundStyle="secondaryLabel">
-                        {tag}
-                      </Text>
-                    </HStack>
+                    <Tag key={`tag:${i}:${tag}`} text={tag} />
                   ))}
                 </HStack>
               </ScrollView>
@@ -757,7 +687,7 @@ export function ComicDetailScreen({
                     !isLongDescription || descExpanded
                       ? "secondaryLabel"
                       : {
-                          colors: ["secondaryLabel", "secondaryLabel", "rgba(142, 142, 147, 0.05)"],
+                          colors: ["secondaryLabel", "secondaryLabel", fill.fade],
                           startPoint: "top",
                           endPoint: "bottom",
                         }
@@ -802,19 +732,15 @@ export function ComicDetailScreen({
                           }
                         >
                           <VStack alignment="center" spacing={5} frame={{ width: recCard.width }}>
-                            <ZStack
-                              alignment="bottomTrailing"
-                              frame={{ width: recCard.width, height: recCard.height }}
-                              shadow={{ color: "rgba(0, 0, 0, 0.28)", radius: 6, x: 0, y: 3 }}
-                            >
-                              <CoverImage
-                                sourceKey={sourceKey}
-                                url={item.cover}
-                                width={recCard.width}
-                                height={recCard.height}
-                                cornerRadius={radius.md}
-                              />
-                            </ZStack>
+                            <CoverImage
+                              sourceKey={sourceKey}
+                              url={item.cover}
+                              width={recCard.width}
+                              height={recCard.height}
+                              cornerRadius={radius.md}
+                              title={item.title}
+                              lifted={true}
+                            />
                             <Text
                               font="caption"
                               fontWeight="medium"
@@ -846,104 +772,40 @@ export function ComicDetailScreen({
                 </HStack>
                 <Spacer />
 
-                {/* 正/倒序切換：圖標小按鈕 */}
-                <Button
-                  buttonStyle="plain"
+                {/* 排序、選取、下載：工具列膠囊一律用 design/chip 的緊湊版 */}
+                <Chip
+                  compact
+                  icon="arrow.up.arrow.down"
+                  selected={reverseOrder}
                   accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
-                  action={() => setReverseOrder(!reverseOrder)}
-                >
-                  <HStack
-                    alignment="center"
-                    frame={{ width: 32, height: 28 }}
-                    background="ultraThinMaterial"
-                    clipShape={capsule()}
-                    overlay={<Capsule stroke={hairlineStroke} />}
-                  >
-                    <Image
-                      systemName="arrow.up.arrow.down"
-                      font="caption"
-                      fontWeight="semibold"
-                      foregroundStyle={reverseOrder ? tint.tint : "secondaryLabel"}
-                    />
-                  </HStack>
-                </Button>
+                  onTap={() => setReverseOrder(!reverseOrder)}
+                />
 
-                {/* 選取 / 取消 */}
-                <Button
-                  buttonStyle="plain"
-                  action={() => {
+                <Chip
+                  compact
+                  text={selecting ? t("common.cancel") : t("detail.select")}
+                  selected={selecting}
+                  onTap={() => {
                     setSelecting(!selecting)
                     setSelectedIds([])
                   }}
-                >
-                  <HStack
-                    spacing={4}
-                    padding={{ horizontal: 10, vertical: 5 }}
-                    background={selecting ? tint.tint : "ultraThinMaterial"}
-                    clipShape={capsule()}
-                    overlay={selecting ? undefined : <Capsule stroke={hairlineStroke} />}
-                  >
-                    <Image
-                      systemName={selecting ? "xmark" : "checkmark.circle"}
-                      font="caption2"
-                      foregroundStyle={selecting ? tint.onTint : "secondaryLabel"}
-                    />
-                    <Text font="caption2" fontWeight="medium" foregroundStyle={selecting ? tint.onTint : "secondaryLabel"}>
-                      {selecting ? t("common.cancel") : t("detail.select")}
-                    </Text>
-                  </HStack>
-                </Button>
+                />
 
-                {/* 下載 / 下載全部 */}
                 {selecting ? (
-                  <Button
-                    buttonStyle="plain"
+                  <Chip
+                    compact
+                    text={t("detail.downloadSelected", { n: pendingSelected.length })}
+                    selected={pendingSelected.length > 0}
                     disabled={pendingSelected.length === 0}
-                    action={downloadSelected}
-                  >
-                    <HStack
-                      spacing={4}
-                      padding={{ horizontal: 10, vertical: 5 }}
-                      background={pendingSelected.length > 0 ? tint.tint : "quaternarySystemFill"}
-                      clipShape={capsule()}
-                    >
-                      <Image
-                        systemName="arrow.down.circle.fill"
-                        font="caption2"
-                        foregroundStyle={tint.onTint}
-                      />
-                      <Text font="caption2" fontWeight="bold" foregroundStyle={tint.onTint}>
-                        {t("detail.downloadSelected", { n: pendingSelected.length })}
-                      </Text>
-                    </HStack>
-                  </Button>
+                    onTap={downloadSelected}
+                  />
                 ) : (
-                  <Button
-                    buttonStyle="plain"
+                  <Chip
+                    compact
+                    text={t("detail.downloadAll")}
                     disabled={pendingAll.length === 0}
-                    action={downloadAll}
-                  >
-                    <HStack
-                      spacing={4}
-                      padding={{ horizontal: 10, vertical: 5 }}
-                      background="ultraThinMaterial"
-                      clipShape={capsule()}
-                      overlay={<Capsule stroke={hairlineStroke} />}
-                    >
-                      <Image
-                        systemName="arrow.down.to.line"
-                        font="caption2"
-                        foregroundStyle={pendingAll.length === 0 ? "tertiaryLabel" : tint.tint}
-                      />
-                      <Text
-                        font="caption2"
-                        fontWeight="medium"
-                        foregroundStyle={pendingAll.length === 0 ? "tertiaryLabel" : "label"}
-                      >
-                        {t("detail.downloadAll")}
-                      </Text>
-                    </HStack>
-                  </Button>
+                    onTap={downloadAll}
+                  />
                 )}
               </HStack>
 
@@ -954,38 +816,17 @@ export function ComicDetailScreen({
                     {chapterGroups.map((group: ChapterGroup<ChapterRef>) => {
                       const isCurrentGroup = group.name === activeGroup
                       return (
-                        <Button
+                        <Chip
                           key={group.name}
-                          buttonStyle="plain"
-                          action={() => {
+                          compact
+                          text={group.name}
+                          detail={String(group.chapters.length)}
+                          selected={isCurrentGroup}
+                          onTap={() => {
                             setSelectedGroup(group.name)
                             setSelectedIds([])
                           }}
-                        >
-                          <HStack
-                            spacing={5}
-                            padding={{ horizontal: 12, vertical: 6 }}
-                            background={isCurrentGroup ? tint.tint : "ultraThinMaterial"}
-                            clipShape={capsule()}
-                            overlay={isCurrentGroup ? undefined : <Capsule stroke={hairlineStroke} />}
-                          >
-                            <Text
-                              font="caption"
-                              fontWeight={isCurrentGroup ? "semibold" : "regular"}
-                              foregroundStyle={isCurrentGroup ? tint.onTint : "secondaryLabel"}
-                              lineLimit={1}
-                            >
-                              {group.name}
-                            </Text>
-                            <Text
-                              font="caption2"
-                              fontWeight="medium"
-                              foregroundStyle={isCurrentGroup ? tint.onTint : "tertiaryLabel"}
-                            >
-                              {group.chapters.length}
-                            </Text>
-                          </HStack>
-                        </Button>
+                        />
                       )
                     })}
                   </HStack>
@@ -1005,58 +846,57 @@ export function ComicDetailScreen({
 
                   // 選取模式：整列就只有「切換勾選」這一個點擊區（不能再包 NavigationLink）。
                   const body = (
-                    <HStack
-                      padding={rowPadding}
-                      background={highlight ? tint.selectedRow : cardBackground}
-                      clipShape={rect(radius.md)}
-                      overlay={<RoundedRectangle cornerRadius={radius.md} stroke={hairlineStroke} />}
-                      frame={{ maxWidth: "infinity" }}
-                      onTapGesture={selecting && !locked ? () => toggleSelected(chapter.id) : undefined}
-                    >
-                      {selecting && !locked ? (
-                        <Image
-                          systemName={checked ? "checkmark.circle.fill" : "circle"}
-                          fontWeight="medium"
-                          foregroundStyle={checked ? tint.tint : "tertiaryLabel"}
-                        />
-                      ) : null}
-                      {locked ? (
-                        <Image systemName="lock.fill" font="caption2" foregroundStyle="tertiaryLabel" />
-                      ) : null}
-                      <Text
-                        font="subheadline"
-                        fontWeight={isCurrent ? "bold" : "regular"}
-                        foregroundStyle={isCurrent ? tint.tint : "label"}
-                        lineLimit={1}
+                    <Card background={highlight ? tint.selectedRow : cardBackground}>
+                      <HStack
+                        padding={rowPadding}
+                        frame={{ maxWidth: "infinity" }}
+                        onTapGesture={selecting && !locked ? () => toggleSelected(chapter.id) : undefined}
                       >
-                        {chapter.title}
-                      </Text>
-                      <Spacer />
-                      <DownloadStateText state={download} />
-                      {isCurrent ? (
-                        <HStack
-                          spacing={3}
-                          padding={{ horizontal: 8, vertical: 3 }}
-                          background={tint.tint}
-                          clipShape={capsule()}
-                        >
+                        {selecting && !locked ? (
                           <Image
-                            systemName="clock.arrow.circlepath"
-                            font="caption2"
-                            foregroundStyle={tint.onTint}
+                            systemName={checked ? "checkmark.circle.fill" : "circle"}
+                            fontWeight="medium"
+                            foregroundStyle={checked ? tint.tint : "tertiaryLabel"}
                           />
-                          <Text font="caption2" foregroundStyle={tint.onTint} fontWeight="semibold">
-                            {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
-                          </Text>
-                        </HStack>
-                      ) : selecting || locked ? null : (
-                        <Image
-                          systemName="chevron.right"
-                          font="caption2"
-                          foregroundStyle="tertiaryLabel"
-                        />
-                      )}
-                    </HStack>
+                        ) : null}
+                        {locked ? (
+                          <Image systemName="lock.fill" font="caption2" foregroundStyle="tertiaryLabel" />
+                        ) : null}
+                        <Text
+                          font="subheadline"
+                          fontWeight={isCurrent ? "bold" : "regular"}
+                          foregroundStyle={isCurrent ? tint.tint : "label"}
+                          lineLimit={1}
+                        >
+                          {chapter.title}
+                        </Text>
+                        <Spacer />
+                        <DownloadStateText state={download} />
+                        {isCurrent ? (
+                          <HStack
+                            spacing={3}
+                            padding={{ horizontal: 8, vertical: 3 }}
+                            background={tint.tint}
+                            clipShape={capsule()}
+                          >
+                            <Image
+                              systemName="clock.arrow.circlepath"
+                              font="caption2"
+                              foregroundStyle={tint.onTint}
+                            />
+                            <Text font="caption2" foregroundStyle={tint.onTint} fontWeight="semibold">
+                              {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
+                            </Text>
+                          </HStack>
+                        ) : selecting || locked ? null : (
+                          <Image
+                            systemName="chevron.right"
+                            font="caption2"
+                            foregroundStyle="tertiaryLabel"
+                          />
+                        )}
+                      </HStack>
+                    </Card>
                   )
 
                   // 鎖定的章節只顯示，不包 NavigationLink（點了不會進去）。
@@ -1078,14 +918,16 @@ export function ComicDetailScreen({
 
                   // 下載動作放左滑：一列只能有一個可點元件，塞 Button 會跟 NavigationLink 搶命中。
                   // 選取模式與鎖定章節不給左滑。
+                  // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底。
                   return selecting || settled || locked ? (
-                    <VStack key={chapter.id} spacing={0}>
+                    <VStack key={chapter.id} spacing={0} clipShape={cardShape}>
                       {row}
                     </VStack>
                   ) : (
                     <VStack
                       key={chapter.id}
                       spacing={0}
+                      clipShape={cardShape}
                       trailingSwipeActions={{
                         allowsFullSwipe: true,
                         actions: [
