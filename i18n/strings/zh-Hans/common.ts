@@ -42,6 +42,8 @@ export default {
   save: "保存",
   add: "添加",
   delete: "删除",
+  copy: "复制",
+  copied: "已复制",
   remove: "移除",
   clear: "清除",
   inProgress: "{label}…",

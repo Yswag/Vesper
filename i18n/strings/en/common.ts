@@ -43,6 +43,8 @@ export default {
   save: "Save",
   add: "Add",
   delete: "Delete",
+  copy: "Copy",
+  copied: "Copied",
   remove: "Remove",
   clear: "Clear",
   inProgress: "{label}…",

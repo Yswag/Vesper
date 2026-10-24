@@ -67,6 +67,8 @@ export default {
   save: "儲存",
   add: "加入",
   delete: "刪除",
+  copy: "複製",
+  copied: "已複製",
   remove: "移除",
   clear: "清除",
   /** 進行中：`{label}` 是動作本身（「登入…」／「加入…」）。 */

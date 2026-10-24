@@ -1,7 +1,7 @@
 // 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；下拉可重新整理索引。
 // 清單只讀本地快取，重新整理才會連網。
 
-import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useState } from "scripting"
+import { Button, Divider, HStack, Image, Spacer, Text, VStack, ZStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
@@ -30,6 +30,8 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [status, setStatus] = useState<StatusNotice | null>(null)
   const [loaded, setLoaded] = useState(false)
+  // 長按網址複製：toast 由這一列自己管。
+  const [copied, setCopied] = useState(false)
 
   function sync() {
     setRepository(getRepository(repositoryUrl))
@@ -263,9 +265,35 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   const isActionDisabled = busy || busyKey !== null || batchProgress !== null || allInstalledFromThisRepo
 
   return (
+    // toast 不能傳進 PageScroll：modifier prop 跨元件邊界會被渲染兩次（同 PageScroll 的 toolbar 註解）。
+    <ZStack
+      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+      toast={{
+        message: t("common.copied"),
+        isPresented: copied,
+        onChanged: presented => setCopied(presented),
+        duration: 1.5,
+        position: "bottom",
+      }}
+    >
     <PageScroll title={repository.name} onRefresh={refresh}>
       <CardGroup title={t("settings.repo.group")}>
-        <InfoRow label={t("settings.shared.url")} value={repository.url} />
+        <VStack
+          spacing={0}
+          contextMenu={{
+            menuItems: (
+              <Button
+                title={t("common.copy")}
+                action={() => {
+                  void Pasteboard.setString(repository.url)
+                  setCopied(true)
+                }}
+              />
+            ),
+          }}
+        >
+          <InfoRow label={t("settings.shared.url")} value={repository.url} />
+        </VStack>
         <Divider padding={{ leading: 16 }} />
         <InfoRow
           label={t("settings.repo.kind")}
@@ -327,6 +355,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
     </PageScroll>
+    </ZStack>
   )
 }
 
