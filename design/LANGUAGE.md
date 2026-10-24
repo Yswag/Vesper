@@ -61,6 +61,9 @@
 
 - 頁面上（不在圖上）的資訊標籤一律 `design/Tag`（`neutral`／`danger`／`warning`／`love`）；有色 tone 的底只放在 `tagTone` token。
 - 可點的膠囊一律 `design/chip` 的 `Chip`（選中＝`tint.selected` 階梯）；同一行擠多顆用 `compact`，文字 chip 不再加 icon。
+- 會開選單的膠囊用 `Chip chevron`。頁內動作不用 `glassProminent`。
+- 頁面頂端的切換 chip 列（分類、排行週期）掛在捲動區的 `safeAreaBar`（edge top），貼在導覽列下；配 `scrollEdgeEffectStyle` soft。不要 `scrollEdgeEffectHidden`（導覽列標題會失去底）。
+- 圖上角標夾寬用 `CoverBadge maxWidth`，它會抱內容寬；不在角標外自己加 `frame maxWidth`。
 - 帶左滑的卡片列，外層也要 `clipShape={cardShape}`：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
 
 ## 浮層
@@ -72,7 +75,9 @@
 
 `pageInsets`、`pageSpacing`、`sectionSpacing`、`cardGap`、`rowPadding` 等都在 `design/tokens.ts`，頁面直接用名字。左右邊距全 App 都是 `pageInsets.horizontal`（16），網格也一樣；網格卡片間距 9、橫向卡片排 12。
 
-載入中的區塊用「骨架」：跟載入後同尺寸的 `fill.surface` 封面塊＋`redacted="placeholder"` 的字，資料來了版面不跳。不要用一行「載入中…」的字佔位。
+載入中的區塊用「骨架」：跟載入後同尺寸的 `fill.surface` 封面塊＋`redacted="placeholder"` 的字，資料來了版面不跳。不要用一行「載入中…」的字佔位。錯誤＝`NoticeBanner tone="error"`＋`Chip` 重試；空＝`EmptyState variant="page"`。
+
+sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，否則淺色下卡片看不到邊。
 
 ## 閱讀器
 
@@ -98,3 +103,4 @@
 - 2026-10-24 `Card` 一律帶高光邊（`hairlineStroke`），頁面手刻的卡片全部改用 `Card`；來源已移除改成封面下緣 danger 角標，下面不再重複來源名。
 - 2026-10-24 詳情頁：資訊標籤改 `Tag`、章節工具列改 `Chip compact`；頂部氛圍光暈維持原版（Canvas 淡出版實機壞掉，撤回）；網格書名改一行。
 - 2026-10-24 首頁：hero 白字改語意色；有色標籤字色淺色用深一階（`tagText`）；橫向卡片書名靠左；網格邊距 12→16；載入改骨架。
+- 2026-10-24 瀏覽／搜尋：錯誤／空／載入三種狀態統一；分類與排行 chip 列貼導覽列（safeAreaBar＋soft）；篩選 sheet 鋪頁面底色。

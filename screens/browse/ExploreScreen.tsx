@@ -1,7 +1,6 @@
 // 單一來源探索頁：支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
 
 import {
-  Button,
   GeometryReader,
   HStack,
   LazyHStack,
@@ -29,10 +28,11 @@ import { WidthReporter } from "../../components/WidthReporter"
 import { CoverImage } from "../../components/CoverImage"
 import { SectionGridScreen } from "./SectionGridScreen"
 import { PageBackground } from "../../app/theme"
+import { CoverBadge } from "../../design/CoverBadge"
 import { Chevron } from "../../design/rows"
-import { ListFooter, PageLoading, type StatusKind } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
 import { Chip, ChipRow } from "../../design/chip"
-import { radius, rect } from "../../design/tokens"
+import { pageInsets } from "../../design/tokens"
 
 type Cursor = { page: number } | { next: string }
 
@@ -171,8 +171,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   }
 
   // 顯示文字在 render 時才算：狀態只負責判斷。
-  const message = status === "error" ? errorText : status === "empty" ? t("browse.noResults") : ""
-
   const isMultiSection = sections.length > 1
   const singleSection = sections[0]
   const singleHasMore = singleSection ? moreOfSection(0).kind !== "none" : false
@@ -181,7 +179,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const navTitle = library.source(sourceKey)?.name ?? t("browse.explore")
 
   /**
-   * 分類 chip 列（源有多個 explore 分類才有，放置於 ScrollView 內隨內容捲動）。
+   * 分類 chip 列（源有多個 explore 分類才有）：當捲動區頂部的 bar，貼在導覽列下面，內容從它後面捲過去。
    */
   const chipRow =
     entries.length > 1 ? (
@@ -208,23 +206,32 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         frame={{ maxHeight: "infinity", alignment: "top" }}
       >
       {/* 內容區 */}
-      <ScrollView scrollContentBackground="hidden" scrollDismissesKeyboard="interactively">
-          {chipRow}
+      <ScrollView
+        scrollContentBackground="hidden"
+        scrollDismissesKeyboard="interactively"
+        safeAreaBar={chipRow ? { edge: "top", content: chipRow } : undefined}
+        // 頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。
+        scrollEdgeEffectStyle={{ style: "soft", edges: "top" }}
+      >
 
           {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
           {entries.length === 0 ? (
             entriesLoading ? (
               <PageLoading />
             ) : errorText ? (
-              <MessageBlock text={errorText} onRetry={() => void loadEntries()} />
+              <RetryBlock text={errorText} onRetry={() => void loadEntries()} />
             ) : (
-              <SearchOnlyBlock />
+              <EmptyState variant="page" icon="magnifyingglass" title={t("browse.searchOnly")} />
             )
           ) : null}
 
-          {/* 錯誤或狀態提示 */}
-          {message && entries.length > 0 && sections.length === 0 ? (
-            <MessageBlock text={message} onRetry={() => void loadFirst(entries[active])} />
+          {/* 讀失敗（可重試）或這個分類真的沒東西 */}
+          {entries.length > 0 && sections.length === 0 && !busy ? (
+            status === "error" ? (
+              <RetryBlock text={errorText} onRetry={() => void loadFirst(entries[active])} />
+            ) : status === "empty" ? (
+              <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
+            ) : null
           ) : null}
 
           {/* 載入初態 */}
@@ -247,7 +254,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
             /* 單一區塊模式：3 欄網格與滾動分頁 */
             <VStack spacing={0}>
               {singleSection.title ? (
-                <HStack padding={{ horizontal: 16, top: 12, bottom: 4 }}>
+                <HStack padding={{ horizontal: pageInsets.horizontal, top: 12, bottom: 4 }}>
                   <Text font="headline" fontWeight="bold">
                     {singleSection.title}
                   </Text>
@@ -298,7 +305,7 @@ function MagazineSectionRow({
               />
             }
           >
-            <HStack padding={{ horizontal: 16 }} alignment="center">
+            <HStack padding={{ horizontal: pageInsets.horizontal }} alignment="center">
               <Text font="title3" fontWeight="bold" foregroundStyle="label">
                 {section.title || t("browse.hotPicks")}
               </Text>
@@ -321,7 +328,7 @@ function MagazineSectionRow({
               </GeometryReader>
             }
           >
-            <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
+            <LazyHStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 12 }}>
               {section.comics.map(comic => {
                 const sourceID = `explore:${sourceKey}:${comic.id}`
                 return (
@@ -337,49 +344,41 @@ function MagazineSectionRow({
                     }
                     buttonStyle="plain"
                   >
-                    <VStack alignment="center" spacing={6} frame={{ width: card.width }}>
+                    <VStack alignment="leading" spacing={6} frame={{ width: card.width }}>
                       {/* 封面海報（1:1.48 經典劇集/電影海報比例） */}
                       <ZStack
                         alignment="bottomTrailing"
                         frame={{ width: card.width, height: card.height }}
-                        shadow={{ color: "rgba(0, 0, 0, 0.32)", radius: 6, x: 0, y: 3 }}
                         matchedTransitionSource={{ id: sourceID, namespace: exploreNs }}
                       >
                         <CoverImage
                           sourceKey={sourceKey}
                           url={comic.cover}
+                          title={comic.title}
                           width={card.width}
                           height={card.height}
-                          cornerRadius={radius.md}
+                          lifted
                         />
                         {comic.updateTime ? (
-                          // 更新時間徽章（夾寬度避免長字串超出封面）
+                          // 更新時間角標：源的原始字串，夾在封面寬度內才不會溢出。
                           <HStack
                             offset={{ x: -6, y: -6 }}
                             frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
                           >
-                            <HStack
-                              padding={{ horizontal: 6, vertical: 3 }}
-                              background="ultraThinMaterial"
-                              clipShape={rect(radius.sm)}
-                              frame={{ maxWidth: card.width - 12, alignment: "trailing" }}
-                            >
-                              <Text font="caption2" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>
-                                {comic.updateTime}
-                              </Text>
-                            </HStack>
+                            <CoverBadge text={comic.updateTime} maxWidth={card.width - 12} />
                           </HStack>
                         ) : null}
                       </ZStack>
 
-                      {/* 文字區域：水平置中（Center）+ 單行嚴格截斷，字體微縮更精緻 */}
-                      <VStack alignment="center" spacing={1.5} frame={{ width: card.width }}>
+                      {/* 書名與副標靠左一行：同一排的卡片才會對齊 */}
+                      <VStack alignment="leading" spacing={1.5} frame={{ width: card.width }}>
                         <Text
                           font="footnote"
                           fontWeight="medium"
                           foregroundStyle="label"
                           lineLimit={1}
-                          frame={{ width: card.width, alignment: "center" }}
+                          multilineTextAlignment="leading"
+                          frame={{ width: card.width, alignment: "leading" }}
                         >
                           {comic.title}
                         </Text>
@@ -391,7 +390,8 @@ function MagazineSectionRow({
                             fontWeight="regular"
                             foregroundStyle="secondaryLabel"
                             lineLimit={1}
-                            frame={{ width: card.width, alignment: "center" }}
+                            multilineTextAlignment="leading"
+                            frame={{ width: card.width, alignment: "leading" }}
                           >
                             {comic.subtitle || comic.tags![0]}
                           </Text>
@@ -409,21 +409,17 @@ function MagazineSectionRow({
   )
 }
 
-/** 這個源沒有探索清單：只能搜尋，提示使用者用上面的搜尋框。 */
-function SearchOnlyBlock() {
+/** 失敗時的一句說明＋重試膠囊。 */
+function RetryBlock({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
-    <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>
-      <Text foregroundStyle="secondaryLabel">{t("browse.searchOnly")}</Text>
-    </VStack>
-  )
-}
-
-/** 失敗時的一句話＋重試鈕。 */
-function MessageBlock({ text, onRetry }: { text: string; onRetry: () => void }) {
-  return (
-    <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>
-      <Text foregroundStyle="secondaryLabel">{text}</Text>
-      <Button title={t("browse.refresh")} systemImage="arrow.clockwise" action={onRetry} buttonStyle="glassProminent" />
+    <VStack
+      alignment="center"
+      spacing={12}
+      padding={{ top: 40, horizontal: pageInsets.horizontal }}
+      frame={{ maxWidth: "infinity" }}
+    >
+      <NoticeBanner tone="error" text={text} />
+      <Chip text={t("browse.refresh")} icon="arrow.clockwise" onTap={onRetry} />
     </VStack>
   )
 }

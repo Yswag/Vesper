@@ -11,21 +11,22 @@ export interface CoverBadgeProps {
   icon?: string
   /** danger＝紅字，給「來源已移除」這類狀態；其餘維持 label。 */
   tone?: "default" | "danger"
-  /** 夾寬（pt）：不給就抱內容寬。 */
+  /** 夾寬（pt）：短字仍抱內容寬，只有超過才截斷。 */
   maxWidth?: number
+  /** 夾寬時膠囊靠哪邊（跟角標所在的角一致）。 */
+  alignment?: "leading" | "trailing"
 }
 
-export function CoverBadge({ text, icon, tone = "default", maxWidth }: CoverBadgeProps) {
+export function CoverBadge({ text, icon, tone = "default", maxWidth, alignment = "trailing" }: CoverBadgeProps) {
   const color: Color = tone === "danger" ? palette.red : "label"
 
-  return (
+  const badge = (
     <HStack
       spacing={3}
       alignment="center"
       padding={{ horizontal: 6, vertical: 3 }}
       background="ultraThinMaterial"
       clipShape={rect(radius.sm)}
-      frame={maxWidth ? { maxWidth } : undefined}
     >
       {icon ? <Image systemName={icon} font="caption2" foregroundStyle={color} /> : null}
       <Text font="caption2" fontWeight="semibold" foregroundStyle={color} lineLimit={1}>
@@ -33,4 +34,8 @@ export function CoverBadge({ text, icon, tone = "default", maxWidth }: CoverBadg
       </Text>
     </HStack>
   )
+
+  // 夾寬放在外層透明框：材質底只蓋字的寬度，不會被撐成整條。
+  if (!maxWidth) return badge
+  return <HStack frame={{ maxWidth, alignment }}>{badge}</HStack>
 }

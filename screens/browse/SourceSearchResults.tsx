@@ -40,8 +40,9 @@ import {
 } from "../../sources/aidokuFilters"
 import { findSource } from "../../sources/registry"
 import { ComicGridLayout } from "../../components/ComicGrid"
-import { PageLoading } from "../../design/status"
-import { rect } from "../../design/tokens"
+import { Chip } from "../../design/chip"
+import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
+import { pageInsets } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
 
 interface FilterState {
@@ -157,30 +158,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     setFilters({ rows: filters.rows, values })
   }
 
-  /** 膠囊：`active` 決定要不要上色，`badge` 是左邊那個數字。 */
-  function capsule(label: string, active: boolean, badge?: number, chevron = true): VirtualNode {
-    return (
-      <HStack
-        spacing={4}
-        alignment="center"
-        padding={{ horizontal: 9, vertical: 6 }}
-        background="ultraThinMaterial"
-        clipShape={rect(14)}
-      >
-        {badge && badge > 0 ? (
-          <Text font="caption2" fontWeight="semibold" foregroundStyle={tint.tint}>
-            {String(badge)}
-          </Text>
-        ) : null}
-        <Text font="caption" fontWeight="medium" foregroundStyle={active ? tint.tint : "label"} lineLimit={1}>
-          {label}
-        </Text>
-        {chevron ? <Image systemName="chevron.down" font="caption2" foregroundStyle="tertiaryLabel" /> : null}
-      </HStack>
-    )
-  }
-
-  /** 每個篩選一顆膠囊：select／sort 開 menu，check 直接切，multi 開 sheet（跟 Aidoku 一樣）。 */
+  /** 每個篩選一顆膠囊：select／sort／multi 開 menu，check 直接切（跟 Aidoku 一樣）。 */
   function chip(row: AidokuFilterRow, index: number): VirtualNode {
     const value = filters?.values[index]
 
@@ -190,17 +168,13 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
         return <VStack spacing={0} />
       case "check": {
         const on = value === true
-        return (
-          <Button action={() => applyValue(index, !on)} buttonStyle="plain">
-            {capsule(row.label, on, undefined, false)}
-          </Button>
-        )
+        return <Chip text={row.label} selected={on} onTap={() => applyValue(index, !on)} />
       }
       case "select": {
         const current = typeof value === "string" ? value : (row.options[0]?.value ?? "")
         const active = current !== row.options[0]?.value
         return (
-          <Menu label={capsule(row.label, active)}>
+          <Menu label={<Chip text={row.label} selected={active} chevron />}>
             <Picker
               title={row.label}
               value={current}
@@ -220,7 +194,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
           typeof value === "object" && value !== null && "index" in value ? value : { index: 0, ascending: false }
         const active = sort.index !== 0 || sort.ascending
         return (
-          <Menu label={capsule(`${row.label}: ${row.options[sort.index] ?? ""}`, active)}>
+          <Menu label={<Chip text={`${row.label}: ${row.options[sort.index] ?? ""}`} selected={active} chevron />}>
             <Picker
               title={row.label}
               value={String(sort.index)}
@@ -264,7 +238,16 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
           applyValue(index, { included, excluded })
         }
         return (
-          <Menu label={capsule(row.label, count > 0, count)}>
+          <Menu
+            label={
+              <Chip
+                text={row.label}
+                selected={count > 0}
+                detail={count > 0 ? String(count) : undefined}
+                chevron
+              />
+            }
+          >
             {row.options.map(option => (
               <Button
                 key={option.value}
@@ -302,23 +285,13 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
 
     return (
       <ScrollView axes="horizontal">
-        <HStack spacing={6} padding={{ horizontal: 16, vertical: 6 }}>
-          <Button action={() => void openFilters()} buttonStyle="plain">
-            <HStack
-              spacing={4}
-              alignment="center"
-              padding={{ horizontal: 9, vertical: 6 }}
-              background="ultraThinMaterial"
-              clipShape={rect(14)}
-            >
-              <Image systemName="line.3.horizontal.decrease" font="footnote" foregroundStyle="label" />
-              {count > 0 ? (
-                <Text font="caption2" fontWeight="semibold" foregroundStyle={tint.tint}>
-                  {String(count)}
-                </Text>
-              ) : null}
-            </HStack>
-          </Button>
+        <HStack spacing={6} padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}>
+          <Chip
+            icon="line.3.horizontal.decrease"
+            detail={count > 0 ? String(count) : undefined}
+            onTap={() => void openFilters()}
+            accessibilityLabel={t("search.filterTitle")}
+          />
           {ordered.map(entry => (
             <VStack key={`chip:${entry.index}`} spacing={0}>
               {chip(entry.row, entry.index)}
@@ -332,25 +305,16 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   function body(): VirtualNode {
     if (error) {
       return (
-        <VStack alignment="center" spacing={12} padding={{ top: 60, horizontal: 20 }}>
-          <Text foregroundStyle="secondaryLabel">{error}</Text>
-          <Button
-            title={t("browse.refresh")}
-            systemImage="arrow.clockwise"
-            action={() => setAttempt(current => current + 1)}
-            buttonStyle="glassProminent"
-          />
+        <VStack spacing={12} padding={{ top: 40, horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={error} />
+          <Chip text={t("browse.refresh")} icon="arrow.clockwise" onTap={() => setAttempt(current => current + 1)} />
         </VStack>
       )
     }
-    // 尚無結果或重新搜尋中：顯示加載動畫
+    // 尚無結果或重新搜尋中：先佔位的骨架，結果來了才換上網格。
     if (hits === null || (searching && hits.length === 0)) return <PageLoading />
     if (hits.length === 0) {
-      return (
-        <VStack alignment="center" padding={{ top: 60, horizontal: 20 }}>
-          <Text foregroundStyle="secondaryLabel">{t("browse.noResults")}</Text>
-        </VStack>
-      )
+      return <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
     }
     return (
       <ScrollView
@@ -366,7 +330,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
         >
           {/* 已經有結果時再改關鍵字：舊的先留著，只在上面放一條進行中，免得整個網格閃掉。 */}
           {searching ? (
-            <HStack spacing={8} padding={{ horizontal: 16, top: 10 }} frame={{ maxWidth: "infinity" }}>
+            <HStack spacing={8} padding={{ horizontal: pageInsets.horizontal, top: 10 }} frame={{ maxWidth: "infinity" }}>
               <ProgressView />
               <Text font="caption" foregroundStyle="secondaryLabel">
                 {t("browse.searching")}

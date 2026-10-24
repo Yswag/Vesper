@@ -17,8 +17,9 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
-import { ListFooter, StatusLine } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, PageLoading } from "../../design/status"
 import { Caption } from "../../design/text"
+import { pageInsets } from "../../design/tokens"
 import { initialOptionValues } from "../../sources/category"
 import { PageBackground } from "../../app/theme"
 
@@ -202,16 +203,30 @@ export function SectionGridScreen({
         </VStack>
       ) : null}
 
-      {status ? <StatusLine text={status} /> : null}
+      {status ? (
+        <VStack padding={{ horizontal: pageInsets.horizontal, top: 12 }} frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={status} />
+        </VStack>
+      ) : null}
 
-      <ScrollView scrollContentBackground="hidden">
-        <ComicGridLayout
-          entries={section.comics.map(comic => ({ sourceKey, comic }))}
-          onLastAppear={hasMore ? () => void loadMore() : undefined}
-        />
+      {section.comics.length === 0 && loadingMore ? (
+        <PageLoading />
+      ) : (
+        <ScrollView scrollContentBackground="hidden">
+          {section.comics.length === 0 ? (
+            <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
+          ) : (
+            <VStack spacing={0}>
+              <ComicGridLayout
+                entries={section.comics.map(comic => ({ sourceKey, comic }))}
+                onLastAppear={hasMore ? () => void loadMore() : undefined}
+              />
 
-        <ListFooter loading={hasMore} />
-      </ScrollView>
+              <ListFooter loading={hasMore} />
+            </VStack>
+          )}
+        </ScrollView>
+      )}
     </VStack>
   </ZStack>
   )

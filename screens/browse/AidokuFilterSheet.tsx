@@ -16,12 +16,15 @@ import {
   VStack,
   useState,
   type Color,
+  type DynamicShapeStyle,
 } from "scripting"
 
+import { PageBackground } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
+import { Chip } from "../../design/chip"
 import { CardGroup } from "../../design/layout"
-import { FieldRow, IconBadge, SelectRow, ToggleRow } from "../../design/rows"
-import { capsule, fill, pageInsets, pageSpacing, palette, rowPadding } from "../../design/tokens"
+import { FieldRow, SelectRow, ToggleRow } from "../../design/rows"
+import { capsule, fill, filterTone, pageInsets, pageSpacing } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuFilterRow, AidokuFilterValue } from "../../sources/aidokuFilters"
 
@@ -35,7 +38,7 @@ function copyValue(value: Value): Value {
   return value
 }
 
-/** 多選與三態標籤膠囊：預設 / 包含（綠色勾號）/ 排除（紅色叉號）。 */
+/** 多選與三態標籤膠囊：預設 / 包含（綠勾）/ 排除（紅叉）。 */
 function FilterChip({
   label,
   state,
@@ -45,20 +48,9 @@ function FilterChip({
   state: "none" | "included" | "excluded"
   onTap: () => void
 }) {
-  const isIncluded = state === "included"
-  const isExcluded = state === "excluded"
-
-  const bg: Color = isIncluded
-    ? "rgba(48, 209, 88, 0.18)"
-    : isExcluded
-      ? "rgba(255, 69, 58, 0.18)"
-      : fill.tag
-
-  const fg: Color = isIncluded
-    ? palette.green
-    : isExcluded
-      ? palette.red
-      : "secondaryLabel"
+  const accent = state === "none" ? null : filterTone[state]
+  const background: Color | DynamicShapeStyle = accent ? accent.background : fill.tag
+  const textColor: Color | DynamicShapeStyle = accent ? accent.text : "secondaryLabel"
 
   return (
     <Button buttonStyle="plain" action={onTap} accessibilityLabel={label}>
@@ -66,16 +58,18 @@ function FilterChip({
         spacing={5}
         padding={{ horizontal: 12, vertical: 7 }}
         alignment="center"
-        background={bg}
+        background={background}
         clipShape={capsule("circular")}
       >
-        {isIncluded ? (
-          <Image systemName="checkmark" font="caption2" fontWeight="bold" foregroundStyle={palette.green} />
-        ) : null}
-        {isExcluded ? (
-          <Image systemName="xmark" font="caption2" fontWeight="bold" foregroundStyle={palette.red} />
-        ) : null}
-        <Text font="subheadline" fontWeight={state === "none" ? "regular" : "medium"} foregroundStyle={fg}>
+        {state === "none" ? null : (
+          <Image
+            systemName={state === "included" ? "checkmark" : "xmark"}
+            font="caption2"
+            fontWeight="bold"
+            foregroundStyle={textColor}
+          />
+        )}
+        <Text font="subheadline" fontWeight={state === "none" ? "regular" : "medium"} foregroundStyle={textColor}>
           {label}
         </Text>
       </HStack>
@@ -250,7 +244,8 @@ export function AidokuFilterSheet({
         </Toolbar>
       }
     >
-      <ScrollView>
+      {/* sheet 本身是白底：不鋪頁面底色的話，淺色下半透明白卡片看不到邊。 */}
+      <ScrollView scrollContentBackground="hidden" background={<PageBackground />}>
         <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
           {rows.map((row, index) => {
             const value = draft[index] ?? defaults[index]
@@ -279,20 +274,11 @@ export function AidokuFilterSheet({
             )
           })}
           <HStack alignment="center" frame={{ maxWidth: "infinity" }} padding={{ top: 8, bottom: 20 }}>
-            <Button buttonStyle="plain" action={() => setDraft(defaults.map(copyValue))}>
-              <HStack
-                spacing={6}
-                padding={{ horizontal: 16, vertical: 10 }}
-                alignment="center"
-                background={fill.tag}
-                clipShape={capsule("circular")}
-              >
-                <Image systemName="arrow.counterclockwise" font="subheadline" foregroundStyle="secondaryLabel" />
-                <Text font="subheadline" fontWeight="medium" foregroundStyle="secondaryLabel">
-                  {t("search.filterReset")}
-                </Text>
-              </HStack>
-            </Button>
+            <Chip
+              text={t("search.filterReset")}
+              icon="arrow.counterclockwise"
+              onTap={() => setDraft(defaults.map(copyValue))}
+            />
           </HStack>
         </VStack>
       </ScrollView>

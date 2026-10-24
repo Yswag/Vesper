@@ -9,7 +9,7 @@ import { Divider, ScrollView, VStack } from "scripting"
 import { CardGroup } from "../../design/layout"
 import { OptionRow, SelectRow, rowSeparatorInset } from "../../design/rows"
 import { pageInsets, pageSpacing } from "../../design/tokens"
-import { useTint } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
 import { t } from "../../i18n"
 import type { SearchOptionRow, SearchOptionValue } from "../../sources/searchOptions"
 
@@ -32,8 +32,9 @@ export function SearchFilterSheet({
   onChanged: (index: number, value: SearchOptionValue) => void
 }) {
   const tint = useTint()
+  // sheet 本身是白底：不鋪頁面底色的話，淺色下半透明白卡片看不到邊。
   return (
-    <ScrollView>
+    <ScrollView scrollContentBackground="hidden" background={<PageBackground />}>
       <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
         {rows.map((row, index) => {
           const value = values[index] ?? row.initial

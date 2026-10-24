@@ -2,7 +2,7 @@
 //
 // 選項由源宣告（`"值-顯示名"`），翻頁一律用頁碼 —— 33 個源都沒有用到 `loadWithNext`。
 
-import { Button, ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
+import { ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
 
 import { type RankingOption } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -11,7 +11,8 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { ComicListItem } from "../../engine/adapt"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
-import { ListFooter, PageLoading, StatusLine, type StatusKind } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
+import { pageInsets } from "../../design/tokens"
 import { PageBackground } from "../../app/theme"
 
 export function RankingScreen({ sourceKey }: { sourceKey: string }) {
@@ -81,8 +82,6 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   }
 
   const failed = status === "error"
-  // 顯示文字在 render 時才算：狀態只負責判斷。
-  const message = status === "error" ? errorText : status === "empty" ? t("browse.noResults") : ""
 
   return (
     <ZStack>
@@ -90,39 +89,54 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
       {/* maxHeight infinity 只是「摸滿」，內容短時還是會被置中——載入中那塊要有
           alignment top 才會貼頂。見 dev/probe-top-align.tsx。 */}
       <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}>
-      {options.length > 1 ? (
-        <ChipRow>
-          {options.map((option, index) => (
-            <Chip
-              key={`rank:${option.value}:${index}`}
-              text={option.label}
-              selected={index === active}
-              onTap={() => setActive(index)}
-            />
-          ))}
-        </ChipRow>
-      ) : null}
+      {/* chip 列當捲動區頂部的 bar：貼在導覽列下面，內容從它後面捲過去；
+          頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。 */}
+      <ScrollView
+        scrollContentBackground="hidden"
+        scrollEdgeEffectStyle={{ style: "soft", edges: "top" }}
+        safeAreaBar={
+          options.length > 1
+            ? {
+                edge: "top",
+                content: (
+                  <ChipRow>
+                    {options.map((option, index) => (
+                      <Chip
+                        key={`rank:${option.value}:${index}`}
+                        text={option.label}
+                        selected={index === active}
+                        onTap={() => setActive(index)}
+                      />
+                    ))}
+                  </ChipRow>
+                ),
+              }
+            : undefined
+        }
+      >
 
       {busy && comics.length === 0 ? <PageLoading text={t("browse.rankingLoading")} /> : null}
 
-      {message ? <StatusLine text={message} /> : null}
+      {failed ? (
+        <VStack spacing={12} padding={{ top: 24, horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={errorText} />
+          <Chip text={t("browse.reload")} icon="arrow.clockwise" onTap={() => void loadFirst()} />
+        </VStack>
+      ) : status === "empty" ? (
+        <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
+      ) : null}
 
       {comics.length > 0 ? (
-        <ScrollView scrollContentBackground="hidden">
+        <VStack spacing={0}>
           <ComicGridLayout
             entries={comics.map(comic => ({ sourceKey, comic }))}
             onLastAppear={done ? undefined : () => void loadMore()}
           />
 
           <ListFooter loading={!done} />
-        </ScrollView>
-      ) : null}
-
-      {failed && !busy && comics.length === 0 ? (
-        <VStack alignment="center" spacing={12} padding={{ top: 12, horizontal: 20 }}>
-          <Button title={t("browse.reload")} systemImage="arrow.clockwise" action={() => void loadFirst()} buttonStyle="glassProminent" />
         </VStack>
       ) : null}
+      </ScrollView>
     </VStack>
   </ZStack>
   )

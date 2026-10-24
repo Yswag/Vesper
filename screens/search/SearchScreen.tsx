@@ -1,6 +1,6 @@
 // 搜尋頁面：包含左側來源清單（含結果計數）與右側漫畫網格，支援個別來源自訂篩選。
 
-import { AbortController, Button, Divider, HStack, Image, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, useEffect, useRef, useObservable, useState } from "scripting"
+import { AbortController, Button, Divider, GeometryReader, HStack, Image, ProgressView, ScrollView, Spacer, Text, VStack, ZStack, useEffect, useRef, useObservable, useState } from "scripting"
 
 import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -11,6 +11,10 @@ import { loadSearchSelections, saveSearchSelection } from "../../app/searchOptio
 import { setSearchTriggerListener } from "../../app/navigation"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { ComicGrid, type ComicGridEntry } from "../../components/ComicGrid"
+import { WidthReporter } from "../../components/WidthReporter"
+import { comicGridMetrics, H_PADDING, H_SPACING, V_SPACING } from "../../components/comicGridMetrics"
+import { Card } from "../../design/layout"
+import { EmptyState } from "../../design/status"
 import { ActionRow } from "../../design/rows"
 import { isAbortError } from "../../engine/http"
 import { log } from "../../engine/log"
@@ -26,7 +30,7 @@ import {
 import { SearchFilterSheet } from "./SearchFilterSheet"
 import { sourceSidebarLabel } from "./sidebarLabel"
 import { PageBackground, useTint } from "../../app/theme"
-import { cardBackground, cardGap, fill, hairlineStroke, palette, radius, rect } from "../../design/tokens"
+import { fill, pageInsets, radius, rect, tagText } from "../../design/tokens"
 
 export function SearchScreen() {
   const library = comicLibrary()
@@ -213,6 +217,7 @@ export function SearchScreen() {
         spacing={0}
         navigationTitle={t("common.tabs.search")}
         navigationBarTitleDisplayMode="inline"
+        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}
         toolbar={{ topBarLeading: <LeadingToolbar /> }}
         // 用系統的搜尋框（role="search" 的 tab 會把它放在底部、展開時收起其他 tab）。
         // 送出事件用 onSubmit(triggers: "search")：跨 30 個源跑一次要好幾秒，不適合逐字搜。
@@ -298,7 +303,7 @@ export function SearchScreen() {
                 {filterRows.length > 0 ? (
                   <Button buttonStyle="plain" action={() => openFilter(selectedInfo.key)} accessibilityLabel={t("search.filterLabel", { name: filterName })}>
                     <HStack spacing={4} frame={{ minHeight: 36 }}>
-                      <Image systemName="line.3.horizontal.decrease" font={13} fontWeight="medium" foregroundStyle={tint.tint} />
+                      <Image systemName="line.3.horizontal.decrease" font="footnote" fontWeight="medium" foregroundStyle={tint.tint} />
                       <Text font="subheadline" fontWeight="medium" foregroundStyle={tint.tint}>
                         {rerunning === selectedInfo.key ? t("search.updating") : t("search.filter")}
                       </Text>
@@ -310,19 +315,33 @@ export function SearchScreen() {
 
             {visible.length > 0 ? (
               <ComicGrid entries={visible} showSource={selected === null} />
-            ) : (
+            ) : running ? (
               <VStack
-                alignment="center"
-                spacing={6}
-                padding={{ top: 40 }}
+                spacing={0}
                 frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
                 onTapGesture={() => {
                   if (Keyboard.visible) Keyboard.hide()
                 }}
               >
-                <Text foregroundStyle="secondaryLabel">
-                  {running ? t("search.running", { done: progress.done, total: progress.total }) : t("search.noResults")}
-                </Text>
+                <HStack spacing={8} padding={{ horizontal: pageInsets.horizontal, top: 10 }} frame={{ maxWidth: "infinity" }}>
+                  <ProgressView />
+                  <Text font="caption" foregroundStyle="secondaryLabel">
+                    {t("search.running", { done: progress.done, total: progress.total })}
+                  </Text>
+                  <Spacer />
+                </HStack>
+                <ScrollView>
+                  <SearchSkeleton />
+                </ScrollView>
+              </VStack>
+            ) : (
+              <VStack
+                frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+                onTapGesture={() => {
+                  if (Keyboard.visible) Keyboard.hide()
+                }}
+              >
+                <EmptyState variant="page" icon="magnifyingglass" title={t("search.noResults")} />
               </VStack>
             )}
           </VStack>
@@ -419,7 +438,7 @@ function SidebarRow({
         spacing={4}
         padding={{ horizontal: 8, vertical: 6 }}
         frame={{ maxWidth: "infinity", minHeight: 40 }}
-        background={active ? fill.chip : "clear"}
+        background={active ? tint.selectedRow : "clear"}
         clipShape={rect(radius.md)}
       >
         <Text
@@ -431,9 +450,7 @@ function SidebarRow({
         </Text>
         <Spacer />
         {failed ? (
-          <Text font="caption2" fontWeight="semibold" foregroundStyle={palette.red}>
-            !
-          </Text>
+          <Image systemName="exclamationmark.triangle.fill" font="caption2" foregroundStyle={tagText.danger} />
         ) : count == null ? (
           <Text font="caption2" foregroundStyle="quaternaryLabel">
             …
@@ -469,15 +486,12 @@ function HistoryPanel({
   if (history.length === 0) {
     return (
       <VStack
-        alignment="center"
-        spacing={6}
-        padding={{ top: 40 }}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         onTapGesture={() => {
           if (Keyboard.visible) Keyboard.hide()
         }}
       >
-        <Text foregroundStyle="secondaryLabel">{t("search.historyEmpty")}</Text>
+        <EmptyState variant="page" icon="clock.arrow.circlepath" title={t("search.historyEmpty")} />
       </VStack>
     )
   }
@@ -486,7 +500,7 @@ function HistoryPanel({
       <VStack
         alignment="leading"
         spacing={12}
-        padding={{ horizontal: 16, top: 12, bottom: 24 }}
+        padding={{ horizontal: pageInsets.horizontal, top: 12, bottom: 24 }}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         onTapGesture={() => {
           if (Keyboard.visible) Keyboard.hide()
@@ -507,13 +521,7 @@ function HistoryPanel({
           </Button>
         </HStack>
 
-        <VStack
-          spacing={0}
-          background={cardBackground}
-          clipShape={rect(radius.lg)}
-          overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={hairlineStroke} />}
-          frame={{ maxWidth: "infinity" }}
-        >
+        <Card>
           {history.map((term, index) => (
             <VStack key={`${index}:${term}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               <HStack
@@ -539,8 +547,46 @@ function HistoryPanel({
               ) : null}
             </VStack>
           ))}
-        </VStack>
+        </Card>
       </VStack>
     </ScrollView>
+  )
+}
+
+/** 骨架的字條：redacted 會把它畫成一塊灰。 */
+const SKELETON_TEXT = "XXXXXXXX"
+
+/** 搜尋中的網格骨架：跟載入後的格子同尺寸，結果到了版面不會跳。 */
+function SearchSkeleton({ rows = 3 }: { rows?: number }) {
+  const [width, setWidth] = useState(0)
+  const { columns, cellWidth, cellHeight } = comicGridMetrics(width)
+  return (
+    <VStack
+      spacing={V_SPACING}
+      padding={{ horizontal: H_PADDING, top: 12 }}
+      frame={{ maxWidth: "infinity" }}
+      background={
+        <GeometryReader>
+          {geometry => <WidthReporter width={geometry.size.width} onWidth={setWidth} />}
+        </GeometryReader>
+      }
+    >
+      {Array.from({ length: rows }).map((_, row) => (
+        <HStack key={row} spacing={H_SPACING}>
+          {Array.from({ length: columns }).map((__, column) => (
+            <VStack key={column} alignment="leading" spacing={6} frame={{ width: cellWidth }}>
+              <VStack
+                frame={{ width: cellWidth, height: cellHeight }}
+                background={fill.surface}
+                clipShape={rect(radius.md)}
+              />
+              <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
+                {SKELETON_TEXT}
+              </Text>
+            </VStack>
+          ))}
+        </HStack>
+      ))}
+    </VStack>
   )
 }

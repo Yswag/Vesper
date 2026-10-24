@@ -13,6 +13,8 @@ export interface ChipProps {
   icon?: string
   /** 文字右側的次要數字（分組的章節數）。 */
   detail?: string
+  /** 右側再一個收合箭號：這顆膠囊會開選單（Menu）時用，告訴使用者按下去有東西。 */
+  chevron?: boolean
   /** 選中＝ tint 階梯的底＋ tint 字。 */
   selected?: boolean
   /** 緊湊版：章節工具列用（caption2 + `chipCompactPadding`）。 */
@@ -31,6 +33,7 @@ export function Chip({
   text,
   icon,
   detail,
+  chevron = false,
   selected = false,
   compact = false,
   disabled = false,
@@ -75,6 +78,9 @@ export function Chip({
           <Text font="caption2" fontWeight="medium" foregroundStyle={selected ? tint.tint : "tertiaryLabel"}>
             {detail}
           </Text>
+        ) : null}
+        {chevron ? (
+          <Image systemName="chevron.down" font="caption2" foregroundStyle={disabled ? "tertiaryLabel" : "secondaryLabel"} />
         ) : null}
       </HStack>
     </GlassSurface>

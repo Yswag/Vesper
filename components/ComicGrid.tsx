@@ -123,7 +123,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                         offset={{ x: 6, y: -6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
                       >
-                        <CoverBadge text={t("bookshelf.sourceRemoved")} tone="danger" maxWidth={cellWidth - 12} />
+                        <CoverBadge text={t("bookshelf.sourceRemoved")} tone="danger" maxWidth={cellWidth - 12} alignment="leading" />
                       </HStack>
                     ) : null}
                     {entry.comic.updateTime ? (

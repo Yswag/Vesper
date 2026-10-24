@@ -68,6 +68,15 @@ export const tagText: Record<keyof typeof tagTone, DynamicShapeStyle> = {
   love: { dark: palette.pink, light: "#D30F45" },
 }
 
+/**
+ * 多選／三態篩選的膠囊色：包含＝語意綠、排除＝danger、未選用中性的 `fill.tag`。
+ * 標籤的 `tagTone` 只表達「這東西是什麼狀態」，篩選是使用者的選擇，所以字色淺色也再深一階。
+ */
+export const filterTone: Record<"included" | "excluded", { background: Color; text: DynamicShapeStyle }> = {
+  included: { background: "rgba(48, 209, 88, 0.15)", text: { dark: palette.green, light: "#248A3D" } },
+  excluded: { background: tagTone.danger, text: tagText.danger },
+}
+
 /** 容器與狀態填色（非互動的部分）。互動色（選中底、描邊、榜單）在 `useTint()` 的 `Tint` 裡。 */
 export const fill = {
   /** 次要容器（標籤、輸入框底）。 */
