@@ -14,6 +14,14 @@ export default {
   exitAnyway: "仍要退出",
   allShown: "— 已显示全部内容 —",
   loadFailed: "加载失败：{message}",
+  /** 技术错误字符串的人话版（见 `engine/errors.ts`）。 */
+  problem: {
+    server: "服务器错误（{status}）",
+    request: "请求被拒绝（{status}）",
+    timeout: "连接超时",
+    network: "没有网络连接",
+    unknown: "发生未知错误",
+  },
   retry: "重试",
   imageFailed: "（图片加载失败）",
   offlineTag: "离线",

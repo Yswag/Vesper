@@ -20,6 +20,7 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   // 畫面自己訂閱語言：下面的狀態字與按鈕都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
   const [options, setOptions] = useState<RankingOption[]>([])
+  const [optionsLoaded, setOptionsLoaded] = useState(false)
   const [active, setActive] = useState(0)
   const [comics, setComics] = useState<ComicListItem[]>([])
   const [page, setPage] = useState(2)
@@ -30,7 +31,13 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   const [errorText, setErrorText] = useState("")
 
   useEffect(() => {
-    setOptions(library.rankingOptions(sourceKey))
+    // 源還沒載好時 `rankingOptions` 會丟錯；當成「沒有選項」處理，不要讓畫面一直停在載入中。
+    let next: RankingOption[] = []
+    try {
+      next = library.rankingOptions(sourceKey)
+    } catch {}
+    setOptions(next)
+    setOptionsLoaded(true)
   }, [sourceKey])
 
   useEffect(() => {
@@ -114,6 +121,12 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
             : undefined
         }
       >
+
+      {!optionsLoaded ? <PageLoading text={t("browse.rankingLoading")} /> : null}
+
+      {optionsLoaded && options.length === 0 ? (
+        <EmptyState variant="page" icon="chart.bar" title={t("browse.noRankingOptions")} />
+      ) : null}
 
       {busy && comics.length === 0 ? <PageLoading text={t("browse.rankingLoading")} /> : null}
 

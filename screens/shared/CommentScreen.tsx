@@ -160,11 +160,7 @@ export function CommentRow({
           ) : null}
         </VStack>
       </HStack>
-      {!isLast ? (
-        <HStack padding={{ leading: 64, trailing: 16 }} frame={{ maxWidth: "infinity" }}>
-          <Divider />
-        </HStack>
-      ) : null}
+      {!isLast ? <Divider padding={{ leading: 64, trailing: 16 }} /> : null}
     </VStack>
   )
 }

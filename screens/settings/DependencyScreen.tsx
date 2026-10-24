@@ -13,17 +13,16 @@ import {
 } from "../../app/dependencies"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconRow, rowSeparatorInset } from "../../design/rows"
-import { NoticeBanner, StatusLine, statusTone, type StatusNotice } from "../../design/status"
+import { NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { toneText } from "../../design/tokens"
 import { t } from "../../i18n"
+import { log } from "../../engine/log"
 
 /** `installed === null` ＝還沒量到。 */
 type RowState = { name: string; installed: boolean | null }
 
 export function DependencyScreen() {
   const [deps, setDeps] = useState<DependencyStatus[]>([])
-  // 上一輪檢查花多久（頁尾顯示）。
-  const [elapsedMs, setElapsedMs] = useState<number | null>(null)
   const [runId, setRunId] = useState(0)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<StatusNotice | null>(null)
@@ -46,7 +45,7 @@ export function DependencyScreen() {
       if (index < CORE_DEPENDENCIES.length) {
         timer = setTimeout(step, 0)
       } else {
-        setElapsedMs(Date.now() - started)
+        log("info", "deps", `Checked ${CORE_DEPENDENCIES.length} dependencies in ${Date.now() - started} ms`)
       }
     }
     timer = setTimeout(step, 0)
@@ -68,7 +67,6 @@ export function DependencyScreen() {
     )
     // 裝完重檢一次。
     setDeps([])
-    setElapsedMs(null)
     setRunId(id => id + 1)
     setBusy(false)
   }
@@ -80,7 +78,7 @@ export function DependencyScreen() {
     <PageScroll title={t("settings.deps.title")}>
       {notice ? <NoticeBanner tone={statusTone(notice.kind)} text={notice.text} /> : null}
 
-      <CardGroup title={t("settings.deps.title")} footnote={t("settings.deps.footnote")}>
+      <CardGroup title={t("settings.deps.title")}>
         {rows.map((dep, index) => {
           const known = dep.installed !== null
           return (
@@ -107,8 +105,6 @@ export function DependencyScreen() {
           onTap={() => void reinstall()}
         />
       </CardGroup>
-
-      {elapsedMs === null ? null : <StatusLine text={t("settings.deps.timing", { ms: elapsedMs })} />}
     </PageScroll>
   )
 }

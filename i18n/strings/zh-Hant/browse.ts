@@ -24,6 +24,8 @@ export default {
 
   /** 三頁共用的狀態與按鈕字。 */
   noResults: "沒有結果",
+  /** 源沒有宣告任何排行榜選項。 */
+  noRankingOptions: "這個來源沒有排行榜",
   refresh: "重新整理",
   reload: "重新載入",
   rankingLoading: "正在載入排行榜…",

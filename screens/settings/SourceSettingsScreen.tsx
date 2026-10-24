@@ -9,7 +9,7 @@
 import { Divider, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
 import { toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
@@ -37,6 +37,7 @@ function specStyle(type: string): { icon: string } {
 
 export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
+  const [loaded, setLoaded] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})
   const [status, setStatus] = useState<StatusNotice | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
@@ -46,6 +47,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setSource(findSource(sourceKey))
     setDraft({})
     setStatus(null)
+    setLoaded(true)
   }, [sourceKey])
 
   const specs = source?.settingsSpecs ?? []
@@ -111,6 +113,7 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
 
   return (
     <SourceSettingsView
+      loading={!loaded}
       specs={specs}
       values={source?.stored.settings ?? {}}
       draft={draft}
@@ -125,6 +128,8 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
 }
 
 export interface SourceSettingsViewProps {
+  /** 源還沒從 registry 讀出來：顯示載入中，不要先說「沒有可調整的設定」。 */
+  loading?: boolean
   specs: SettingSpec[]
   values: Record<string, unknown>
   draft: Record<string, string>
@@ -138,6 +143,7 @@ export interface SourceSettingsViewProps {
 
 /** 只有版面：把 specs / 狀態轉成卡片。抽出來是為了能用假資料預覽整頁。 */
 export function SourceSettingsView({
+  loading = false,
   specs,
   values,
   draft,
@@ -154,7 +160,9 @@ export function SourceSettingsView({
     <PageScroll title={t("settings.sourceSettings.title")}>
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
-      {specs.length === 0 ? (
+      {loading ? (
+        <PageLoading />
+      ) : specs.length === 0 ? (
         <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.sourceSettings.empty")} />
       ) : (
         specs.map(spec => (

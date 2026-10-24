@@ -24,11 +24,17 @@ import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../d
 import { rowPadding, toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 import { addRepository, refreshRepository } from "../../sources/registry"
-import { listRepositories, removeRepository, saveRepository, subscribeRepositories, type StoredRepository } from "../../sources/repository"
+import {
+  listRepositories,
+  removeRepository,
+  repositoryNameFor,
+  saveRepository,
+  subscribeRepositories,
+  type StoredRepository,
+} from "../../sources/repository"
 import { RepositoryDetailScreen } from "./RepositoryDetailScreen"
 
-export function RepositoryListScreen() {
-  const [repositories, setRepositories] = useState<StoredRepository[]>([])
+export function RepositoryListScreen() {  const [repositories, setRepositories] = useState<StoredRepository[]>([])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null)
@@ -209,29 +215,23 @@ export function RepositoryListScreen() {
                         foregroundStyle={hasError ? toneText.danger : "secondaryLabel"}
                       />
 
-                      {/* 倉庫名稱與網址 */}
                       <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                        <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
-                          {repository.name}
+                        <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1} truncationMode="middle">
+                          {repositoryLabel(repository).title}
                         </Text>
-                        <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
-                          {repository.url.replace(/^https?:\/\//, "")}
+                        <Text
+                          font="caption"
+                          foregroundStyle={hasError ? toneText.danger : "secondaryLabel"}
+                          lineLimit={1}
+                          truncationMode="middle"
+                        >
+                          {hasError
+                            ? t("settings.shared.readFailed")
+                            : `${repositoryLabel(repository).owner} · ${t("settings.shared.countSources", { n: repository.entries.length })}`}
                         </Text>
                       </VStack>
 
-                      <Spacer />
 
-                      {/* 源數量（低調次級文字） */}
-                      <Text
-                        font="subheadline"
-                        foregroundStyle={hasError ? toneText.danger : "secondaryLabel"}
-                      >
-                        {hasError
-                          ? t("settings.shared.readFailed")
-                          : t("settings.shared.countSources", { n: repository.entries.length })}
-                      </Text>
-
-                      {/* 箭頭 */}
                       <Chevron />
                     </HStack>
                   </NavigationLink>
@@ -246,4 +246,14 @@ export function RepositoryListScreen() {
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
     </PageScroll>
   )
+}
+
+/** 自動產生的「擁有者/倉庫」拆成標題＋擁有者；其他名稱照原樣，第二行放自動產生的名字。 */
+function repositoryLabel(repository: StoredRepository): { title: string; owner: string } {
+  const derived = repositoryNameFor(repository.url)
+  const slash = repository.name.indexOf("/")
+  if (repository.name === derived && slash > 0 && slash < repository.name.length - 1) {
+    return { title: repository.name.slice(slash + 1), owner: repository.name.slice(0, slash) }
+  }
+  return { title: repository.name, owner: derived }
 }

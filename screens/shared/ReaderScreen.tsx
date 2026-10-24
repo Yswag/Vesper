@@ -36,6 +36,7 @@ import {
 import type { ChapterSession } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
+import { describeError } from "../../engine/errors"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
@@ -157,7 +158,7 @@ export function ReaderStatusOverlay({
   return (
     <VStack frame={box}>
       <VStack spacing={10} padding={{ horizontal: 24 }} frame={{ maxWidth: 380 }}>
-        <NoticeBanner tone="error" text={t("common.loadFailed", { message: status.message })} />
+        <NoticeBanner tone="error" text={t("common.loadFailed", { message: describeError(status.message) })} />
         {onRetry ? <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={onRetry} /> : null}
       </VStack>
     </VStack>

@@ -30,7 +30,7 @@ import {
 import { SearchFilterSheet } from "./SearchFilterSheet"
 import { sourceSidebarLabel } from "./sidebarLabel"
 import { PageBackground, useTint } from "../../app/theme"
-import { fill, pageInsets, radius, rect, tagText } from "../../design/tokens"
+import { fill, pageInsets, radius, rect, tagText, toneText } from "../../design/tokens"
 
 export function SearchScreen() {
   const library = comicLibrary()
@@ -372,7 +372,7 @@ function SourceSidebar({
 }) {
   const hasResults = byKey.size > 0
   return (
-    <ScrollView frame={{ width: 110 }} scrollDismissesKeyboard="interactively">
+    <ScrollView frame={{ width: 134 }} scrollDismissesKeyboard="interactively">
       <VStack alignment="leading" spacing={2} padding={{ vertical: 6, horizontal: 4 }}>
         {hasResults || running ? (
           <SidebarRow label={t("search.all")} count={hasResults ? total : null} active={selected === null} onTap={() => onSelect(null)} />
@@ -452,9 +452,7 @@ function SidebarRow({
         {failed ? (
           <Image systemName="exclamationmark.triangle.fill" font="caption2" foregroundStyle={tagText.danger} />
         ) : count == null ? (
-          <Text font="caption2" foregroundStyle="quaternaryLabel">
-            …
-          </Text>
+          <ProgressView controlSize="small" />
         ) : count > 0 ? (
           <Text
             font="caption2"
@@ -513,8 +511,8 @@ function HistoryPanel({
           <Spacer />
           <Button action={onClear} buttonStyle="plain" accessibilityLabel={t("search.historyClear")}>
             <HStack spacing={4} alignment="center">
-              <Image systemName="trash" font="caption" foregroundStyle="secondaryLabel" />
-              <Text font="footnote" foregroundStyle="secondaryLabel">
+              <Image systemName="trash" font="caption" foregroundStyle={toneText.danger} />
+              <Text font="footnote" foregroundStyle={toneText.danger}>
                 {t("common.clear")}
               </Text>
             </HStack>

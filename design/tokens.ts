@@ -169,6 +169,15 @@ export const hairlineStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lin
   strokeStyle: { lineWidth: 1 },
 }
 
+/** 色點外框：近白色的盤在白底上也要看得到邊界，所以用中性細線而非白色高光。 */
+export const dotStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lineWidth: number } } = {
+  shapeStyle: {
+    dark: "rgba(255, 255, 255, 0.20)",
+    light: "rgba(0, 0, 0, 0.12)",
+  },
+  strokeStyle: { lineWidth: 1 },
+}
+
 /** 封面投影。封面是不透明圖片，影子壓在任何底色上都是黑影，所以不屬於「卡片不加陰影」那條。 */
 export const coverShadow: { color: Color; radius: number; x: number; y: number } = {
   color: "rgba(0, 0, 0, 0.35)",

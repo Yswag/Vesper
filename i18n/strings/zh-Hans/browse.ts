@@ -15,6 +15,8 @@ export default {
   viewLabel: "来源查看：{label}",
 
   noResults: "没有结果",
+  /** 源没有声明任何排行榜选项。 */
+  noRankingOptions: "这个来源没有排行榜",
   refresh: "重新整理",
   reload: "重新载入",
   rankingLoading: "正在载入排行榜…",

@@ -15,6 +15,8 @@ export default {
   viewLabel: "Source view: {label}",
 
   noResults: "No results",
+  /** The source declares no ranking options. */
+  noRankingOptions: "This source has no rankings",
   refresh: "Refresh",
   reload: "Reload",
   rankingLoading: "Loading ranking…",

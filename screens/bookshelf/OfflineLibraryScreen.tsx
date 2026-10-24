@@ -57,7 +57,7 @@ function groupByComic(): ComicGroup[] {
         comicId: chapter.key.comicId,
         title: chapter.comicTitle ?? t("bookshelf.unknownComic"),
         cover: chapter.cover,
-        sourceName: source?.name ?? t("bookshelf.sourceRemoved"),
+        sourceName: source?.name ?? t("bookshelf.sourceRemovedTitle"),
         chapters: [],
         totalBytes: 0,
         completedChapters: 0,

@@ -9,7 +9,6 @@ import { Divider, HStack, Image, ProgressView, Text, VStack, useEffect, useState
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
-import { Footnote } from "../../design/text"
 import { radius, rect } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
@@ -211,8 +210,6 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
           detail={t("settings.account.unsupportedDetail")}
         />
       ) : null}
-
-      <Footnote>{t("settings.account.credentialFootnote")}</Footnote>
     </PageScroll>
   )
 }

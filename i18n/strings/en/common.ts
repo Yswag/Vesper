@@ -15,6 +15,14 @@ export default {
   exitAnyway: "Quit anyway",
   allShown: "— End of list —",
   loadFailed: "Couldn't load: {message}",
+  /** Plain-language versions of technical error strings (see `engine/errors.ts`). */
+  problem: {
+    server: "Server error ({status})",
+    request: "Request refused ({status})",
+    timeout: "The connection timed out",
+    network: "No internet connection",
+    unknown: "Something went wrong",
+  },
   retry: "Retry",
   imageFailed: "(image failed to load)",
   offlineTag: "Offline",

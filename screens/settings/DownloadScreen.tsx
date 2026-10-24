@@ -157,8 +157,7 @@ export function DownloadSections({
                   <Button
                     key="cancel"
                     title={t("settings.downloads.cancel")}
-                    systemImage="xmark.circle.fill"
-                    role="destructive"
+                    systemImage="xmark.circle"
                     action={() => onCancel(record.key)}
                   />,
                 ],
@@ -326,8 +325,7 @@ function ActiveDownloadRow({
       <Button
         title=""
         systemImage="xmark.circle"
-        role="destructive"
-        foregroundStyle={toneText.danger}
+        foregroundStyle="secondaryLabel"
         action={onCancel}
       />
     </HStack>

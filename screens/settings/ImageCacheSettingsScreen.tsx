@@ -84,10 +84,7 @@ export function ImageCacheSettingsScreen() {
       </CardGroup>
 
       {/* 2. 自動清理規則 */}
-      <CardGroup
-        title={t("settings.cache.rulesGroup")}
-        footnote={t("settings.cache.rulesFootnote")}
-      >
+      <CardGroup title={t("settings.cache.rulesGroup")}>
         <SelectRow
           icon="clock"
           title={t("settings.cache.maxAge")}

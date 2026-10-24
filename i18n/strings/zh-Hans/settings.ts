@@ -57,7 +57,6 @@ export default {
     statsDetail: "{files} · {size}",
     calculating: "计算中…",
     rulesGroup: "自动清理规则",
-    rulesFootnote: "当缩略图超过保存天数或缓存超过限制大小时，将在后台自动淘汰最旧的文件。正文图片走内存，不占磁盘。",
     maxAge: "过期自动删除",
     maxSize: "缓存容量限制",
     unlimited: "不限制",
@@ -66,9 +65,7 @@ export default {
 
   theme: {
     paletteGroup: "底色 · 颜色",
-    paletteFootnote: "当前选择：{name} 色系。第一项为自定义调色盘，点击可打开系统选色。",
     compositionGroup: "底色 · 构图",
-    compositionFootnote: "当前选择：{name}。点击切换，背景即时预览变化。",
     custom: "自定义",
     composition: {
       flat: { name: "纯色", note: "全域底色，沉静无光，最低调" },
@@ -146,7 +143,6 @@ export default {
     passwordPrompt: "密码",
     unsupported: "不支持的登录方式",
     unsupportedDetail: "这个源声明的登录方式 Vesper 还没有实现，需要在浏览器里登录。",
-    credentialFootnote: "账号密码与 Cookie 字段的凭据存放在 iOS Keychain；浏览器登录取得的 cookie 存放在这个源的 cookie jar。",
   },
 
   sourceSettings: {
@@ -279,10 +275,8 @@ export default {
     installed: "已安装",
     missing: "未安装",
     checking: "检查中…",
-    timing: "检查耗时 {ms} ms",
     installing: "正在重新安装…",
     installDone: "重新安装完成",
     installFailed: "安装失败，请确认网络连接后再试。",
-    footnote: "源一直显示「依赖未安装」时，在这里重新安装就会恢复。",
   },
 }

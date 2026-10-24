@@ -65,7 +65,6 @@ export default {
     statsDetail: "{files} · {size}",
     calculating: "計算中…",
     rulesGroup: "自動清理規則",
-    rulesFootnote: "當縮圖超過保存天數或快取超過限制大小時，將在背景自動淘汰最舊的檔案。正文圖片走記憶體，不佔磁碟。",
     maxAge: "過期自動刪除",
     maxSize: "快取容量限制",
     unlimited: "不限制",
@@ -75,9 +74,7 @@ export default {
   /** 外觀主題頁與主題名稱表。 */
   theme: {
     paletteGroup: "底色 · 顏色",
-    paletteFootnote: "目前選取：{name} 色系。第一項為自訂調色盤，點擊可開啟系統選色。",
     compositionGroup: "底色 · 構圖",
-    compositionFootnote: "目前選取：{name}。點擊切換，背景即時預覽變化。",
     custom: "自訂",
     composition: {
       flat: { name: "純色", note: "全域基底色，沉靜無光，最低調" },
@@ -159,7 +156,6 @@ export default {
     passwordPrompt: "密碼",
     unsupported: "不支援的登入方式",
     unsupportedDetail: "這個源宣告的登入方式 Vesper 還沒有實作，需要在瀏覽器裡登入。",
-    credentialFootnote: "帳密與 Cookie 欄位的憑證存在 iOS Keychain；瀏覽器登入取得的 cookie 存在這個源的 cookie jar。",
   },
 
   /** 源自己的設定頁。 */
@@ -296,10 +292,8 @@ export default {
     installed: "已安裝",
     missing: "未安裝",
     checking: "檢查中…",
-    timing: "檢查耗時 {ms} ms",
     installing: "正在重新安裝…",
     installDone: "重新安裝完成",
     installFailed: "安裝失敗，請確認網路連線後再試。",
-    footnote: "源一直顯示「依賴未安裝」時，在這裡重新安裝就會恢復。",
   },
 }

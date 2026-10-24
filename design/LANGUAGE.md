@@ -19,6 +19,7 @@
 - **文字**：`label` → `secondaryLabel` → `tertiaryLabel`。
 - **語意色**（`palette` 的 green／orange／red…）只表示狀態，不當裝飾。
 - 狀態色當**文字或無底圖示**用 `toneText`（`danger`／`warning`／`success`／`love`，淺色深一階）；`palette.*` 只給色塊底（例如 `IconBadge`）。
+- 紅色只給破壞性動作（刪除、清除、移除）與失敗；「取消進行中的事」用中性色。
 - 透明色寫 `rgba(...)`，不用 8 位 hex（會變黑）。
 
 ## 圓角
@@ -107,3 +108,4 @@ sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，�
 - 2026-10-24 瀏覽／搜尋：錯誤／空／載入三種狀態統一；分類與排行 chip 列貼導覽列（safeAreaBar＋soft）；篩選 sheet 鋪頁面底色。
 - 2026-10-24 設定：`tagText` 擴成 `toneText`（加 `success`）；下載頁未完成＝中性暫停＋x/y、失敗才紅；刪掉頁面裡可有可無的說明 footnote。
 - 2026-10-24 閱讀器：HUD／目錄字級與文字色歸零（面板釘 dark，用 `label` 系）；目錄分組膠囊在玻璃抽屜裡，不用 `Chip`（玻璃疊玻璃），只套 `tint.selected` 階梯；狀態畫面黑底版 `PageLoading`／`EmptyState`／`NoticeBanner`＋`Chip` 重試。
+- 2026-10-25 掃尾：紅色只給破壞性動作與失敗（取消下載改中性）；色點用 `dotStroke` 描邊；列標題一行、數量下放到第二行，讓左滑按鈕等高（倉庫列：倉庫名＋「擁有者 · N 個源」）；圖示角標只給「要處理的事」，不放統計數字。

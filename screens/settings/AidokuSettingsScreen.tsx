@@ -25,7 +25,7 @@ import {
   ToggleRow,
   rowSeparatorInset,
 } from "../../design/rows"
-import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
 import { rowPadding } from "../../design/tokens"
 import { hostOf } from "../../engine/cookies"
 import { t } from "../../i18n"
@@ -87,6 +87,7 @@ function languageDetail(spec: AidokuSettingsSpec, overrides: Record<string, unkn
 
 export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
+  const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
   /** 正在執行的 `button`（用標題當 id：這類設定沒有 key）。 */
   const [runningKey, setRunningKey] = useState<string | null>(null)
@@ -95,6 +96,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     reloadRegistry()
     setSource(findSource(sourceKey))
     setStatus(null)
+    setLoaded(true)
   }, [sourceKey])
 
   // 從語言子頁回來時，registry 已經換了新值：跟著重讀，摘要才會是對的。
@@ -218,7 +220,9 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
         </CardGroup>
       ) : null}
 
-      {!hasContent || !spec ? (
+      {!loaded ? (
+        <PageLoading />
+      ) : !hasContent || !spec ? (
         <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.aidokuSettings.empty")} />
       ) : (
         spec.groups.map((group, index) => (

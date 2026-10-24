@@ -26,6 +26,14 @@ export default {
   allShown: "— 已顯示全部內容 —",
   /** 載入失敗：`{message}` 是原因。 */
   loadFailed: "載入失敗：{message}",
+  /** 技術錯誤字串的人話版（見 `engine/errors.ts`）。 */
+  problem: {
+    server: "伺服器錯誤（{status}）",
+    request: "請求被拒絕（{status}）",
+    timeout: "連線逾時",
+    network: "沒有網路連線",
+    unknown: "發生未知錯誤",
+  },
   /** 重試。 */
   retry: "重試",
   /** 留言裡的圖片載不出來。 */

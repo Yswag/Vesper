@@ -58,8 +58,6 @@ export default {
     statsDetail: "{files} · {size}",
     calculating: "Calculating…",
     rulesGroup: "Automatic Cleanup Rules",
-    rulesFootnote:
-      "When thumbnails exceed the retention period or the cache exceeds the size limit, the oldest files are automatically evicted in the background. Page images are kept in memory and take no disk space.",
     maxAge: "Auto-delete Expired",
     maxSize: "Cache Size Limit",
     unlimited: "Unlimited",
@@ -68,9 +66,7 @@ export default {
 
   theme: {
     paletteGroup: "Background · Color",
-    paletteFootnote: "Currently selected: {name}. The first item is a custom palette — tap to open the system color picker.",
     compositionGroup: "Background · Composition",
-    compositionFootnote: "Currently selected: {name}. Tap to switch; the background previews instantly.",
     custom: "Custom",
     composition: {
       flat: { name: "Solid", note: "A single base color: quiet, unlit, the most understated" },
@@ -150,8 +146,6 @@ export default {
     unsupported: "Unsupported sign-in method",
     unsupportedDetail:
       "Vesper has not implemented the sign-in method this source declares; sign in with a browser instead.",
-    credentialFootnote:
-      "Passwords and cookie fields are stored in the iOS Keychain; cookies from browser sign-in are stored in this source's cookie jar.",
   },
 
   sourceSettings: {
@@ -286,10 +280,8 @@ export default {
     installed: "Installed",
     missing: "Not installed",
     checking: "Checking…",
-    timing: "Checked in {ms} ms",
     installing: "Reinstalling…",
     installDone: "Reinstall complete",
     installFailed: "Install failed. Check your connection and try again.",
-    footnote: "If sources keep reporting a missing dependency, reinstalling here fixes it.",
   },
 }

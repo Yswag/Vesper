@@ -1,15 +1,13 @@
 // 外觀主題設定頁：構圖 × 顏色兩軸選擇。
 // 由 SettingsScreen 導覽進入。
 
-import { Circle, ColorPicker, Divider, HStack, Image, ScrollView, Spacer, Text, VStack, ZStack, type Color } from "scripting"
+import { Circle, ColorPicker, Divider, HStack, Image, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useRef, type Color, type ScrollViewProxy } from "scripting"
 
 import {
   COMPOSITIONS,
   PALETTES,
   PaletteDot,
   buildCustomPalette,
-  findComposition,
-  findPalette,
   getCustomColor,
   setComposition,
   setCustomColor,
@@ -23,44 +21,54 @@ import { useSubscription } from "../../app/useSubscription"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { rowSeparatorInset } from "../../design/rows"
 import { Footnote } from "../../design/text"
-import { rowPadding } from "../../design/tokens"
+import { dotStroke, rowPadding } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 
 export function ThemeSettingsScreen() {
   // 這一頁的每一個名字（構圖／色盤）都在字典裡：語言換了要跟著重繪。
   useSubscription(subscribeLocale)
   const choice = useThemeChoice()
-  const currentComp = findComposition(choice.composition)
-  const currentPal = findPalette(choice.palette)
+  const paletteProxy = useRef<ScrollViewProxy>()
+  const selectedPaletteKey = choice.palette === "custom" ? "palette:custom" : `palette:${choice.palette}`
+
+  // 進頁時把選中的色盤捲進視野：色盤列比畫面寬，預設位置看不到選中項。
+  useEffect(() => {
+    const proxy = paletteProxy.current
+    if (!proxy) return
+    const timer = setTimeout(() => proxy.scrollTo(selectedPaletteKey, "center"), 0)
+    return () => clearTimeout(timer)
+  }, [])
 
   return (
     <PageScroll title={t("settings.root.appearance")}>
-      <CardGroup
-        title={t("settings.theme.paletteGroup")}
-        footnote={t("settings.theme.paletteFootnote", { name: t(currentPal.nameKey) })}
-      >
-        <ScrollView axes="horizontal">
-          <HStack spacing={8} padding={{ horizontal: 16, vertical: 12 }}>
-            <CustomColorButton
-              selected={choice.palette === "custom"}
-              onColorChanged={color => setCustomColor(String(color))}
-            />
-            {PALETTES.map(item => (
-              <PaletteDotButton
-                key={item.id}
-                palette={item}
-                selected={choice.palette === item.id}
-                onTap={() => setPalette(item.id)}
-              />
-            ))}
-          </HStack>
-        </ScrollView>
+      <CardGroup title={t("settings.theme.paletteGroup")}>
+        <ScrollViewReader>
+          {proxy => {
+            paletteProxy.current = proxy
+            return (
+              <ScrollView axes="horizontal">
+                <HStack spacing={8} padding={{ horizontal: 16, vertical: 12 }}>
+                  <CustomColorButton
+                    key="palette:custom"
+                    selected={choice.palette === "custom"}
+                    onColorChanged={color => setCustomColor(String(color))}
+                  />
+                  {PALETTES.map(item => (
+                    <PaletteDotButton
+                      key={`palette:${item.id}`}
+                      palette={item}
+                      selected={choice.palette === item.id}
+                      onTap={() => setPalette(item.id)}
+                    />
+                  ))}
+                </HStack>
+              </ScrollView>
+            )
+          }}
+        </ScrollViewReader>
       </CardGroup>
 
-      <CardGroup
-        title={t("settings.theme.compositionGroup")}
-        footnote={t("settings.theme.compositionFootnote", { name: t(currentComp.nameKey) })}
-      >
+      <CardGroup title={t("settings.theme.compositionGroup")}>
         {COMPOSITIONS.map((item, index) => (
           <VStack key={item.id} spacing={0}>
             {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
@@ -129,6 +137,7 @@ function PaletteDotButton({
       onTapGesture={onTap}
     >
       <PaletteDot palette={palette} size={30} />
+      <Circle frame={{ width: 30, height: 30 }} stroke={dotStroke} allowsHitTesting={false} />
       {selected ? (
         <Circle
           frame={{ width: 38, height: 38 }}
@@ -160,6 +169,7 @@ function CustomColorButton({
     <ZStack alignment="center" frame={{ width: 44, height: 44 }}>
       {/* 視覺層：完全按照其他圓點的規格繪製 */}
       <PaletteDot palette={customPalette} size={30} />
+      <Circle frame={{ width: 30, height: 30 }} stroke={dotStroke} allowsHitTesting={false} />
       {selected ? (
         <Circle
           frame={{ width: 38, height: 38 }}
