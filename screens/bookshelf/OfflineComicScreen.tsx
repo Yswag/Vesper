@@ -5,7 +5,7 @@
 //
 // 繼續閱讀：有進度且那一章下載完 → 從那一章那一頁開；否則開第一個下載完的章。
 
-import { Button, HStack, Image, LazyVStack, NavigationLink, ProgressView, Spacer, Text, VStack } from "scripting"
+import { Button, HStack, Image, LazyVStack, ProgressView, Spacer, Text, VStack } from "scripting"
 
 import type { ChapterDownloadState } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -21,7 +21,7 @@ import { cardGap, cardShape, fill, radius, rect, rowPadding, tagText } from "../
 import { formatBytes } from "../../engine/format"
 import { chaptersForReader, listChapters, statusOf, type OfflineChapter } from "../../engine/offline"
 import { HERO_ASPECT } from "../shared/comicMetrics"
-import { ReaderScreen } from "../shared/ReaderScreen"
+import { presentReader } from "../shared/ResumeReaderScreen"
 
 /** 縮小版 hero：詳情頁封面 124 寬，這裡小一號。 */
 const HERO_COVER = { width: 96, height: Math.round(96 * HERO_ASPECT) }
@@ -139,19 +139,19 @@ export function OfflineComicScreen({
       </HStack>
 
       {target ? (
-        <NavigationLink
+        <Button
           buttonStyle="plain"
-          destination={
-            <ReaderScreen
-              sourceKey={sourceKey}
-              comicId={comicId}
-              epId={target.chapter.key.epId}
-              chapters={chaptersForReader(sourceKey, comicId)}
-              comicTitle={comicTitle}
-              comicCover={comicCover}
-              initialPage={targetPage}
-              offlineMode={true}
-            />
+          action={() =>
+            void presentReader({
+              sourceKey,
+              comicId,
+              epId: target.chapter.key.epId,
+              chapters: chaptersForReader(sourceKey, comicId),
+              comicTitle,
+              comicCover,
+              initialPage: targetPage,
+              offlineMode: true,
+            })
           }
         >
           <PrimaryAction
@@ -162,7 +162,7 @@ export function OfflineComicScreen({
                 : titleOf(target.chapter)
             }
           />
-        </NavigationLink>
+        </Button>
       ) : (
         <PrimaryAction label={t("bookshelf.noDownloadedChapter")} disabled={true} />
       )}
@@ -296,22 +296,24 @@ function ChapterRow({
   )
 
   const content = done ? (
-    <NavigationLink
-      destination={
-        <ReaderScreen
-          sourceKey={sourceKey}
-          comicId={comicId}
-          epId={chapter.key.epId}
-          chapters={chaptersForReader(sourceKey, comicId)}
-          comicTitle={comicTitle}
-          comicCover={comicCover}
-          initialPage={resumePage}
-          offlineMode={true}
-        />
+    <Button
+      buttonStyle="plain"
+      frame={{ maxWidth: "infinity" }}
+      action={() =>
+        void presentReader({
+          sourceKey,
+          comicId,
+          epId: chapter.key.epId,
+          chapters: chaptersForReader(sourceKey, comicId),
+          comicTitle,
+          comicCover,
+          initialPage: resumePage,
+          offlineMode: true,
+        })
       }
     >
       {body}
-    </NavigationLink>
+    </Button>
   ) : (
     body
   )

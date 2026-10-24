@@ -36,7 +36,8 @@ import { isFavorite, toggleFavorite } from "../../library/bookshelf"
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
-import { ReaderScreen, type ChapterRef } from "./ReaderScreen"
+import { presentReader } from "./ResumeReaderScreen"
+import { type ChapterRef } from "./ReaderScreen"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { PageBackground, useTint } from "../../app/theme"
 import { cardBackground, cardShape, capsule, fill, pageInsets, pageSpacing, palette, radius, rect, rowPadding } from "../../design/tokens"
@@ -534,8 +535,9 @@ export function ComicDetailScreen({
             {/* 閱讀入口與動作列（開始閱讀 + 收藏 + 評論留言） */}
             <HStack spacing={10} alignment="center" frame={{ maxWidth: "infinity" }}>
               {targetEpId ? (
-                <NavigationLink
-                  destination={<ReaderScreen {...readerProps} epId={targetEpId} initialPage={resumePage} />}
+                // 閱讀器一律用全螢幕呈現（不是推入）：推入的話狀態列與 tab bar 的修飾子會被導覽容器吃掉。
+                <Button
+                  action={() => void presentReader({ ...readerProps, epId: targetEpId, initialPage: resumePage })}
                   buttonStyle="plain"
                 >
                   <GlassSurface shape={rect(radius.lg)} tint={tintColor} interactive={true}>
@@ -566,7 +568,7 @@ export function ComicDetailScreen({
                       <Spacer />
                     </HStack>
                   </GlassSurface>
-                </NavigationLink>
+                </Button>
               ) : chapters.length > 0 ? (
                 // 有章節但全部鎖定：不讓入口消失，改成看得懂的狀態。
                 <GlassSurface shape={rect(radius.lg)}>
@@ -899,21 +901,23 @@ export function ComicDetailScreen({
                     </Card>
                   )
 
-                  // 鎖定的章節只顯示，不包 NavigationLink（點了不會進去）。
+                  // 鎖定的章節只顯示，不包按鈕（點了不會進去）。
                   const row = selecting || locked ? (
                     body
                   ) : (
-                    <NavigationLink
-                      destination={
-                        <ReaderScreen
-                          {...readerProps}
-                          epId={chapter.id}
-                          initialPage={isCurrent ? resumed?.page : undefined}
-                        />
+                    <Button
+                      buttonStyle="plain"
+                      frame={{ maxWidth: "infinity" }}
+                      action={() =>
+                        void presentReader({
+                          ...readerProps,
+                          epId: chapter.id,
+                          initialPage: isCurrent ? resumed?.page : undefined,
+                        })
                       }
                     >
                       {body}
-                    </NavigationLink>
+                    </Button>
                   )
 
                   // 下載動作放左滑：一列只能有一個可點元件，塞 Button 會跟 NavigationLink 搶命中。

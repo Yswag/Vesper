@@ -16,7 +16,16 @@ import { showToast } from "../../app/toast"
 import { chaptersForReader } from "../../engine/offline"
 import { t } from "../../i18n"
 import { canResumeOffline } from "./offlineSession"
-import { ReaderScreen, type ChapterRef } from "./ReaderScreen"
+import { ReaderScreen, type ChapterRef, type ReaderProps } from "./ReaderScreen"
+
+/**
+ * 以全螢幕呈現閱讀器。
+ * 不能用 NavigationLink 推入：`statusBarHidden` / `tabBarVisibility` 只對「全螢幕呈現頁的根」生效，
+ * 推入的子頁會被導覽容器吃掉，狀態列照樣顯示。
+ */
+export async function presentReader(props: ReaderProps): Promise<void> {
+  await Navigation.present({ element: <ReaderScreen {...props} />, modalPresentationStyle: "fullScreen" })
+}
 
 export interface LaunchResumeReaderParams {
   sourceKey: string
@@ -45,20 +54,15 @@ export async function launchResumeReader({
     // 這是「下載了卻被續讀拉回線上（飛航模式下甚至拉不起來）」的那個修正；
     // 下載被刪掉時 `canResumeOffline` 回 false，很自然地往下走線上那條。
     if (wantedEpId !== undefined && canResumeOffline({ sourceKey, comicId, epId: wantedEpId }, resumed?.offline)) {
-      await Navigation.present({
-        element: (
-          <ReaderScreen
-            sourceKey={sourceKey}
-            comicId={comicId}
-            epId={wantedEpId}
-            chapters={chaptersForReader(sourceKey, comicId)}
-            comicTitle={title}
-            comicCover={cover}
-            initialPage={resumed?.page ?? page}
-            offlineMode={true}
-          />
-        ),
-        modalPresentationStyle: "fullScreen",
+      await presentReader({
+        sourceKey,
+        comicId,
+        epId: wantedEpId,
+        chapters: chaptersForReader(sourceKey, comicId),
+        comicTitle: title,
+        comicCover: cover,
+        initialPage: resumed?.page ?? page,
+        offlineMode: true,
       })
       return
     }
@@ -89,20 +93,15 @@ export async function launchResumeReader({
     const targetPage = targetEpId === wantedEpId ? resumed?.page ?? page : undefined
 
     // 以全螢幕模式直開閱讀器，退出時直接 dismiss 回到原位
-    await Navigation.present({
-      element: (
-        <ReaderScreen
-          sourceKey={sourceKey}
-          comicId={comicId}
-          epId={targetEpId}
-          chapters={chapters}
-          comicTitle={title}
-          comicCover={cover}
-          initialPage={targetPage}
-          viewer={comicPage.viewer}
-        />
-      ),
-      modalPresentationStyle: "fullScreen",
+    await presentReader({
+      sourceKey,
+      comicId,
+      epId: targetEpId,
+      chapters,
+      comicTitle: title,
+      comicCover: cover,
+      initialPage: targetPage,
+      viewer: comicPage.viewer,
     })
   } catch (err) {
     showToast(err instanceof Error ? err.message : t("reader.readerFailed"))
