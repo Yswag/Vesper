@@ -44,9 +44,6 @@ import { PageLoading } from "../../design/status"
 import { rect } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
 
-// 點完不關 Menu（Scripting 沒有這個修飾子，當成 prop 硬送；沒作用也不影響）。
-const KEEP_MENU_OPEN = { menuActionDismissDisabled: true } as any
-
 interface FilterState {
   rows: AidokuFilterRow[]
   values: AidokuFilterValue[]
@@ -255,7 +252,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
             : { included: [] as string[], excluded: [] as string[] }
         const count = picked.included.length + picked.excluded.length
         // Aidoku 的 MultiSelectFilterView 也是 Menu：點一下包含、再點一下排除（canExclude 時）、再點一下取消。
-        // `menuActionDismissDisabled` 這裡沒有，所以 Menu 每點一次會關，重新打開才繼續。
+        // 每顆選項都不關 Menu，才能連續勾選。
         const toggle = (option: string) => {
           const included = picked.included.filter(item => item !== option)
           const excluded = picked.excluded.filter(item => item !== option)
@@ -269,7 +266,11 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
         return (
           <Menu label={capsule(row.label, count > 0, count)}>
             {row.options.map(option => (
-              <Button {...KEEP_MENU_OPEN} key={option.value} action={() => toggle(option.value)}>
+              <Button
+                key={option.value}
+                menuActionDismissBehavior="disabled"
+                action={() => toggle(option.value)}
+              >
                 <HStack spacing={8}>
                   <Text>{option.label}</Text>
                   {picked.included.includes(option.value) ? (
