@@ -115,6 +115,7 @@ const httpBridge = {
     xhr.setRequestHeader("Content-Type", "application/json")
     xhr.send(
       JSON.stringify({
+        sourceKey: currentSourceKey,
         url: request.url,
         method: request.method || "GET",
         headers: request.headers || {},

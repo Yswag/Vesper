@@ -1,19 +1,22 @@
 // Aidoku 源（WASM）：把源的四段查詢映射成 Vesper 既有的型別。
 //
-// 宿主只有一個 worker、一次只載一份源，所以每個橋接呼叫都排隊，而且呼叫前先確認
-// worker 裡載的就是這一份（多個 Aidoku 源同時搜尋時才不會互相蓋掉）。
-// 宿主這一層壞掉（頁面死、worker 掛、逾時）就重建一次再重試；再失敗就把源標成不可用。
+// 宿主裡每個源各自一個 worker：不同源的呼叫真的並行，同一個源仍然序列。
+// 呼叫前先保證這個源的 worker 載著它；worker 壞了只丟掉這一個源重載重試，
+// 頁面沒了才整個重建；再失敗就把源標成不可用。
 // 失敗一律包成「源出錯」：畫面要能分辨是源壞了，不是網路壞了。
 
 import type { ComicListItem, ComicListPage } from "../engine/adapt"
 import { normalizeTags } from "../engine/adapt"
 import {
   callAidoku,
+  dropAidokuSource,
+  forgetAidokuSource,
   hasImageProcessorAidoku,
   initializeAidokuSource,
   isAidokuHostError,
+  isAidokuLoaded,
+  isAidokuWorkerError,
   loadAidokuPackage,
-  loadedAidokuSourceKey,
   notifyAidoku,
   processAidokuPageImage,
   resetAidokuHost,
@@ -188,7 +191,7 @@ export async function notify(source: InstalledSource, notification: string): Pro
       source,
       "handleNotification",
       async () => {
-        await notifyAidoku(notification)
+        await notifyAidoku(source.stored.key, notification)
       },
       false
     )
@@ -759,7 +762,7 @@ export function needsImageProcessing(key: string): boolean {
 /** 載入後問一次 `hasImageProcessor`；結果改變才通知畫面。 */
 async function rememberImageProcessor(key: string): Promise<void> {
   const previous = imageProcessors.get(key)
-  const flag = await hasImageProcessorAidoku()
+  const flag = await hasImageProcessorAidoku(key)
   if (flag === previous) return
   imageProcessors.set(key, flag)
   stateListener?.()
@@ -800,32 +803,31 @@ function assertAvailable(key: string): void {
   if (reason) throw new AidokuUnavailableError(t("sources.aidoku.unavailable", { reason }))
 }
 
-let initializedKey: string | null = null
+const initialized = new Set<string>()
 
-/** 檔案被換掉／删掉了：宿主還載著這一份的話就丟掉，下次用到時重載新檔。 */
+/** 檔案被換掉／删掉了：只丟這個源的 worker，下次用到時重載新檔。 */
 function forgetLoaded(key: string): void {
   listings.delete(key)
   imageProcessors.delete(key)
-  if (loadedAidokuSourceKey() !== key) return
-  resetAidokuHost()
-  initializedKey = null
+  initialized.delete(key)
+  forgetAidokuSource(key)
 }
 
-async function initializeGuarded(): Promise<void> {
+async function initializeGuarded(key: string): Promise<void> {
   try {
-    await initializeAidokuSource()
+    await initializeAidokuSource(key)
   } catch (failure) {
     throw new SourceLoadError(messageOf(failure))
   }
 }
 
-/** 確定 worker 裡載著這一份源（而且初始化過）。 */
+/** 確定這個源的 worker 裡載著它（而且初始化過）。 */
 async function ensureLoaded(source: InstalledSource): Promise<void> {
   const key = source.stored.key
-  if (loadedAidokuSourceKey() === key) {
-    if (initializedKey === key) return
-    await initializeGuarded()
-    initializedKey = key
+  if (isAidokuLoaded(key)) {
+    if (initialized.has(key)) return
+    await initializeGuarded(key)
+    initialized.add(key)
     return
   }
   // 檔案不在／壞掉是源自己的問題，重建宿主也沒用。
@@ -836,8 +838,8 @@ async function ensureLoaded(source: InstalledSource): Promise<void> {
   } catch (failure) {
     throw new SourceLoadError(messageOf(failure))
   }
-  await initializeGuarded()
-  initializedKey = key
+  await initializeGuarded(key)
+  initialized.add(key)
   await rememberImageProcessor(key)
   log("info", "aidoku", `${key} 已載入（${Date.now() - started}ms）`)
 }
@@ -848,30 +850,34 @@ function shouldHeal(failure: unknown): boolean {
 
 /**
  * 一次原子操作：確保載著這份源 → 跑 task。
- * 宿主這一層壞掉就重建一次、重載、再試一次；第二次仍失敗預設標記源不可用，
- * 但 `markOnFailure=false` 的路徑（例如單張圖處理失敗）只把錯誤丟出去。
+ * 壞掉就收拾一次再重試：只有那個源自己的 worker 壞了就只丟它，頁面沒了才整個重建。
+ * 收拾要在隊列外做：頁面層級的動作要先等所有源的隊列排空，不然會等到自己。
+ * 第二次仍失敗預設標記源不可用，但 `markOnFailure=false` 的路徑（例如單張圖處理失敗）只把錯誤丟出去。
  */
-function withHealing<T>(source: InstalledSource, step: string, task: () => Promise<T>, markOnFailure = true): Promise<T> {
+async function withHealing<T>(source: InstalledSource, step: string, task: () => Promise<T>, markOnFailure = true): Promise<T> {
   const key = source.stored.key
-  return runAidokuExclusive(async () => {
-    assertAvailable(key)
-    try {
+  const attempt = (): Promise<T> =>
+    runAidokuExclusive(key, async () => {
+      assertAvailable(key)
       await ensureLoaded(source)
       return await task()
-    } catch (failure) {
-      if (!shouldHeal(failure)) throw failure
-      log("warning", "aidoku", `${key} 的 ${step} 失敗（${messageOf(failure)}），重建宿主後重試一次`)
-      resetAidokuHost()
-      initializedKey = null
-      try {
-        await ensureLoaded(source)
-        return await task()
-      } catch (retryFailure) {
-        if (markOnFailure) markFailure(key, userMessageOf(retryFailure))
-        throw retryFailure
-      }
+    })
+  try {
+    return await attempt()
+  } catch (failure) {
+    if (!shouldHeal(failure)) throw failure
+    const scope = isAidokuWorkerError(failure) ? `${key} 的 worker` : "宿主頁面"
+    log("warning", "aidoku", `${key} 的 ${step} 失敗（${messageOf(failure)}），重建${scope}後重試一次`)
+    initialized.delete(key)
+    if (isAidokuWorkerError(failure)) await dropAidokuSource(key)
+    else await resetAidokuHost()
+    try {
+      return await attempt()
+    } catch (retryFailure) {
+      if (markOnFailure) markFailure(key, userMessageOf(retryFailure))
+      throw retryFailure
     }
-  })
+  }
 }
 
 /** `onResponse` 拿到的可能是 ArrayBuffer 或 Uint8Array。 */
@@ -886,7 +892,7 @@ async function processPageImageBytes(
   request: AidokuPageImageRequest
 ): Promise<Uint8Array> {
   try {
-    return await withHealing(source, "processPageImage", () => processAidokuPageImage(toBytes(bytes), request), false)
+    return await withHealing(source, "processPageImage", () => processAidokuPageImage(source.stored.key, toBytes(bytes), request), false)
   } catch (failure) {
     if (failure instanceof AidokuUnavailableError) throw failure
     log("error", "aidoku", `${source.stored.key} 的頁面圖處理失敗`, failure)
@@ -899,7 +905,7 @@ async function processPageImageBytes(
  * 過盾放在這裡而不是宿主：宿主那條路徑（HttpServer 回呼）建不了 timer。
  */
 async function call(source: InstalledSource, method: string, args: unknown[] = [], timeoutMs?: number): Promise<any> {
-  const run = () => withHealing(source, method, () => callAidoku(method, args, timeoutMs))
+  const run = () => withHealing(source, method, () => callAidoku(source.stored.key, method, args, timeoutMs))
   let value: any
   let failure: unknown = null
   let failed = false
@@ -1204,7 +1210,7 @@ export function ready(source: InstalledSource): Promise<void> {
       const staticListings = staticListingsOf(key)
       let dynamicListings: any[] = []
       try {
-        const raw = await callAidoku("getListings")
+        const raw = await callAidoku(key, "getListings")
         if (Array.isArray(raw)) dynamicListings = raw
       } catch (failure) {
         // 只有宿主層會真的丟錯（源自己的 get_listings 丟錯時 runtime 回空陣列）：

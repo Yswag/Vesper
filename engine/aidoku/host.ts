@@ -1,8 +1,8 @@
-// Aidoku 源宿主：本機 HttpServer 服務頁面與 runtime，WebView 內的 module worker 執行 wasm 源。
+// Aidoku 源宿主：本機 HttpServer 服務頁面與 runtime，WebView 內每個源一個 module worker 跑 wasm。
 // 與超分分開：各自的 server 與 WebView（超分頁面需要 COOP/COEP，這裡不需要）。
 //
-// 生命週期：第一次用到才開 → 常駐 → 閒置逾時 dispose。所有碰宿主的動作都排同一條隊列，
-// 所以 dispose／重建不會落在請求中間。
+// 生命週期：第一次用到才開 → 常駐 → 閒置逾時 dispose。每個源一條隊列（同一個源序列，不同源並行）；
+// 頁面層級的動作（建頁、重建、dispose）會先等所有源的隊列排空，所以不會拆在請求中間。
 
 import { Script, fetch } from "scripting"
 
@@ -18,8 +18,10 @@ const PROXY_TIMEOUT_MS = 15_000
 const START_TIMEOUT_MS = 5_000
 const IMAGE_TIMEOUT_MS = 30_000
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000
+/** 同時最多幾個源的 worker（Aidoku 原版的 maxConcurrentTasks 也是 3）。 */
+const WORKER_LIMIT = 3
 
-/** 宿主／worker 這一層壞掉（不是源自己回錯）。呼叫端據此決定要不要重建重試。 */
+/** 宿主這一層壞掉（頁面沒了、伺服器起不來）。呼叫端據此重建整個宿主再重試。 */
 export class AidokuHostError extends Error {
   constructor(message: string) {
     super(message)
@@ -27,8 +29,21 @@ export class AidokuHostError extends Error {
   }
 }
 
+/** 只有某個源的 worker 壞了／逾時：丟掉它就夠了，其他源與頁面不受影響。 */
+export class AidokuWorkerError extends AidokuHostError {
+  constructor(message: string) {
+    super(message)
+    this.name = "AidokuWorkerError"
+  }
+}
+
 export function isAidokuHostError(error: unknown): boolean {
   return error instanceof AidokuHostError
+}
+
+/** 這個源自己的 worker 掛了（而不是頁面沒了）。 */
+export function isAidokuWorkerError(error: unknown): boolean {
+  return error instanceof AidokuWorkerError
 }
 
 function hostError(error: unknown): AidokuHostError {
@@ -56,12 +71,25 @@ const DROPPED_REQUEST_HEADERS = new Set(["host", "content-length", "connection",
 let server: HttpServer | null = null
 let controller: WebViewController | null = null
 let port = 0
-let pendingAix: Uint8Array | null = null
-let pendingPackage: AidokuPackage | null = null
-/** worker 裡現在載著哪一份源（重載判斷用；dispose 後歸零）。 */
-let loadedKey: string | null = null
-/** 載入中的源：載入期間源就可能寫設定，这时 loadedKey 還不是它。 */
-let loadingKey: string | null = null
+/** 頁面上有哪些源的 worker（一個源一個）。 */
+interface WorkerSlot {
+  key: string
+  lastUsed: number
+}
+
+const slots = new Map<string, WorkerSlot>()
+/**
+ * 每個源手上的呼叫數（執行中＋排隊中）：>0 就不能回收。
+ * 刻意與 `slots` 分開：重建頁面會清 `slots`，但計數必須跟著還在跑的呼叫。
+ */
+const pendingCounts = new Map<string, number>()
+/** 哪些源的 worker 真的載好了（重載判斷用；回收或 dispose 之後消失）。 */
+const loadedKeys = new Set<string>()
+/** 載入中的源：載入期間源就可能寫設定，這時 loadedKeys 裡還不是它。 */
+const loadingKeys = new Set<string>()
+/** 還沒被 worker 取走的載入素材（依源分開，兩個源同時載入也不會互相蓋掉）。 */
+const pendingAix = new Map<string, Uint8Array>()
+const pendingPackages = new Map<string, AidokuPackage>()
 
 /** 源自己寫設定（`defaults.set`）的落地函式；由 `sources/aidoku.ts` 注冊。 */
 let settingsWriter: ((key: string, name: string, value: unknown) => void) | null = null
@@ -77,28 +105,116 @@ let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
 let idleTimer: number | null = null
 let lastActivity = 0
 
-// ---------------------------------------------------------------- 隊列與閒置回收
+// ---------------------------------------------------------------- 隊列
 
-let queue: Promise<unknown> = Promise.resolve()
+/** 每個源一條隊列：同一個源的呼叫序列，不同的源真的同時跑。 */
+const sourceQueues = new Map<string, Promise<unknown>>()
+/** 目前手上有多少個源的呼叫做到一半（排隊的不算）。 */
+let running = 0
+const idleWaiters: (() => void)[] = []
+/** 等「有 worker 空下來」的人（回收不成就等）。 */
+const slotWaiters: (() => void)[] = []
 
-/** 不更新活動時間的入列（閒置回收自己用，否則排隊就等於把時鐘歸零）。 */
-function enqueue<T>(task: () => Promise<T>): Promise<T> {
-  const run = queue.then(task, task)
-  queue = run.then(
+function slotOf(key: string): WorkerSlot {
+  const existing = slots.get(key)
+  if (existing) return existing
+  const created: WorkerSlot = { key, lastUsed: Date.now() }
+  slots.set(key, created)
+  return created
+}
+
+/** 這個源手上的呼叫數。 */
+function busyCount(sourceKey: string): number {
+  return pendingCounts.get(sourceKey) ?? 0
+}
+
+function bumpPending(sourceKey: string, delta: number): void {
+  const next = busyCount(sourceKey) + delta
+  if (next <= 0) pendingCounts.delete(sourceKey)
+  else pendingCounts.set(sourceKey, next)
+}
+
+/**
+ * 一次源呼叫排進這個源自己的隊列。
+ * 呼叫數在**入列時**就加一：回收一個源之前要看它手上有沒有還沒跑的呼叫。
+ */
+export function runAidokuExclusive<T>(sourceKey: string, task: () => Promise<T>): Promise<T> {
+  slotOf(sourceKey)
+  bumpPending(sourceKey, 1)
+  touch(sourceKey)
+  const execute = async (): Promise<T> => {
+    await pageGate
+    running += 1
+    try {
+      return await task()
+    } finally {
+      running -= 1
+      bumpPending(sourceKey, -1)
+      wake()
+    }
+  }
+  const previous = sourceQueues.get(sourceKey) ?? Promise.resolve()
+  const run = previous.then(execute)
+  sourceQueues.set(
+    sourceKey,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  )
+  return run
+}
+
+function wake(): void {
+  if (running === 0) for (const resolve of idleWaiters.splice(0)) resolve()
+  for (const resolve of slotWaiters.splice(0)) resolve()
+}
+
+// ---------------------------------------------------------------- 頁面層級的動作
+
+/**
+ * 頁面層級的動作（建頁、重建、dispose、收 worker）在跑時，源的呼叫先等在門外，
+ * 而且要等手邊的呼叫做完才動手：銷毀不會落在請求中間。
+ */
+let pageGate: Promise<void> = Promise.resolve()
+let pageQueue: Promise<unknown> = Promise.resolve()
+
+function runPageTask<T>(task: () => Promise<T>, drainBefore = true): Promise<T> {
+  let release: () => void = () => {}
+  const gate = new Promise<void>(resolve => {
+    release = resolve
+  })
+  const previous = pageGate
+  pageGate = gate
+  const run = pageQueue.then(async () => {
+    await previous
+    try {
+      if (drainBefore) await drainRunning()
+      return await task()
+    } finally {
+      release()
+    }
+  })
+  pageQueue = run.then(
     () => undefined,
     () => undefined
   )
   return run
 }
 
-/** 所有碰宿主的動作（載入、呼叫、重建、dispose）都排這條隊列：銷毀不會落在請求中間。 */
-export function runAidokuExclusive<T>(task: () => Promise<T>): Promise<T> {
-  touch()
-  return enqueue(task)
+/** 等到手邊沒有任何源的呼叫（排隊的都在門外等，不會突然插進來）。 */
+async function drainRunning(): Promise<void> {
+  while (running > 0) {
+    await new Promise<void>(resolve => idleWaiters.push(resolve))
+  }
 }
 
-function touch(): void {
+// ---------------------------------------------------------------- 閒置回收
+
+function touch(sourceKey?: string): void {
   lastActivity = Date.now()
+  const slot = sourceKey ? slots.get(sourceKey) : undefined
+  if (slot) slot.lastUsed = lastActivity
   scheduleIdle()
 }
 
@@ -108,31 +224,35 @@ function scheduleIdle(): void {
     idleTimer = null
   }
   if (!controller && !server) return
-  const remaining = Math.max(0, lastActivity + idleTimeoutMs - Date.now())
-  const start = (): void => {
-    try {
-      idleTimer = setTimeout(() => {
-        idleTimer = null
-        void disposeWhenIdle()
-      }, remaining)
-    } catch {
-      // 呼叫端可能不在主佇列（WebView 回呼的續行），下一輪 touch() 再排就好。
+  const now = Date.now()
+  let due = lastActivity + idleTimeoutMs
+  for (const slot of slots.values()) due = Math.min(due, slot.lastUsed + idleTimeoutMs)
+  const remaining = Math.max(0, due - now)
+  try {
+    idleTimer = setTimeout(() => {
       idleTimer = null
-    }
+      void disposeWhenIdle()
+    }, remaining)
+  } catch {
+    // 呼叫端可能不在主佇列（WebView 回呼的續行），下一輪 touch() 再排就好。
+    idleTimer = null
   }
-  start()
 }
 
-/** 排到隊列尾端才真的拆；輪到它時再確認一次（排隊期間可能又有請求進來）。 */
+/** 每個 worker 自己算閒置；最後一個收掉之後才釋放頁面與伺服器。 */
 async function disposeWhenIdle(): Promise<void> {
-  await enqueue(async () => {
-    if (Date.now() - lastActivity < idleTimeoutMs) {
-      scheduleIdle()
-      return
+  await runPageTask(async () => {
+    const now = Date.now()
+    for (const slot of [...slots.values()]) {
+      if (busyCount(slot.key) > 0 || now - slot.lastUsed < idleTimeoutMs) continue
+      await dropWorker(slot.key)
     }
-    resetAidokuHost()
-    log("info", "aidoku", `宿主閒置 ${Math.round(idleTimeoutMs / 1000)} 秒，已釋放`)
+    if (slots.size === 0 && (controller || server) && now - lastActivity >= idleTimeoutMs) {
+      teardown()
+      log("info", "aidoku", `宿主閒置 ${Math.round(idleTimeoutMs / 1000)} 秒，已釋放`)
+    }
   })
+  scheduleIdle()
 }
 
 /** 閒置多久之後 dispose（預設 10 分鐘；探針用短的值）。 */
@@ -154,6 +274,11 @@ export function aidokuHostGeneration(): number {
 /** 宿主伺服器的埠號（沒開就是 0）。 */
 export function aidokuHostPort(): number {
   return port
+}
+
+/** 這個源的 worker 裡載著它的源嗎（引擎用它判斷要不要重載）。 */
+export function isAidokuLoaded(sourceKey: string): boolean {
+  return loadedKeys.has(sourceKey)
 }
 
 function assetPath(name: string): string {
@@ -334,6 +459,11 @@ export async function performProxy(
   return { status: response.status, headers: outHeaders, bytes: new Uint8Array(buffer), url: finalUrl }
 }
 
+/** 請求信封裡的源：worker 自己帶過來，代理層不再猜「目前載著誰」。 */
+function sourceKeyOf(payload: any): string | null {
+  return payload && typeof payload.sourceKey === "string" && payload.sourceKey ? payload.sourceKey : null
+}
+
 /** HTTP 入口：只負責把 worker 的 JSON 信封轉成一次 performProxy。 */
 async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   const payload = jsonBody(request)
@@ -348,7 +478,7 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
       body: payload.body,
     },
     PROXY_TIMEOUT_MS,
-    loadedKey ?? loadingKey
+    sourceKeyOf(payload)
   )
 
   return HttpResponse.raw(result.status, "OK", {
@@ -389,22 +519,25 @@ async function ensureServer(): Promise<number> {
   for (const [served, file] of Object.entries(RUNTIME_FILES)) {
     instance.registerHandler(`/rt/${served}`, () => readAsset(`rt/${file}`, "text/javascript; charset=utf-8"))
   }
-  instance.registerAsyncHandler("/aix", async () => {
-    if (!pendingAix) return HttpResponse.notFound()
-    return staticResponse(pendingAix, "application/octet-stream")
+  instance.registerAsyncHandler("/aix", async request => {
+    const aix = pendingAix.get(sourceKeyOf(jsonBody(request)) ?? "")
+    if (!aix) return HttpResponse.notFound()
+    return staticResponse(aix, "application/octet-stream")
   })
-  instance.registerAsyncHandler("/manifest", async () => {
-    if (!pendingPackage) return HttpResponse.notFound()
+  instance.registerAsyncHandler("/manifest", async request => {
+    const pkg = pendingPackages.get(sourceKeyOf(jsonBody(request)) ?? "")
+    if (!pkg) return HttpResponse.notFound()
     const payload = JSON.stringify({
-      manifest: pendingPackage.manifest,
-      settingsJson: pendingPackage.settingsJson ?? null,
-      settings: pendingPackage.settings ?? {},
+      manifest: pkg.manifest,
+      settingsJson: pkg.settingsJson ?? null,
+      settings: pkg.settings ?? {},
     })
     return staticResponse(new TextEncoder().encode(payload), "application/json; charset=utf-8")
   })
-  instance.registerAsyncHandler("/wasm", async () => {
-    if (!pendingPackage) return HttpResponse.notFound()
-    return staticResponse(pendingPackage.wasm, "application/octet-stream")
+  instance.registerAsyncHandler("/wasm", async request => {
+    const pkg = pendingPackages.get(sourceKeyOf(jsonBody(request)) ?? "")
+    if (!pkg) return HttpResponse.notFound()
+    return staticResponse(pkg.wasm, "application/octet-stream")
   })
   instance.registerAsyncHandler("/proxy", proxyResponse)
   instance.registerAsyncHandler("/settings", async request => {
@@ -412,8 +545,8 @@ async function ensureServer(): Promise<number> {
     const key = typeof payload?.sourceKey === "string" ? payload.sourceKey : ""
     const name = typeof payload?.key === "string" ? payload.key : ""
     if (!key || !name) return HttpResponse.badRequest()
-    // 只接目前這一份源（載入中的也算），避免交叉寫到別的源。
-    if (key !== loadedKey && key !== loadingKey) return HttpResponse.badRequest()
+    // 只接「這個 key 有載著或正在載」的寫入，避免交叉寫到別的源。
+    if (!loadedKeys.has(key) && !loadingKeys.has(key)) return HttpResponse.badRequest()
     settingsWriter?.(key, name, payload.value)
     return HttpResponse.raw(204, "No Content", {})
   })
@@ -428,9 +561,18 @@ async function ensureServer(): Promise<number> {
   return port
 }
 
+let creatingHost: Promise<WebViewController> | null = null
+
 async function ensureHost(): Promise<WebViewController> {
   if (controller) return controller
+  // 兩個源同時第一次用到時只建一個頁面。
+  if (!creatingHost) creatingHost = createHost().finally(() => {
+    creatingHost = null
+  })
+  return await creatingHost
+}
 
+async function createHost(): Promise<WebViewController> {
   let listening = 0
   try {
     listening = await ensureServer()
@@ -444,7 +586,8 @@ async function ensureHost(): Promise<WebViewController> {
       if (!waiter) return true
       taskWaiters.delete(payload.id)
       if (payload.ok === true) waiter.resolve(payload.value)
-      else if (payload.fatal === true) waiter.reject(new AidokuHostError(String(payload.error ?? "aidoku worker failed")))
+      // 只有那個源的 worker 壞了：剩下的源與頁面都還能用。
+      else if (payload.fatal === true) waiter.reject(new AidokuWorkerError(String(payload.error ?? "aidoku worker failed")))
       else waiter.reject(new Error(String(payload.error ?? "aidoku error")))
       return true
     })
@@ -459,13 +602,19 @@ async function ensureHost(): Promise<WebViewController> {
   }
   controller = target
   generation++
+  // 新頁面上一個 worker 都沒有：之前的載入紀錄全部作廢。
+  slots.clear()
+  loadedKeys.clear()
+  loadingKeys.clear()
+  pendingAix.clear()
+  pendingPackages.clear()
   touch()
   log("info", "aidoku", "宿主頁面就緒")
   return controller
 }
 
 /** 先把工作丟給頁面（立即返回），結果由 script message handler 推回來。 */
-async function runTask(startScript: (id: number) => string, timeoutMs: number, label: string): Promise<any> {
+async function runTask(sourceKey: string, startScript: (id: number) => string, timeoutMs: number, label: string): Promise<any> {
   const id = nextTaskId++
   // 計時器要在呼叫當下（主佇列）就建好：`ensureHost()` 回來時可能已經不是主佇列，
   // 那時建 timer 會丟「Timer requires its active script on the main JS execution queue」。
@@ -473,7 +622,8 @@ async function runTask(startScript: (id: number) => string, timeoutMs: number, l
     taskWaiters.set(id, { resolve, reject })
     try {
       setTimeout(() => {
-        if (taskWaiters.delete(id)) reject(new AidokuHostError(`${label} timed out after ${timeoutMs}ms`))
+        // 一次呼叫拖太久是這個源自己的事（卡住的源不該連累別的源）。
+        if (taskWaiters.delete(id)) reject(new AidokuWorkerError(`${label} timed out after ${timeoutMs}ms`))
       }, timeoutMs)
     } catch {
       // 連這裡都建不了就沒有逾時。
@@ -482,7 +632,9 @@ async function runTask(startScript: (id: number) => string, timeoutMs: number, l
 
   let target: WebViewController
   try {
+    // 頁面與這個源的 worker 都得在：排到這裡時它可能已經被回收或重建掉了。
     target = await ensureHost()
+    await acquireSlot(sourceKey)
   } catch (failure) {
     taskWaiters.delete(id)
     throw hostError(failure)
@@ -498,16 +650,92 @@ async function runTask(startScript: (id: number) => string, timeoutMs: number, l
   return await result
 }
 
-async function load(sourceKey: string, start: (id: number) => string): Promise<any> {
-  await ensureHost()
-  loadedKey = null
-  loadingKey = sourceKey
+/**
+ * 這個源要一個 worker：滿了就回收最久沒用而且閒著的那個，全都忙就等其中一個閒下來。
+ * 回收會讓那個源下次呼叫時重載（`loadedKeys` 一起清掉）。
+ */
+async function acquireSlot(sourceKey: string): Promise<void> {
+  for (;;) {
+    if (slots.has(sourceKey)) return
+    if (slots.size < WORKER_LIMIT) {
+      slotOf(sourceKey)
+      return
+    }
+    const victim = pickVictim()
+    if (victim) {
+      log("info", "aidoku", `worker 已達上限 ${WORKER_LIMIT}，回收閒置最久的 ${victim}`)
+      await dropWorker(victim)
+      continue
+    }
+    await new Promise<void>(resolve => slotWaiters.push(resolve))
+  }
+}
+
+/** 最久沒用而且手上沒有呼叫的源（沒有就回 null：全都忙）。 */
+function pickVictim(): string | null {
+  let victim: WorkerSlot | null = null
+  for (const slot of slots.values()) {
+    if (busyCount(slot.key) > 0) continue
+    if (!victim || slot.lastUsed < victim.lastUsed) victim = slot
+  }
+  return victim ? victim.key : null
+}
+
+/** 叫頁面把這個 worker 收掉，並把它的狀態清除。 */
+async function dropWorker(sourceKey: string): Promise<void> {
+  slots.delete(sourceKey)
+  loadedKeys.delete(sourceKey)
+  loadingKeys.delete(sourceKey)
+  pendingAix.delete(sourceKey)
+  pendingPackages.delete(sourceKey)
+  if (!controller || !server) return
   try {
-    const result = await runTask(start, LOAD_TIMEOUT_MS, "aidoku load")
-    loadedKey = sourceKey
+    // 頁面真的沒了也不用管：下一次呼叫會自己重建，到時這份狀態就不算數了。
+    const target = controller
+    await withTimeout(
+      Promise.resolve(target.evaluateJavaScript(`return window.__aidoku.dropSource(${JSON.stringify(sourceKey)})`)),
+      START_TIMEOUT_MS,
+      "aidoku dropSource"
+    )
+  } catch (failure) {
+    log("warning", "aidoku", `收掉 ${sourceKey} 的 worker 失敗`, failure)
+  }
+}
+
+/**
+ * 丟掉這個源的載入狀態（檔案換掉、設定改掉、移除時叫）：下一次呼叫重載。
+ * 只動這個源的紀錄，其他源的 worker 不受影響；worker 本身留著（重載就是重載）。
+ */
+export function forgetAidokuSource(sourceKey: string): void {
+  loadedKeys.delete(sourceKey)
+  loadingKeys.delete(sourceKey)
+  pendingAix.delete(sourceKey)
+  pendingPackages.delete(sourceKey)
+  scheduleIdle()
+}
+
+/** 真的把這個源的 worker 收掉（自癒用：worker 自己卡住或死了）。 */
+export function dropAidokuSource(sourceKey: string): Promise<void> {
+  forgetAidokuSource(sourceKey)
+  // 不等別的源排空：這個動作只碰自己那一個 worker，而且呼叫端已經把它的隊列放掉了。
+  return runPageTask(async () => {
+    await dropWorker(sourceKey)
+  }, false)
+}
+
+async function load(sourceKey: string, start: (id: number) => string, prepare: () => void): Promise<any> {
+  await ensureHost()
+  loadedKeys.delete(sourceKey)
+  loadingKeys.add(sourceKey)
+  prepare()
+  try {
+    const result = await runTask(sourceKey, start, LOAD_TIMEOUT_MS, "aidoku load")
+    loadedKeys.add(sourceKey)
     return result
   } finally {
-    loadingKey = null
+    loadingKeys.delete(sourceKey)
+    pendingAix.delete(sourceKey)
+    pendingPackages.delete(sourceKey)
   }
 }
 
@@ -517,65 +745,87 @@ export async function loadAidokuSource(
   sourceKey: string,
   settings: Record<string, unknown> = {}
 ): Promise<any> {
-  pendingAix = aix
-  pendingPackage = null
-  return await load(sourceKey, (id) =>
-    `return window.__aidoku.startLoad(${id}, ${JSON.stringify(sourceKey)}, "/aix", ${JSON.stringify(settings)})`
+  return await load(
+    sourceKey,
+    (id) => `return window.__aidoku.startLoad(${id}, ${JSON.stringify(sourceKey)}, ${JSON.stringify(settings)})`,
+    () => {
+      pendingAix.set(sourceKey, aix)
+      pendingPackages.delete(sourceKey)
+    }
   )
 }
 
-/** 從解開的檔案載入：manifest 走 `/manifest`、wasm 走 `/wasm`。 */
+/** 從解開的檔案載入：manifest 走 `/manifest`、wasm 走 `/wasm`（兩者都帶 sourceKey）。 */
 export async function loadAidokuPackage(pkg: AidokuPackage, sourceKey: string): Promise<any> {
-  pendingAix = null
-  pendingPackage = pkg
-  return await load(sourceKey, (id) => `return window.__aidoku.startLoadPackage(${id}, ${JSON.stringify(sourceKey)})`)
-}
-
-/** worker 裡現在載著哪一份源（引擎用它判斷要不要重載）。 */
-export function loadedAidokuSourceKey(): string | null {
-  return loadedKey
+  return await load(
+    sourceKey,
+    (id) => `return window.__aidoku.startLoadPackage(${id}, ${JSON.stringify(sourceKey)})`,
+    () => {
+      pendingPackages.set(sourceKey, pkg)
+      pendingAix.delete(sourceKey)
+    }
+  )
 }
 
 /** worker 現在的 `currentSettings`（schema 預設 ＋ 使用者值 ＋ manifest 預設）：只讀。 */
-export async function aidokuSettingsSnapshot(): Promise<Record<string, unknown>> {
+export async function aidokuSettingsSnapshot(sourceKey: string): Promise<Record<string, unknown>> {
   const value = await runTask(
-    (id) => `return window.__aidoku.startSettingsSnapshot(${id})`,
+    sourceKey,
+    (id) => `return window.__aidoku.startSettingsSnapshot(${id}, ${JSON.stringify(sourceKey)})`,
     CALL_TIMEOUT_MS,
     "aidoku settingsSnapshot"
   )
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {}
 }
 
-export async function initializeAidokuSource(): Promise<boolean> {
-  return await runTask((id) => `return window.__aidoku.startInitialize(${id})`, CALL_TIMEOUT_MS, "aidoku initialize")
+export async function initializeAidokuSource(sourceKey: string): Promise<boolean> {
+  return await runTask(
+    sourceKey,
+    (id) => `return window.__aidoku.startInitialize(${id}, ${JSON.stringify(sourceKey)})`,
+    CALL_TIMEOUT_MS,
+    "aidoku initialize"
+  )
 }
 
 /** 源設定完成後的通知（`handle_notification`）；源沒匯出就是 no-op。 */
-export async function notifyAidoku(notification: string): Promise<void> {
+export async function notifyAidoku(sourceKey: string, notification: string): Promise<void> {
   await runTask(
-    (id) => `return window.__aidoku.startNotification(${id}, ${JSON.stringify(notification)})`,
+    sourceKey,
+    (id) => `return window.__aidoku.startNotification(${id}, ${JSON.stringify(sourceKey)}, ${JSON.stringify(notification)})`,
     CALL_TIMEOUT_MS,
     "aidoku notification"
   )
 }
 
 /** 源有沒有 `process_page_image`（頁面圖要解密／解拼）：載入後問一次。 */
-export async function hasImageProcessorAidoku(): Promise<boolean> {
+export async function hasImageProcessorAidoku(sourceKey: string): Promise<boolean> {
   const value = await runTask(
-    (id) => `return window.__aidoku.startHasImageProcessor(${id})`,
+    sourceKey,
+    (id) => `return window.__aidoku.startHasImageProcessor(${id}, ${JSON.stringify(sourceKey)})`,
     CALL_TIMEOUT_MS,
     "aidoku hasImageProcessor"
   )
   return value === true
 }
 
-export async function selfTestAidoku(): Promise<any> {
-  return await runTask((id) => `return window.__aidoku.startSelfTest(${id})`, CALL_TIMEOUT_MS, "aidoku selftest")
+export async function selfTestAidoku(sourceKey: string): Promise<any> {
+  return await runTask(
+    sourceKey,
+    (id) => `return window.__aidoku.startSelfTest(${id}, ${JSON.stringify(sourceKey)})`,
+    CALL_TIMEOUT_MS,
+    "aidoku selftest"
+  )
 }
 
-export async function callAidoku(method: string, args: unknown[] = [], timeoutMs: number = CALL_TIMEOUT_MS): Promise<any> {
+export async function callAidoku(
+  sourceKey: string,
+  method: string,
+  args: unknown[] = [],
+  timeoutMs: number = CALL_TIMEOUT_MS
+): Promise<any> {
   return await runTask(
-    (id) => `return window.__aidoku.startCall(${id}, ${JSON.stringify(method)}, ${JSON.stringify(args)})`,
+    sourceKey,
+    (id) => `return window.__aidoku.startCall(${id}, ${JSON.stringify(sourceKey)}, ${JSON.stringify(method)}, ${JSON.stringify(args)})`,
     timeoutMs,
     `aidoku ${method}`
   )
@@ -654,6 +904,7 @@ export interface AidokuPageImageRequest {
  * 呼叫端要自己排進 `runAidokuExclusive`，並先確認 worker 載著那個源。
  */
 export async function processAidokuPageImage(
+  sourceKey: string,
   bytes: Uint8Array,
   request: AidokuPageImageRequest,
   timeoutMs: number = IMAGE_TIMEOUT_MS
@@ -661,8 +912,9 @@ export async function processAidokuPageImage(
   const token = createAidokuPageJob(bytes)
   const result = waitAidokuPageJob(token, timeoutMs)
   const task = runTask(
+    sourceKey,
     id =>
-      `return window.__aidoku.startProcessPageImage(${id}, ${JSON.stringify(token)}, ${JSON.stringify(request)})`,
+      `return window.__aidoku.startProcessPageImage(${id}, ${JSON.stringify(sourceKey)}, ${JSON.stringify(token)}, ${JSON.stringify(request)})`,
     timeoutMs,
     "aidoku processPageImage"
   )
@@ -671,8 +923,9 @@ export async function processAidokuPageImage(
   return await result
 }
 
+/** 丟掉頁面與伺服器（會先等手邊的呼叫做完）。 */
 export function disposeAidokuHost(): Promise<void> {
-  return enqueue(async () => resetAidokuHost())
+  return runPageTask(async () => teardown())
 }
 
 /**
@@ -680,7 +933,7 @@ export function disposeAidokuHost(): Promise<void> {
  * 下一次呼叫必須自己發現頁面沒了、重建後重載（模擬 WebKit 把頁面收掉）。
  */
 export function detachAidokuHostPage(): Promise<void> {
-  return enqueue(async () => {
+  return runPageTask(async () => {
     if (!controller) return
     try {
       await controller.loadURL("about:blank")
@@ -699,11 +952,17 @@ function failPending(message: string): void {
   taskWaiters.clear()
 }
 
-/** 隊列內重建：丟掉頁面與伺服器，下一次呼叫重新開始。 */
-export function resetAidokuHost(): void {
-  loadedKey = null
-  pendingAix = null
-  pendingPackage = null
+/** 重建／收尾：丟掉所有 worker、頁面與伺服器，下一次呼叫重新開始。 */
+export function resetAidokuHost(): Promise<void> {
+  return runPageTask(async () => teardown())
+}
+
+function teardown(): void {
+  slots.clear()
+  loadedKeys.clear()
+  loadingKeys.clear()
+  pendingAix.clear()
+  pendingPackages.clear()
   failPageJobs("aidoku host reset")
   failPending("aidoku host reset")
   if (controller) {
