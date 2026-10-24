@@ -4,6 +4,7 @@ import {
   GeometryReader,
   HStack,
   LazyHStack,
+  LazyVStack,
   NamespaceReader,
   NavigationLink,
   ScrollView,
@@ -239,7 +240,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
 
           {isMultiSection ? (
             /* 多區塊模式：垂直列表 + 橫向輪播 */
-            <VStack spacing={14} padding={{ top: 10, bottom: 44 }}>
+            <LazyVStack spacing={14} padding={{ top: 10, bottom: 44 }}>
               {sections.map((section, idx) => (
                 <MagazineSectionRow
                   key={`mag:${idx}:${section.title}`}
@@ -249,7 +250,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
                   initialMore={moreOfSection(idx)}
                 />
               ))}
-            </VStack>
+            </LazyVStack>
           ) : singleSection ? (
             /* 單一區塊模式：3 欄網格與滾動分頁 */
             <VStack spacing={0}>
