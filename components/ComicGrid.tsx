@@ -17,6 +17,7 @@ import {
 import { CoverBadge } from "../design/CoverBadge"
 import { radius } from "../design/tokens"
 import type { ComicListItem } from "../engine/adapt"
+import { t } from "../i18n"
 import { ComicDetailScreen } from "../screens/shared/ComicDetailScreen"
 import { CoverImage } from "./CoverImage"
 import { WidthReporter } from "./WidthReporter"
@@ -27,6 +28,8 @@ export interface ComicGridEntry {
   sourceKey: string
   /** 跨源顯示時的來源名稱（`showSource` 才用）。 */
   sourceName?: string
+  /** 來源已被移除：封面下緣掛 danger 角標，下面那行來源名就不再重複。 */
+  removed?: boolean
   comic: ComicListItem
 }
 
@@ -114,6 +117,15 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                         <CoverBadge text={`${entry.comic.pageCount}P`} />
                       </HStack>
                     ) : null}
+                    {entry.removed ? (
+                      // 擺下緣左邊：右下角已經給更新時間，左上角留給頁數。
+                      <HStack
+                        offset={{ x: 6, y: -6 }}
+                        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
+                      >
+                        <CoverBadge text={t("bookshelf.sourceRemoved")} tone="danger" maxWidth={cellWidth - 12} />
+                      </HStack>
+                    ) : null}
                     {entry.comic.updateTime ? (
                       // 跟探索頁同一個修法：外層撑滿、內層夾在 `cellWidth - 12` 內。
                       // `updateTime` 是源的原始字串，不夾的話膠囊會比格子寬（超出封面）。
@@ -141,7 +153,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear }: C
                       {entry.comic.subtitle}
                     </Text>
                   ) : null}
-                  {showSource ? (
+                  {showSource && !entry.removed ? (
                     <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1} multilineTextAlignment="leading" frame={{ width: cellWidth, alignment: "leading" }}>
                       {entry.sourceName ?? ""}
                     </Text>

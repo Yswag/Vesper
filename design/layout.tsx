@@ -2,10 +2,10 @@
 //
 // 全 App 的頁面都用同一套 padding 與間距，不然每一頁的內容邊界都會差幾點。
 
-import { HStack, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
+import { HStack, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
-import { cardBackground, cardGap, cardShape, pageInsets, pageSpacing, type StackChildren } from "./tokens"
+import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpacing, radius, type StackChildren } from "./tokens"
 
 /**
  * 頁面殼：極光背景 + inline 標題 + 內容捲動區。
@@ -59,7 +59,12 @@ export function PageScroll({
   )
 }
 
-/** 一張圓角卡片。列與列之間自己放 `Divider`（縮排見 rows 的 `rowSeparatorInset`）。 */
+/**
+ * 一張圓角卡片。列與列之間自己放 `Divider`（縮排見 rows 的 `rowSeparatorInset`）。
+ *
+ * 一律帶 1px 高光邊（`hairlineStroke`）：淺色靠那條線跟底色分開，深色是 8% 白線。
+ * 頁面不要再自己刻 `background` + `clipShape` + `stroke={hairlineStroke}`。
+ */
 export function Card({
   children,
   background = cardBackground,
@@ -75,6 +80,7 @@ export function Card({
       background={background}
       clipShape={cardShape}
       frame={{ maxWidth: "infinity" }}
+      overlay={<RoundedRectangle cornerRadius={radius.lg} stroke={hairlineStroke} />}
       swipeActionsContainer={swipeActionsContainer}
     >
       {children}

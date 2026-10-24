@@ -15,6 +15,7 @@
 - **頁面底色**：構圖 × 色盤（`app/theme.tsx`），只有那裡能寫底色 hex；頁面一律 `PageBackground`。
 - **強調色**：`useTint()`。`tint` 用於互動與選中；**tint 底（實心或帶色玻璃）上的字與圖示一律 `onTint`**，不准寫 `white`。選中底、選中列、高亮、榜單都從 `Tint` 取。
 - 不用 `"accentColor"`／`"tintColor"` 字面值與 `palette.blue`：它們不跟主題。
+- 根層 tint 實測會跟的：Toggle、borderless Button、`ProgressView`、tab bar 選中項；不跟的：segmented Picker。預覽沒有 App 的根層，要自己掛 `tint`，不然會拍成系統藍。
 - **文字**：`label` → `secondaryLabel` → `tertiaryLabel`。
 - **語意色**（`palette` 的 green／orange／red…）只表示狀態，不當裝飾。
 - 透明色寫 `rgba(...)`，不用 8 位 hex（會變黑）。
@@ -46,7 +47,7 @@
 
 ## 深度
 
-- 卡片與玻璃面**不用陰影**。層次＝表面亮度：`cardBackgroundSubtle`（空狀態）< `cardBackground`（卡片）< `cardBackgroundStrong`（卡片內再一層）；淺色再加 `hairlineStroke` 高光邊。
+- 卡片與玻璃面**不用陰影**。層次＝表面亮度：`cardBackgroundSubtle`（空狀態）< `cardBackground`（卡片）< `cardBackgroundStrong`（卡片內再一層）；再加 1px `hairlineStroke` 高光邊（`Card` 內建，頁面不要自己刻）。
 - 理由：卡片底半透明，陰影照不透明度投 → 每個字後面各一團影（`compositingGroup` 也救不了）；玻璃的深度由系統材質負責。
 - 封面的投影屬於圖片本身（封面不透明，壓在任何底色上都是黑影）：`CoverImage lifted`（`coverShadow`），只掛在圖片那層。
 
@@ -71,7 +72,7 @@
 
 ## 守門
 
-- `scripting-ts run dev/design-lint.ts`：掃 `screens/`、`components/`、`app/`（不含 `app/theme.tsx`）的違規，跟 `dev/design-lint.baseline.json` 比。**每個檔每條規則只准減不准增**；減少後要更新基準。新增或刪除 `.tsx` 要同步頁面清單（`.scratch/visual-polish/pages.md`），否則 FAIL。
+- `scripting-ts run dev/design-lint.ts`：掃 `screens/`、`components/`、`app/`（不含 `app/theme.tsx`）的違規，跟 `dev/design-lint.baseline.json` 比。**每個檔每條規則只准減不准增**；減少後要更新基準。新增或刪除 `.tsx` 要同步頁面清單（`.scratch/visual-polish/pages.md`），否則 FAIL。規則裡的 `card` 抓的是頁面自刻的 `stroke={hairlineStroke}`（該用 `Card`）。
 - 截圖基準：每批結束截 `dev/preview-design.tsx`（amber、ink × 深淺）與該批頁面，跟上一批比。
 - 玻璃截圖拍不出來：動到玻璃就 `scripting-ts run dev/show-glass.tsx`（淺／深上下並排），請使用者實機截圖。
 
@@ -85,3 +86,4 @@
 - 2026-10-24 頁面裡既有的字面值記入 lint 基準，逐 tab 改頁面時再清。
 - 2026-10-24 封面佔位（標題雜湊色盤＋首字）、`CoverBadge`、`lifted` 投影；lint 加 `material`；刪 `GlassBadge`。
 - 2026-10-24 對話框預設按鈕用強調色；對話框拿掉陰影。
+- 2026-10-24 `Card` 一律帶高光邊（`hairlineStroke`），頁面手刻的卡片全部改用 `Card`；來源已移除改成封面下緣 danger 角標，下面不再重複來源名。

@@ -6,9 +6,7 @@ import {
   Button,
   HStack,
   LazyVStack,
-  NavigationLink,
   ProgressView,
-  RoundedRectangle,
   ScrollView,
   Text,
   VStack,
@@ -22,10 +20,11 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { Card } from "../../design/layout"
 import { GlassFilter } from "../../design/GlassFilter"
 import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { cardBackground, fill, hairlineStroke, radius, rect, rowPadding } from "../../design/tokens"
+import { fill, palette, radius, rect, rowPadding } from "../../design/tokens"
 import { CoverImage } from "../../components/CoverImage"
 import {
   clearProgress,
@@ -97,7 +96,8 @@ export function BookshelfScreen() {
                 const source = comicLibrary().source(item.sourceKey)
                 return {
                   sourceKey: item.sourceKey,
-                  sourceName: source?.name ?? t("bookshelf.sourceRemoved"),
+                  sourceName: source?.name,
+                  removed: source === undefined,
                   comic: {
                     id: item.comicId,
                     title: item.title,
@@ -168,82 +168,71 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
   const detail = openable ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ") : null
 
   const body = (
-    <HStack
-      spacing={14}
-      padding={rowPadding}
-      background={cardBackground}
-      clipShape={rect(radius.lg)}
-      shadow={{ color: "rgba(0, 0, 0, 0.28)", radius: 10, x: 0, y: 3 }}
-      overlay={
-        <RoundedRectangle
-          cornerRadius={radius.lg}
-          stroke={hairlineStroke}
-        />
-      }
-    >
-      {/* 封面縮圖（帶立體微陰影與細圓角） */}
-      <ZStack
-        frame={{ width: 56, height: 80 }}
-        shadow={{ color: "rgba(0, 0, 0, 0.4)", radius: 6, x: 0, y: 3 }}
-      >
-        <CoverImage
-          sourceKey={entry.sourceKey}
-          url={entry.cover}
-          width={56}
-          height={80}
-          cornerRadius={radius.md}
-        />
-        {opening ? (
-          <ZStack
-            frame={{ width: 56, height: 80 }}
-            background="rgba(0, 0, 0, 0.45)"
-            clipShape={rect(radius.md)}
-            alignment="center"
-          >
-            <ProgressView controlSize="small" />
-          </ZStack>
-        ) : null}
-      </ZStack>
+    <Card>
+      <HStack spacing={14} padding={rowPadding}>
+        {/* 封面縮圖：投影交給 CoverImage 的 lifted，只落在圖片那層。 */}
+        <ZStack frame={{ width: 56, height: 80 }}>
+          <CoverImage
+            sourceKey={entry.sourceKey}
+            url={entry.cover}
+            title={entry.title}
+            width={56}
+            height={80}
+            cornerRadius={radius.md}
+            lifted
+          />
+          {opening ? (
+            <ZStack
+              frame={{ width: 56, height: 80 }}
+              background={fill.coverScrim}
+              clipShape={rect(radius.md)}
+              alignment="center"
+            >
+              <ProgressView controlSize="small" />
+            </ZStack>
+          ) : null}
+        </ZStack>
 
-      {/* 右側文字資訊 */}
-      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
-        <Text
-          font="subheadline"
-          fontWeight="semibold"
-          foregroundStyle="label"
-          lineLimit={1}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-        >
-          {entry.title}
-        </Text>
-
-        <Text
-          font="caption"
-          foregroundStyle={openable ? "secondaryLabel" : "systemRed"}
-          lineLimit={1}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-        >
-          {meta}
-        </Text>
-
-        {detail ? (
+        {/* 右側文字資訊 */}
+        <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
           <Text
-            font="caption2"
-            foregroundStyle="tertiaryLabel"
+            font="subheadline"
+            fontWeight="semibold"
+            foregroundStyle="label"
             lineLimit={1}
             frame={{ maxWidth: "infinity", alignment: "leading" }}
           >
-            {detail}
+            {entry.title}
           </Text>
-        ) : null}
 
-        {barValue !== null ? (
-          <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} />
-        ) : null}
-      </VStack>
+          <Text
+            font="caption"
+            foregroundStyle={openable ? "secondaryLabel" : palette.red}
+            lineLimit={1}
+            frame={{ maxWidth: "infinity", alignment: "leading" }}
+          >
+            {meta}
+          </Text>
 
-      <Chevron />
-    </HStack>
+          {detail ? (
+            <Text
+              font="caption2"
+              foregroundStyle="tertiaryLabel"
+              lineLimit={1}
+              frame={{ maxWidth: "infinity", alignment: "leading" }}
+            >
+              {detail}
+            </Text>
+          ) : null}
+
+          {barValue !== null ? (
+            <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} />
+          ) : null}
+        </VStack>
+
+        <Chevron />
+      </HStack>
+    </Card>
   )
 
   const row = openable ? (

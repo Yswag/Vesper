@@ -12,10 +12,8 @@ import {
   Image,
   LazyVStack,
   NavigationLink,
-  RoundedRectangle,
   Text,
   VStack,
-  ZStack,
   useState,
 } from "scripting"
 
@@ -23,18 +21,10 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { CoverImage } from "../../components/CoverImage"
+import { Card } from "../../design/layout"
 import { Chevron, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import {
-  cardBackground,
-  fill,
-  hairlineStroke,
-  neutral,
-  palette,
-  radius,
-  rect,
-  rowPadding,
-} from "../../design/tokens"
+import { neutral, palette, radius, rowPadding } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import {
   chaptersForReader,
@@ -123,20 +113,7 @@ export function OfflineLibraryScreen() {
         const id = groupId(group.sourceKey, group.comicId)
         const isOpen = expanded[id] === true
         return (
-          <VStack
-            key={id}
-            spacing={0}
-            background={cardBackground}
-            clipShape={rect(radius.lg)}
-            shadow={{ color: "rgba(0, 0, 0, 0.28)", radius: 10, x: 0, y: 3 }}
-            overlay={
-              <RoundedRectangle
-                cornerRadius={radius.lg}
-                stroke={hairlineStroke}
-              />
-            }
-            frame={{ maxWidth: "infinity" }}
-          >
+          <Card key={id}>
             <ComicHeader
               group={group}
               isOpen={isOpen}
@@ -152,7 +129,7 @@ export function OfflineLibraryScreen() {
                 ))}
               </VStack>
             ) : null}
-          </VStack>
+          </Card>
         )
       })}
     </LazyVStack>
@@ -170,12 +147,15 @@ function ComicHeader({ group, isOpen, onToggle }: { group: ComicGroup; isOpen: b
       contentShape={"rect"}
       onTapGesture={onToggle}
     >
-      <ZStack
-        frame={{ width: 60, height: 80 }}
-        shadow={{ color: "rgba(0, 0, 0, 0.4)", radius: 6, x: 0, y: 3 }}
-      >
-        <CoverImage sourceKey={group.sourceKey} url={group.cover} width={60} height={80} cornerRadius={radius.md} />
-      </ZStack>
+      <CoverImage
+        sourceKey={group.sourceKey}
+        url={group.cover}
+        title={group.title}
+        width={60}
+        height={80}
+        cornerRadius={radius.md}
+        lifted
+      />
 
       <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
         <Text
