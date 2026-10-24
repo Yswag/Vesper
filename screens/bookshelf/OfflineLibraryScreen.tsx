@@ -1,42 +1,32 @@
 // 離線書架：已下載內容的入口。整頁只讀離線層（標題／封面／頁數／大小都在 manifest 裡），
-// 點一章就直接進離線模式的閱讀器——不經過詳情頁、不發任何請求。
+// 點一部漫畫推入它的離線章節頁（OfflineComicScreen），不經過詳情頁、不發任何請求。
 //
 // 純內容元件（沒有自己的 ScrollView）：書架的「離線內容」分頁內嵌它，
 // 跟收藏／歷史共用同一個捲動區（見票 04）。
 //
-// 展開狀態留在這個元件裡；切回收藏再回來會恢復成收合。刻意不做記住展開（票 04 的取捨）。
+// 左滑刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
 
-import {
-  Divider,
-  HStack,
-  Image,
-  LazyVStack,
-  NavigationLink,
-  Text,
-  VStack,
-  useState,
-} from "scripting"
+import { Button, LazyVStack, NavigationLink, VStack } from "scripting"
 
+import { isActive } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicListRow } from "../../components/ComicListRow"
 import { Card } from "../../design/layout"
-import { Chevron, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { palette, rowPadding } from "../../design/tokens"
+import { cardShape } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import {
-  chaptersForReader,
   comicGroupKey,
   listChapters,
   statusOf,
   subscribeOffline,
   type OfflineChapter,
 } from "../../engine/offline"
-import { ReaderScreen } from "../shared/ReaderScreen"
+import { OfflineComicScreen } from "./OfflineComicScreen"
 
-/** 一部漫畫的離線內容（畫面要的統計都在這裡算好）。 */
+/** 一部漫畫的離線內容（清單要的統計都在這裡算好）。 */
 interface ComicGroup {
   sourceKey: string
   comicId: string
@@ -82,9 +72,6 @@ function groupByComic(): ComicGroup[] {
     group.updatedAt = Math.max(group.updatedAt, chapter.updatedAt)
   }
 
-  for (const group of groups.values()) {
-    group.chapters.sort((a, b) => b.updatedAt - a.updatedAt)
-  }
   return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
@@ -93,7 +80,19 @@ export function OfflineLibraryScreen() {
   // 語言也是訂閱源：manifest 的資料名與我們自己的字都在 render 時取自 `t()`
   // （`groupByComic()` 是 render 裡叫的，不是 import 時算好的常數）。
   useSubscription(subscribeOffline, subscribeLocale)
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  /** 刪掉整部：先問再刪，一次一章走刪除（下載中的任務也一併收掉）。 */
+  async function deleteComic(group: ComicGroup) {
+    const confirmed = await Dialog.confirm({
+      title: t("common.delete"),
+      message: t("bookshelf.deleteComicConfirm", { title: group.title, n: group.chapters.length }),
+      confirmLabel: t("common.delete"),
+      cancelLabel: t("common.cancel"),
+    })
+    if (!confirmed) return
+    const library = comicLibrary()
+    for (const chapter of group.chapters) library.deleteDownload(chapter.key)
+  }
 
   const groups = groupByComic()
   if (groups.length === 0) {
@@ -108,110 +107,73 @@ export function OfflineLibraryScreen() {
   }
 
   return (
-    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
+    // 自訂列的左滑要靠外層容器的 swipeActionsContainer（iOS 27）才生效。
+    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
       {groups.map(group => {
-        const id = groupId(group.sourceKey, group.comicId)
-        const isOpen = expanded[id] === true
+        // 還在下載的章不能直接刪（任務跑完手上那一張會把 manifest 寫回去）：只能先取消。
+        const downloads = group.chapters.map(chapter => comicLibrary().downloadState(chapter.key))
+        const active = group.chapters.filter((_, index) => isActive(downloads[index].state))
+
         return (
-          <Card key={id}>
-            <ComicHeader
-              group={group}
-              isOpen={isOpen}
-              onToggle={() => setExpanded(current => ({ ...current, [id]: !isOpen }))}
-            />
-            {isOpen ? (
-              <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
-                {group.chapters.map((chapter, index) => (
-                  <VStack key={chapter.key.epId} spacing={0} frame={{ maxWidth: "infinity" }}>
-                    {index > 0 ? <Divider padding={{ leading: rowSeparatorInset }} /> : null}
-                    <ChapterRow group={group} chapter={chapter} />
-                  </VStack>
-                ))}
-              </VStack>
-            ) : null}
-          </Card>
+          // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
+          <VStack
+            key={groupId(group.sourceKey, group.comicId)}
+            spacing={0}
+            clipShape={cardShape}
+            trailingSwipeActions={{
+              allowsFullSwipe: false,
+              actions: [
+                active.length > 0 ? (
+                  <Button
+                    key="cancel"
+                    title={t("settings.downloads.cancel")}
+                    systemImage="xmark.circle.fill"
+                    role="destructive"
+                    action={() => {
+                      const library = comicLibrary()
+                      for (const chapter of active) library.cancelDownload(chapter.key)
+                    }}
+                  />
+                ) : (
+                  <Button
+                    key="delete"
+                    title={t("common.delete")}
+                    systemImage="trash.fill"
+                    role="destructive"
+                    action={() => void deleteComic(group)}
+                  />
+                ),
+              ],
+            }}
+          >
+            <NavigationLink
+              destination={
+                <OfflineComicScreen
+                  sourceKey={group.sourceKey}
+                  comicId={group.comicId}
+                  title={group.title}
+                  cover={group.cover}
+                />
+              }
+            >
+              <Card>
+                <ComicListRow
+                  sourceKey={group.sourceKey}
+                  cover={group.cover}
+                  title={group.title}
+                  subtitle={group.sourceName}
+                  detail={t("bookshelf.chapterStats", {
+                    done: group.completedChapters,
+                    total: group.chapters.length,
+                    n: group.chapters.length,
+                    size: formatBytes(group.totalBytes),
+                  })}
+                />
+              </Card>
+            </NavigationLink>
+          </VStack>
         )
       })}
     </LazyVStack>
-  )
-}
-
-/** 漫畫卡片的表頭：封面 + 標題／來源／統計，整列可點＝展開／收合。 */
-function ComicHeader({ group, isOpen, onToggle }: { group: ComicGroup; isOpen: boolean; onToggle: () => void }) {
-  return (
-    <ComicListRow
-      sourceKey={group.sourceKey}
-      cover={group.cover}
-      title={group.title}
-      subtitle={group.sourceName}
-      detail={t("bookshelf.chapterStats", {
-        done: group.completedChapters,
-        total: group.chapters.length,
-        n: group.chapters.length,
-        size: formatBytes(group.totalBytes),
-      })}
-      trailing={
-        <Image systemName={isOpen ? "chevron.down" : "chevron.right"} font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
-      }
-      onTap={onToggle}
-    />
-  )
-}
-
-/** 一章：下載完的可以點進閱讀器，沒完成的不給點（也看不出完成）。 */
-function ChapterRow({ group, chapter }: { group: ComicGroup; chapter: OfflineChapter }) {
-  const status = statusOf(chapter.key)
-  const isDone = status.state === "done"
-  const title = chapter.epTitle ?? chapter.key.epId
-  const detail = isDone
-    ? t("bookshelf.downloadedStats", { n: status.completed, size: formatBytes(status.bytes) })
-    : t("bookshelf.incompleteStats", { done: status.completed, total: status.total })
-
-  const body = (
-    <HStack spacing={12} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
-      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
-        <Text
-          font="subheadline"
-          foregroundStyle={isDone ? "label" : "secondaryLabel"}
-          lineLimit={1}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-        >
-          {title}
-        </Text>
-        <Text
-          font="caption2"
-          foregroundStyle={isDone ? "tertiaryLabel" : palette.orange}
-          lineLimit={1}
-        >
-          {detail}
-        </Text>
-      </VStack>
-      <Image
-        systemName={isDone ? "checkmark.circle.fill" : "exclamationmark.circle"}
-        foregroundStyle={isDone ? palette.green : palette.orange}
-      />
-      {isDone ? <Chevron /> : null}
-    </HStack>
-  )
-
-  if (!isDone) return body
-
-  // 進閱讀器時把「這部所有下載完的章」一起帶進去，換話才有東西可切。
-  return (
-    <NavigationLink
-      destination={
-        <ReaderScreen
-          sourceKey={chapter.key.sourceKey}
-          comicId={chapter.key.comicId}
-          epId={chapter.key.epId}
-          chapters={chaptersForReader(chapter.key.sourceKey, chapter.key.comicId)}
-          comicTitle={chapter.comicTitle ?? group.title}
-          comicCover={chapter.cover ?? group.cover}
-          offlineMode={true}
-        />
-      }
-    >
-      {body}
-    </NavigationLink>
   )
 }

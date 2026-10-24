@@ -44,4 +44,13 @@ export default {
   downloadedStats: { one: "{n} 頁 · {size}", other: "{n} 頁 · {size}" },
   /** 離線章節列：沒下載完的頁數。 */
   incompleteStats: "未完成 {done}/{total}",
+
+  /** 離線漫畫頁：一章都沒下載完，繼續閱讀按鈕的位置顯示這一句（按鈕按不下去）。 */
+  noDownloadedChapter: "還沒有下載完的章節",
+  /** 離線章節列：下載失敗（只有這個狀態用紅字）。 */
+  downloadFailed: "下載失敗",
+  /** 左滑刪除整部的確認；`{n}` 是章數。 */
+  deleteComicConfirm: "刪除《{title}》的 {n} 個離線章節？",
+  /** 左滑刪除單章的確認。 */
+  deleteChapterConfirm: "刪除「{chapter}」的離線內容？",
 }

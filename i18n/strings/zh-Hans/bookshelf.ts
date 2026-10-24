@@ -26,4 +26,9 @@ export default {
   },
   downloadedStats: { one: "{n} 页 · {size}", other: "{n} 页 · {size}" },
   incompleteStats: "未完成 {done}/{total}",
+
+  noDownloadedChapter: "还没有下载完的章节",
+  downloadFailed: "下载失败",
+  deleteComicConfirm: "删除《{title}》的 {n} 个离线章节？",
+  deleteChapterConfirm: "删除「{chapter}」的离线内容？",
 }

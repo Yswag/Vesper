@@ -26,4 +26,9 @@ export default {
   },
   downloadedStats: { one: "{n} page · {size}", other: "{n} pages · {size}" },
   incompleteStats: "Incomplete {done}/{total}",
+
+  noDownloadedChapter: "No finished chapters yet",
+  downloadFailed: "Download failed",
+  deleteComicConfirm: "Delete {n} offline chapters of “{title}”?",
+  deleteChapterConfirm: "Delete the offline copy of “{chapter}”?",
 }
