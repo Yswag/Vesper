@@ -3,7 +3,7 @@
   "permissions" : [
     "fileSystem"
   ],
-  "version" : "1.2.15",
+  "version" : "1.3.0",
   "name" : "Vesper",
   "localizedNames" : {
     "ja" : "Vesper",
@@ -18,18 +18,18 @@
   },
   "localizedDescriptions" : {
     "fr" : "",
-    "ja" : "Venera ソースに基づく Scripting 漫画リーダー",
+    "ja" : "Venera と Aidoku のソースに対応した Scripting 漫画リーダー",
     "it" : "",
     "es" : "",
-    "en" : "Manga reader for Scripting powered by Venera sources",
+    "en" : "Manga reader for Scripting powered by Venera and Aidoku sources",
     "de" : "",
     "pt" : "",
-    "zh" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
+    "zh" : "支援 Venera 與 Aidoku 漫畫源的 Scripting 漫畫閱讀器",
     "ru" : ""
   },
   "icon" : "book.pages.fill",
   "entry" : "index.tsx",
-  "description" : "基於 Venera 漫畫源的 Scripting 漫畫閱讀器",
+  "description" : "支援 Venera 與 Aidoku 漫畫源的 Scripting 漫畫閱讀器",
   "intentInputTypes" : [
 
   ],
