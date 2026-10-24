@@ -4,11 +4,9 @@
 
 import {
   Button,
-  HStack,
   LazyVStack,
   ProgressView,
   ScrollView,
-  Text,
   VStack,
   ZStack,
   useEffect,
@@ -22,10 +20,9 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { Card } from "../../design/layout"
 import { GlassFilter } from "../../design/GlassFilter"
-import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { fill, palette, radius, rect, rowPadding } from "../../design/tokens"
-import { CoverImage } from "../../components/CoverImage"
+import { fill, palette, radius, rect } from "../../design/tokens"
+import { ComicListRow, LIST_COVER } from "../../components/ComicListRow"
 import {
   clearProgress,
   listFavorites,
@@ -169,69 +166,22 @@ export function HistoryCard({ entry, onDelete }: { entry: Progress; onDelete?: (
 
   const body = (
     <Card>
-      <HStack spacing={14} padding={rowPadding}>
-        {/* 封面縮圖：投影交給 CoverImage 的 lifted，只落在圖片那層。 */}
-        <ZStack frame={{ width: 56, height: 80 }}>
-          <CoverImage
-            sourceKey={entry.sourceKey}
-            url={entry.cover}
-            title={entry.title}
-            width={56}
-            height={80}
-            cornerRadius={radius.md}
-            lifted
-          />
-          {opening ? (
-            <ZStack
-              frame={{ width: 56, height: 80 }}
-              background={fill.coverScrim}
-              clipShape={rect(radius.md)}
-              alignment="center"
-            >
+      <ComicListRow
+        sourceKey={entry.sourceKey}
+        cover={entry.cover}
+        title={entry.title}
+        subtitle={meta}
+        subtitleColor={openable ? "secondaryLabel" : palette.red}
+        detail={detail}
+        footer={barValue !== null ? <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} /> : undefined}
+        coverOverlay={
+          opening ? (
+            <ZStack frame={LIST_COVER} background={fill.coverScrim} clipShape={rect(radius.md)} alignment="center">
               <ProgressView controlSize="small" />
             </ZStack>
-          ) : null}
-        </ZStack>
-
-        {/* 右側文字資訊 */}
-        <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
-          <Text
-            font="subheadline"
-            fontWeight="semibold"
-            foregroundStyle="label"
-            lineLimit={1}
-            frame={{ maxWidth: "infinity", alignment: "leading" }}
-          >
-            {entry.title}
-          </Text>
-
-          <Text
-            font="caption"
-            foregroundStyle={openable ? "secondaryLabel" : palette.red}
-            lineLimit={1}
-            frame={{ maxWidth: "infinity", alignment: "leading" }}
-          >
-            {meta}
-          </Text>
-
-          {detail ? (
-            <Text
-              font="caption2"
-              foregroundStyle="tertiaryLabel"
-              lineLimit={1}
-              frame={{ maxWidth: "infinity", alignment: "leading" }}
-            >
-              {detail}
-            </Text>
-          ) : null}
-
-          {barValue !== null ? (
-            <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} />
-          ) : null}
-        </VStack>
-
-        <Chevron />
-      </HStack>
+          ) : undefined
+        }
+      />
     </Card>
   )
 

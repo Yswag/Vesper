@@ -20,11 +20,11 @@ import {
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { CoverImage } from "../../components/CoverImage"
+import { ComicListRow } from "../../components/ComicListRow"
 import { Card } from "../../design/layout"
 import { Chevron, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { neutral, palette, radius, rowPadding } from "../../design/tokens"
+import { palette, rowPadding } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import {
   chaptersForReader,
@@ -139,54 +139,22 @@ export function OfflineLibraryScreen() {
 /** 漫畫卡片的表頭：封面 + 標題／來源／統計，整列可點＝展開／收合。 */
 function ComicHeader({ group, isOpen, onToggle }: { group: ComicGroup; isOpen: boolean; onToggle: () => void }) {
   return (
-    <HStack
-      spacing={12}
-      padding={rowPadding}
-      alignment="center"
-      frame={{ maxWidth: "infinity" }}
-      contentShape={"rect"}
-      onTapGesture={onToggle}
-    >
-      <CoverImage
-        sourceKey={group.sourceKey}
-        url={group.cover}
-        title={group.title}
-        width={60}
-        height={80}
-        cornerRadius={radius.md}
-        lifted
-      />
-
-      <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity" }}>
-        <Text
-          font="subheadline"
-          fontWeight="semibold"
-          foregroundStyle="label"
-          lineLimit={2}
-          frame={{ maxWidth: "infinity", alignment: "leading" }}
-        >
-          {group.title}
-        </Text>
-        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
-          {group.sourceName}
-        </Text>
-        <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
-          {t("bookshelf.chapterStats", {
-            done: group.completedChapters,
-            total: group.chapters.length,
-            n: group.chapters.length,
-            size: formatBytes(group.totalBytes),
-          })}
-        </Text>
-      </VStack>
-
-      <Image
-        systemName={isOpen ? "chevron.down" : "chevron.right"}
-        font="caption"
-        fontWeight="semibold"
-        foregroundStyle={neutral.tertiary}
-      />
-    </HStack>
+    <ComicListRow
+      sourceKey={group.sourceKey}
+      cover={group.cover}
+      title={group.title}
+      subtitle={group.sourceName}
+      detail={t("bookshelf.chapterStats", {
+        done: group.completedChapters,
+        total: group.chapters.length,
+        n: group.chapters.length,
+        size: formatBytes(group.totalBytes),
+      })}
+      trailing={
+        <Image systemName={isOpen ? "chevron.down" : "chevron.right"} font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
+      }
+      onTap={onToggle}
+    />
   )
 }
 
