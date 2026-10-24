@@ -43,6 +43,8 @@ export function HomeScreen() {
   const [popularPool, setPopularPool] = useState<BangumiSubject[]>([])
   const [heroItems, setHeroItems] = useState<BangumiSubject[]>([])
   const [heroIndex, setHeroIndex] = useState(0)
+  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錐位。
+  const [heroActive, setHeroActive] = useState(true)
 
   // 「繼續閱讀」與 Bangumi 兩條 carousel 各自量自己的捲動視窗寬，卡片尺寸照 comicMetrics 算。
   const [resumeCarouselWidth, setResumeCarouselWidth] = useState(0)
@@ -86,7 +88,7 @@ export function HomeScreen() {
 
   // 輪播計時器（runtime 無 setInterval，且 setTimeout handle 0 為合法值需比對 !== null）
   useEffect(() => {
-    if (heroItems.length <= 1) return
+    if (!heroActive || heroItems.length <= 1) return
 
     const timer = setTimeout(() => {
       setHeroIndex(prev => (prev + 1) % heroItems.length)
@@ -97,7 +99,7 @@ export function HomeScreen() {
         clearTimeout(timer)
       }
     }
-  }, [heroIndex, heroItems.length])
+  }, [heroIndex, heroItems.length, heroActive])
 
   const progress = listProgress()
 
@@ -107,10 +109,9 @@ export function HomeScreen() {
         <ZStack
           onAppear={() => {
             refresh()
-            if (popularPool.length >= 8 || topRank.length >= 8) {
-              pickHeroItems(popularPool, topRank)
-            }
+            setHeroActive(true)
           }}
+          onDisappear={() => setHeroActive(false)}
         >
           <PageBackground />
       <VStack
