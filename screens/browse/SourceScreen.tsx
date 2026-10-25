@@ -17,6 +17,7 @@ import {
 } from "scripting"
 
 import { comicLibrary } from "../../app/services"
+import { liquidGlass } from "../../design/glass"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { CategoryScreen } from "./CategoryScreen"
@@ -91,7 +92,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}
       toolbar={
         <Toolbar>
-          <DefaultToolbarItem kind="search" placement="topBarTrailing" />
+          {liquidGlass ? <DefaultToolbarItem kind="search" placement="topBarTrailing" /> : null}
           {pages.length > 1 && (
             <ToolbarItem placement="topBarTrailing">
               <Menu
