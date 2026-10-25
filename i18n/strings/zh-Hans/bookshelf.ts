@@ -2,9 +2,9 @@
 
 export default {
   pickerLabel: "书架内容",
-  favoritesCount: "收藏 ({n})",
-  historyCount: "阅读历史 ({n})",
-  offlineCount: "离线内容 ({n})",
+  favoritesTab: "收藏",
+  historyTab: "阅读历史",
+  offlineTab: "离线内容",
 
   emptyFavoritesTitle: "书架是空的",
   emptyFavoritesDetail: "浏览漫画时点击右上角爱心即可收藏。",

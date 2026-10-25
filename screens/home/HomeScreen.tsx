@@ -5,7 +5,7 @@ import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, L
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { CoverBadge } from "../../design/CoverBadge"
-import { glass, liquidGlass } from "../../design/glass"
+import { glass, liquidGlass, scrollTopBar } from "../../design/glass"
 import { Tag } from "../../design/Tag"
 import { WidthReporter } from "../../components/WidthReporter"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
@@ -128,6 +128,7 @@ export function HomeScreen() {
       >
         <ScrollView
           scrollContentBackground="hidden"
+          {...scrollTopBar(null)}
           // 下拉重新整理：略過 24 小時快取重抓榜單，並重讀一次書架的進度。
           // iOS 自己會顯示轉圈，所以這裡不動 loadingFeed（那是給首次載入用的 placeholder）。
           refreshable={async () => {

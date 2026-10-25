@@ -2,9 +2,9 @@
 
 export default {
   pickerLabel: "Bookshelf content",
-  favoritesCount: "Favorites ({n})",
-  historyCount: "History ({n})",
-  offlineCount: "Offline ({n})",
+  favoritesTab: "Favorites",
+  historyTab: "History",
+  offlineTab: "Offline",
 
   emptyFavoritesTitle: "Your bookshelf is empty",
   emptyFavoritesDetail: "Tap the heart in the top-right corner while browsing a comic to save it here.",

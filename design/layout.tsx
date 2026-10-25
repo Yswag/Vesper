@@ -5,6 +5,7 @@
 import { HStack, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
+import { scrollTopBar } from "./glass"
 import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpacing, radius, type StackChildren } from "./tokens"
 
 /**
@@ -52,7 +53,12 @@ export function PageScroll({
             : undefined
         }
       >
-        <ScrollView axes="vertical" scrollContentBackground="hidden" refreshable={onRefresh ? () => Promise.resolve(onRefresh()) : undefined}>
+        <ScrollView
+          axes="vertical"
+          scrollContentBackground="hidden"
+          {...scrollTopBar(null)}
+          refreshable={onRefresh ? () => Promise.resolve(onRefresh()) : undefined}
+        >
           <VStack spacing={pageSpacing} padding={pageInsets}>
             {children}
           </VStack>

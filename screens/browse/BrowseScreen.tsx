@@ -12,6 +12,7 @@ import { SourceScreen } from "./SourceScreen"
 import { SourceListScreen } from "../settings/SourceListScreen"
 import { PageBackground } from "../../app/theme"
 import { Chip } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { Card, GroupHeader } from "../../design/layout"
 import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
@@ -50,7 +51,7 @@ export function BrowseScreen() {
           ),
         }}
       >
-        <ScrollView scrollContentBackground="hidden">
+        <ScrollView scrollContentBackground="hidden" {...scrollTopBar(null)}>
           <VStack spacing={cardGap} padding={pageInsets}>
             {sources.length > 0 ? (
               <HStack frame={{ maxWidth: "infinity" }}>

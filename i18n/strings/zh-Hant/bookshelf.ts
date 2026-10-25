@@ -10,9 +10,9 @@ export default {
   /** 三個分頁那個 picker 的存取標籤。 */
   pickerLabel: "書架內容",
   /** picker 的三個選項；`{n}` 是該分頁的數量。三種語言的量詞都不隨數字變，所以不是複數形。 */
-  favoritesCount: "收藏 ({n})",
-  historyCount: "閱讀歷史 ({n})",
-  offlineCount: "離線內容 ({n})",
+  favoritesTab: "收藏",
+  historyTab: "閱讀歷史",
+  offlineTab: "離線內容",
 
   /** 三個分頁各自沒有內容時。 */
   emptyFavoritesTitle: "書架是空的",

@@ -66,8 +66,10 @@
 - 會開選單的膠囊用 `Chip chevron`。頁內動作不用 `glassProminent`。
 - 最低支援 iOS 18：`UIGlass`、`glassEffect`、`GlassEffectContainer`、`safeAreaBar` 等 iOS 26 API 只能經 `design/glass.tsx`（`glass()`、`scrollTopBar()`、`liquidGlass`）使用，頁面不直接寫。
 - 頁面頂端的切換 chip 列（分類、排行週期）掛在捲動區的 `safeAreaBar`（edge top），貼在導覽列下；配 `scrollEdgeEffectStyle` soft。不要 `scrollEdgeEffectHidden`（導覽列標題會失去底）。
+- 頁面的主捲動區一律展開 `scrollTopBar(...)`；沒有切換列就傳 `null`，內容從導覽列下柔和淡出。`PageScroll` 已內建。
 - 圖上角標夾寬用 `CoverBadge maxWidth`，它會抱內容寬；不在角標外自己加 `frame maxWidth`。
 - 帶左滑的卡片列，外層也要 `clipShape={cardShape}`：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
+- 頂部有切換列又要左右滑換頁：用 page `TabView`，切換列放在捲動區外（內容在它下緣硬切，接受）。不要改橫向 paging `ScrollView`：柔和邊緣有了，但 tab bar 的 `onScrollDown` 縮小只看最外層捲動區，整頁不再縮。
 - 左右滑翻頁的容器（`TabView` page）裡不放左滑動作：列的左滑會吃掉翻頁；刪除改長按選單（`contextMenu`）。
 
 ## 浮層
@@ -113,3 +115,5 @@ sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，�
 - 2026-10-25 掃尾：紅色只給破壞性動作與失敗（取消下載改中性）；色點用 `dotStroke` 描邊；列標題一行、數量下放到第二行，讓左滑按鈕等高（倉庫列：倉庫名＋「擁有者 · N 個源」）；圖示角標只給「要處理的事」，不放統計數字。
 - 2026-10-25 聚合搜尋改成每個源一排（標題列「源名 · 筆數」推入單源結果）；0 筆與失敗收底部可展開區塊。**聚合頁不放篩選入口**，篩選留在單源結果頁（Venera 與 Aidoku 各一顆同款 chip，有自訂值時 `tint.selected`）。
 - 2026-10-25 首頁：續讀卡封面下加系統 `ProgressView` 進度線（沒頁數也佔位，同排等高）；Bangumi hero 維持在最上面。固定高度的輪播用 `dynamicTypeSize` 夾到 `xxxLarge`，不寫死字級。
+- 2026-10-25 首頁、瀏覽、`PageScroll`（設定等）加 `scrollTopBar(null)`：實機看得出柔和淡出，保留。
+- 2026-10-25 書架：維持 page `TabView`（paging 版 tab bar 不縮小，撤回）；分頁切換拿掉計數。

@@ -41,7 +41,7 @@ import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { canResumeOffline } from "../shared/offlineSession"
 import { OfflineLibraryScreen } from "./OfflineLibraryScreen"
 import { formatHistoryTime } from "./historyTime"
-import { comicCount, subscribeOffline } from "../../engine/offline"
+import { subscribeOffline } from "../../engine/offline"
 import { PageBackground } from "../../app/theme"
 
 type BookshelfTab = "favorites" | "history" | "offline"
@@ -70,7 +70,6 @@ export function BookshelfScreen() {
 
   const progress = listProgress()
   const favorites = listFavorites()
-  const offlineCount = comicCount()
 
   return (
     <ZStack
@@ -115,9 +114,9 @@ export function BookshelfScreen() {
               withAnimation(() => selection.setValue(value))
             }}
             options={[
-              { value: "favorites", title: t("bookshelf.favoritesCount", { n: favorites.length }) },
-              { value: "history", title: t("bookshelf.historyCount", { n: progress.length }) },
-              { value: "offline", title: t("bookshelf.offlineCount", { n: offlineCount }) },
+              { value: "favorites", title: t("bookshelf.favoritesTab") },
+              { value: "history", title: t("bookshelf.historyTab") },
+              { value: "offline", title: t("bookshelf.offlineTab") },
             ]}
           />
         </VStack>
