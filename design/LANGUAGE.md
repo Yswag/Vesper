@@ -64,6 +64,7 @@
 - 頁面上（不在圖上）的資訊標籤一律 `design/Tag`（`neutral`／`danger`／`warning`／`love`）；有色 tone 的底只放在 `tagTone` token。
 - 可點的膠囊一律 `design/chip` 的 `Chip`（選中＝`tint.selected` 階梯）；同一行擠多顆用 `compact`，文字 chip 不再加 icon。
 - 會開選單的膠囊用 `Chip chevron`。頁內動作不用 `glassProminent`。
+- 最低支援 iOS 18：`UIGlass`、`glassEffect`、`GlassEffectContainer`、`safeAreaBar` 等 iOS 26 API 只能經 `design/glass.tsx`（`glass()`、`scrollTopBar()`、`liquidGlass`）使用，頁面不直接寫。
 - 頁面頂端的切換 chip 列（分類、排行週期）掛在捲動區的 `safeAreaBar`（edge top），貼在導覽列下；配 `scrollEdgeEffectStyle` soft。不要 `scrollEdgeEffectHidden`（導覽列標題會失去底）。
 - 圖上角標夾寬用 `CoverBadge maxWidth`，它會抱內容寬；不在角標外自己加 `frame maxWidth`。
 - 帶左滑的卡片列，外層也要 `clipShape={cardShape}`：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。

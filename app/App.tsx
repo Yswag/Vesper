@@ -23,6 +23,7 @@ import {
   installMissingDependencies,
 } from "./dependencies"
 import { PageBackground, useTint } from "./theme"
+import { liquidGlass } from "../design/glass"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
 import { subscribe as subscribeLocale, t } from "../i18n"
@@ -214,8 +215,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
           所以實際只有兩個端點可選：onScrollDown（收起、回頂端才展開）或 never（永不收起）。 */}
       <TabView
         selection={selection}
-        tabViewSearchActivation="searchTabSelection"
-        tabBarMinimizeBehavior="onScrollDown"
+        {...(liquidGlass ? { tabViewSearchActivation: "searchTabSelection", tabBarMinimizeBehavior: "onScrollDown" } as const : {})}
         tabViewStyle="sidebarAdaptable"
         toast={toast}
         overlay={overlay}

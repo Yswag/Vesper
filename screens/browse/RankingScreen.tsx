@@ -11,6 +11,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { ComicListItem } from "../../engine/adapt"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { PageBackground } from "../../app/theme"
@@ -100,26 +101,20 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
           頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。 */}
       <ScrollView
         scrollContentBackground="hidden"
-        scrollEdgeEffectStyle={{ style: "soft", edges: "top" }}
-        safeAreaBar={
-          options.length > 1
-            ? {
-                edge: "top",
-                content: (
-                  <ChipRow>
-                    {options.map((option, index) => (
-                      <Chip
-                        key={`rank:${option.value}:${index}`}
-                        text={option.label}
-                        selected={index === active}
-                        onTap={() => setActive(index)}
-                      />
-                    ))}
-                  </ChipRow>
-                ),
-              }
-            : undefined
-        }
+        {...scrollTopBar(
+          options.length > 1 ? (
+            <ChipRow>
+              {options.map((option, index) => (
+                <Chip
+                  key={`rank:${option.value}:${index}`}
+                  text={option.label}
+                  selected={index === active}
+                  onTap={() => setActive(index)}
+                />
+              ))}
+            </ChipRow>
+          ) : null
+        )}
       >
 
       {!optionsLoaded ? <PageLoading text={t("browse.rankingLoading")} /> : null}

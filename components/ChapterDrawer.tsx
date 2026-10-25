@@ -18,6 +18,7 @@ import {
 
 import type { ChapterGroup } from "../screens/shared/chapterGrouping"
 import { useTint } from "../app/theme"
+import { glass } from "../design/glass"
 import { cardBackgroundStrong, radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
@@ -84,7 +85,7 @@ export function ChapterDrawer({
       environments={{ colorScheme: "dark" }}
       preferredColorScheme="dark"
       presentationBackground="clear"
-      glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
+      {...glass({ shape: rect(radius.xl), fallback: "regularMaterial" })}
       ignoresSafeArea={{ edges: "bottom" }}
       presentationDetents={["medium", "large"]}
       presentationDragIndicator="visible"

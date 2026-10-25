@@ -1,5 +1,6 @@
 import { HStack, Capsule, Image, RoundedRectangle, ScrollView, Spacer, Text, TextField, VStack, ZStack, useEffect, useState } from "scripting"
 
+import { liquidGlass, glass } from "../design/glass"
 import { capsule, dialog, palette, radius, rect } from "../design/tokens"
 import {
   activeCustomDialog,
@@ -44,7 +45,7 @@ export function DialogCard({ request }: { request: CustomDialogRequest }) {
       frame={{ width: 270 }}
       background={dialog.card}
       clipShape={rect(radius.xl)}
-      glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
+      {...(liquidGlass ? glass({ shape: rect(radius.xl) }) : {})}
       overlay={<RoundedRectangle cornerRadius={radius.xl} stroke={dialog.cardBorder} />}
     >
       {request.kind === "input" ? <InputDialog request={request} /> : null}

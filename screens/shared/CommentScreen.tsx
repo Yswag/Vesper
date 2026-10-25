@@ -31,6 +31,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { PageBackground, useTint } from "../../app/theme"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { formatCommentTime } from "./commentTime"
+import { glass } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { ActionRow } from "../../design/rows"
 import { EmptyState, ListFooter, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
@@ -233,7 +234,7 @@ export function CommentComposer({
         spacing={10}
         alignment="center"
         padding={{ leading: 14, trailing: 8, vertical: 6 }}
-        glassEffect={{ glass: UIGlass.regular().interactive(), shape: capsule() }}
+        {...glass({ shape: capsule(), interactive: true })}
         frame={{ maxWidth: "infinity" }}
       >
         <Image systemName="pencil" font="subheadline" foregroundStyle="secondaryLabel" />

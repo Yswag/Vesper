@@ -19,6 +19,7 @@ import {
 type Observable<T> = ReturnType<typeof useObservable<T>>
 
 import { t } from "../i18n"
+import { glass } from "../design/glass"
 import { capsule, fill, radius, rect, toneText } from "../design/tokens"
 import type { ReaderSettings } from "../library/readerSettings"
 
@@ -207,7 +208,7 @@ export function ReaderHUD({
         <VStack
           spacing={0}
           environments={{ colorScheme: "dark" }}
-          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
+          {...glass({ shape: rect(radius.xl), fallback: "regularMaterial" })}
           ignoresSafeArea={true}
           frame={{ maxWidth: "infinity" }}
           offset={{ x: 0, y: hudVisible.value ? 0 : -HUD_SLIDE_TOP }}
@@ -349,7 +350,7 @@ export function ReaderHUD({
         <VStack
           spacing={0}
           environments={{ colorScheme: "dark" }}
-          glassEffect={{ glass: UIGlass.regular(), shape: rect(radius.xl) }}
+          {...glass({ shape: rect(radius.xl), fallback: "regularMaterial" })}
           frame={{ maxWidth: "infinity" }}
           ignoresSafeArea={true}
           offset={{ x: 0, y: hudVisible.value ? 0 : HUD_SLIDE_BOTTOM }}

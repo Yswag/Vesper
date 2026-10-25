@@ -1,5 +1,6 @@
 import { VStack, type Color, type Shape, type VirtualNode } from "scripting"
 
+import { glass } from "./glass"
 import { radius, rect } from "./tokens"
 
 export interface GlassSurfaceProps {
@@ -18,11 +19,8 @@ export function GlassSurface({
   tint,
   interactive = false,
 }: GlassSurfaceProps) {
-  let glass = variant === "clear" ? UIGlass.clear() : UIGlass.regular()
-  glass = glass.interactive(interactive)
-  if (tint) glass = glass.tint(tint)
   return (
-    <VStack spacing={0} glassEffect={{ glass, shape }}>
+    <VStack spacing={0} {...glass({ shape, variant, tint, interactive })}>
       {children}
     </VStack>
   )

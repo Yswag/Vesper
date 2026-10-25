@@ -33,6 +33,7 @@ import { CoverBadge } from "../../design/CoverBadge"
 import { Chevron } from "../../design/rows"
 import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
 import { Chip, ChipRow } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { pageInsets } from "../../design/tokens"
 
 type Cursor = { page: number } | { next: string }
@@ -210,9 +211,8 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
       <ScrollView
         scrollContentBackground="hidden"
         scrollDismissesKeyboard="interactively"
-        safeAreaBar={chipRow ? { edge: "top", content: chipRow } : undefined}
         // 頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。
-        scrollEdgeEffectStyle={{ style: "soft", edges: "top" }}
+        {...scrollTopBar(chipRow)}
       >
 
           {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}

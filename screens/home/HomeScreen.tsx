@@ -1,10 +1,11 @@
 // 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
-import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color } from "scripting"
+import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
 
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { CoverBadge } from "../../design/CoverBadge"
+import { glass, liquidGlass } from "../../design/glass"
 import { Tag } from "../../design/Tag"
 import { WidthReporter } from "../../components/WidthReporter"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
@@ -30,6 +31,11 @@ function carouselWidthProbe(onWidth: (width: number) => void) {
       {geometry => <WidthReporter width={geometry.size.width} onWidth={width => onWidth(Math.round(width))} />}
     </GeometryReader>
   )
+}
+
+/** 分頁點的融合容器；舊系統沒有玻璃，直接放內容。 */
+function GlassDots({ children }: { children: VirtualNode }) {
+  return liquidGlass ? <GlassEffectContainer spacing={6}>{children}</GlassEffectContainer> : children
 }
 
 export function HomeScreen() {
@@ -301,7 +307,7 @@ export function HomeScreen() {
                 {heroItems.length > 1 ? (
                   <HStack frame={{ maxWidth: "infinity" }}>
                     <Spacer />
-                    <GlassEffectContainer spacing={6}>
+                    <GlassDots>
                       <ZStack alignment="leading" frame={{ width: (heroItems.length - 1) * 16 + 6, height: 16 }}>
                         {/* 靜態各圓點底座（極輕灰玻璃，去除厚重折射霧感） */}
                         <HStack spacing={10} alignment="center" frame={{ height: 16 }}>
@@ -309,10 +315,7 @@ export function HomeScreen() {
                             <VStack
                               key={i}
                               frame={{ width: 6, height: 6 }}
-                              glassEffect={{
-                                glass: UIGlass.regular().tint(fill.glassNeutral),
-                                shape: capsule("circular"),
-                              }}
+                              {...glass({ tint: fill.glassNeutral, shape: capsule("circular") })}
                             />
                           ))}
                         </HStack>
@@ -320,15 +323,12 @@ export function HomeScreen() {
                         {/* 活躍藍色液態水滴（翻頁時物理拉絲扯斷，抵達時融入目標點） */}
                         <VStack
                           frame={{ width: 6, height: 6 }}
-                          glassEffect={{
-                            glass: UIGlass.regular().tint(tintColor),
-                            shape: capsule("circular"),
-                          }}
+                          {...glass({ tint: tintColor, shape: capsule("circular") })}
                           offset={{ x: heroIndex * 16, y: 0 }}
                           animation={{ animation: Animation.spring({ duration: 0.52, bounce: 0.15 }), value: heroIndex }}
                         />
                       </ZStack>
-                    </GlassEffectContainer>
+                    </GlassDots>
                     <Spacer />
                   </HStack>
                 ) : null}
