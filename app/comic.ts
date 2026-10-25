@@ -5,7 +5,15 @@ import { AbortController, type AbortSignal } from "scripting"
 
 import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
 import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
-import { readerImageBytes, statusOf, totalBytes, type OfflineStatus } from "../engine/offline"
+import {
+  cacheChapterList,
+  readerImageBytes,
+  saveChapterList,
+  statusOf,
+  totalBytes,
+  type OfflineStatus,
+  type ReaderChapter,
+} from "../engine/offline"
 import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings, type SourceViewer } from "../library/readerSettings"
 import { t } from "../i18n"
@@ -41,7 +49,13 @@ import {
   type DownloadRecord,
 } from "../sources/downloads"
 import type { AidokuSettingsSpec } from "../sources/aidoku"
-import { hasMoreComments, type ComicStatus, type ContentRating, type SourceComment } from "../sources/operations"
+import {
+  hasMoreComments,
+  type ComicDetail,
+  type ComicStatus,
+  type ContentRating,
+  type SourceComment,
+} from "../sources/operations"
 import {
   accountSpec,
   enabledSources,
@@ -61,6 +75,7 @@ import {
 } from "../sources/runner"
 import { searchAll, searchOne, type SearchProgress, type SourceSearchResult } from "../sources/search"
 import { searchOptionRows, type SearchOptionRow } from "../sources/searchOptions"
+import { createOfflineSession, isOfflineReadable } from "./offlineReading"
 
 /** 「還在跑」是下載語意的一部分（畫面判斷要不要給取消／左滑下載都用它）。 */
 export { isActive }
@@ -136,6 +151,8 @@ export interface ChapterSession {
   readonly cover?: string
   readonly pageCount: number
   readonly offline: OfflineStatus
+  /** 這一話是不是從本機檔案讀的（離線 session）；進度的 `offline` 旗標就照這個寫。 */
+  readonly local: boolean
   /**
    * 圖片鍵清單中索引對應的鍵值（0 起算）。離線 manifest 與下載共用此鍵。
    */
@@ -173,8 +190,18 @@ export interface ResumePoint {
   chapter: ChapterRef
   /** 領先可見頁，0 起算；已 clamp 到合法範圍。 */
   page: number
-  /** 上次閱讀是否在離線模式。 */
+  /** 上次那一話是不是從本機檔讀的（決定續讀要不要先開再補）。 */
   offline: boolean
+}
+
+/** 源的章節清單 → 顯示／快取的形狀（標題缺了沿用詳情頁章節列的替代字）。 */
+function chapterListOf(chapters: ComicDetail["chapters"]): ReaderChapter[] {
+  return chapters.map(chapter => ({
+    id: chapter.id,
+    title: chapter.title || chapter.group || t("detail.singleChapter"),
+    group: chapter.group,
+    locked: chapter.locked === true ? true : undefined,
+  }))
 }
 
 /**
@@ -259,6 +286,10 @@ export interface ComicLibrary {
   /** 分類頁的篩選列（`categoryComics.optionList`／`optionLoader`）。 */
   categoryOptionRows(sourceKey: string, target: JumpTarget): Promise<CategoryOptionRow[]>
   comic(ref: ComicRef): Promise<ComicPage>
+  /**
+   * 開一話的 session。**逐話選來源**：這一話下載完就讀本機檔（先查本機、不碰源，
+   * 源被移除或飛航模式也開得起來），否則走線上。
+   */
   chapter(ref: ChapterRef): Promise<ChapterSession>
   /**
    * 取得續讀進度點（未讀回傳 null，越界自動 clamp）。
@@ -387,6 +418,8 @@ export function createComicLibrary(): ComicLibrary {
     comic: async ref => {
       const { source, handle } = handleOf(ref.sourceKey)
       const detail = await handle.detail(ref.comicId)
+      // 線上拿到清單就覆寫快取（只在這部有離線內容時留檔，見 engine/offline 的 cacheChapterList）。
+      cacheChapterList(ref.sourceKey, ref.comicId, chapterListOf(detail.chapters))
       return {
         ref,
         title: detail.title,
@@ -424,9 +457,12 @@ export function createComicLibrary(): ComicLibrary {
     },
 
     chapter: async ref => {
-      const { source, handle } = handleOf(ref.sourceKey)
       const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
-      // 詳情補全標題；已下載章節若詳情網路失敗退回以 epId 呈現。
+      // 先查本機：這一話在手機上就讀離線 manifest，整條路不碰源（源被移除也開得起來）。
+      if (isOfflineReadable(key)) return createOfflineSession(key)
+
+      const { source, handle } = handleOf(ref.sourceKey)
+      // 詳情補全標題；只下載了一部分的章（state=partial）若詳情網路失敗，退回以 epId 呈現。
       const offlineBefore = statusOf(key)
       const detailPromise = handle.detail(ref.comicId)
       const [detail, imageKeys] = await Promise.all([
@@ -533,6 +569,7 @@ export function createComicLibrary(): ComicLibrary {
         cover: detail?.cover,
         pageCount: imageKeys.length,
         offline: statusOf(key),
+        local: false,
         imageKey: index => imageKeyOf(index),
         pageImage: loadPageBytes,
         loadPage,
@@ -596,6 +633,8 @@ export function createComicLibrary(): ComicLibrary {
         // 標題與漫畫資訊客戶端手上有就不必再問一次詳情；缺了才補（省一趟網路）。
         const incomplete = meta?.comicTitle === undefined || group.requests.some(request => request.title === undefined)
         const detail = incomplete ? await openSource(source).detail(group.comicId) : undefined
+        // 開始下載就先把清單留下（第一話還沒落地，這裡直接寫，不走 cacheChapterList 的守衛）。
+        if (detail) saveChapterList(group.sourceKey, group.comicId, chapterListOf(detail.chapters))
         await downloadChapters(
           source,
           group.comicId,

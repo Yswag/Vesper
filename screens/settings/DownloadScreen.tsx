@@ -27,7 +27,7 @@ import { EmptyState } from "../../design/status"
 import { fill, rowPadding, toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
-import { chaptersForReader } from "../../engine/offline"
+import { cachedChapterList, mergeChapterList } from "../../engine/offline"
 import { t } from "../../i18n"
 import { ReaderScreen } from "../shared/ReaderScreen"
 import {
@@ -425,10 +425,9 @@ function ComicGroupCard({
                     sourceKey={record.key.sourceKey}
                     comicId={record.key.comicId}
                     epId={record.key.epId}
-                    chapters={chaptersForReader(record.key.sourceKey, record.key.comicId)}
+                    chapters={mergeChapterList(cachedChapterList(record.key.sourceKey, record.key.comicId), record.key.sourceKey, record.key.comicId)}
                     comicTitle={record.comicTitle ?? ""}
                     comicCover={record.cover}
-                    offlineMode={true}
                   />
                 }
               >

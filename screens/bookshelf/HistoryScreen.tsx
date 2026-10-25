@@ -25,7 +25,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { clearProgress, listProgress, type Progress } from "../../library/bookshelf"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
-import { canResumeOffline } from "../shared/offlineSession"
+import { canResumeOffline } from "../../app/offlineReading"
 import { formatHistoryTime } from "./historyTime"
 
 export function HistoryScreen() {

@@ -10,7 +10,6 @@ export default {
   sortDescending: "Sort chapters descending",
   sortAscendingShort: "Oldest",
   sortDescendingShort: "Newest",
-  offlineOnlyDownloaded: "Offline mode lists downloaded chapters only",
   locateCurrent: "Locate",
   readingBadge: "Reading",
 

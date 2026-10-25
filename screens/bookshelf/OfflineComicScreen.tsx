@@ -1,7 +1,7 @@
 // 離線漫畫：從書架的離線分頁推入，只寫離線層看得到的章節。
 //
-// 順序＝manifest 的下載時間正序（跟 `chaptersForReader` 給閱讀器換話的順序同一個）：
-// 離線層沒有記源原本的章節索引，這是唯一能排的順序。
+// 順序：有章節清單快取就照源原本的順序；沒有就退回下載時間正序（舊下載只有這個）。
+// 快取裡沒有的章（源把那話拿掉、但手機上還留著）照下載時間附在最後——永遠不因為清單變動而消失。
 //
 // 繼續閱讀：有進度且那一章下載完 → 從那一章那一頁開；否則開第一個下載完的章。
 
@@ -19,18 +19,25 @@ import { EmptyState } from "../../design/status"
 import { Tag } from "../../design/Tag"
 import { cardGap, cardShape, fill, radius, rect, rowPadding, tagText } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
-import { chaptersForReader, listChapters, statusOf, type OfflineChapter } from "../../engine/offline"
+import { cachedChapterList, listChapters, mergeChapterList, statusOf, type OfflineChapter } from "../../engine/offline"
 import { HERO_ASPECT } from "../shared/comicMetrics"
 import { presentReader } from "../shared/ResumeReaderScreen"
 
 /** 縮小版 hero：詳情頁封面 124 寬，這裡小一號。 */
 const HERO_COVER = { width: 96, height: Math.round(96 * HERO_ASPECT) }
 
-/** 一部漫畫的離線章節，照閱讀順序（下載時間正序）。 */
+/** 一部漫畫的離線章節，照源原本的順序（有快取時）；快取是下載時刻才有的，舊下載退回下載時間正序。 */
 function chaptersOf(sourceKey: string, comicId: string): OfflineChapter[] {
-  return listChapters()
+  const downloaded = listChapters()
     .filter(chapter => chapter.key.sourceKey === sourceKey && chapter.key.comicId === comicId)
     .sort((a, b) => a.updatedAt - b.updatedAt)
+  const cached = cachedChapterList(sourceKey, comicId)
+  if (!cached) return downloaded
+  const rank = new Map(cached.map((chapter, at) => [chapter.id, at]))
+  // 不是快取裡的排最後；相同 rank 由 Array#sort 的穩定排序保留下載順序。
+  return downloaded.sort(
+    (a, b) => (rank.get(a.key.epId) ?? cached.length) - (rank.get(b.key.epId) ?? cached.length)
+  )
 }
 
 function titleOf(chapter: OfflineChapter): string {
@@ -146,11 +153,10 @@ export function OfflineComicScreen({
               sourceKey,
               comicId,
               epId: target.chapter.key.epId,
-              chapters: chaptersForReader(sourceKey, comicId),
+              chapters: mergeChapterList(cachedChapterList(sourceKey, comicId), sourceKey, comicId),
               comicTitle,
               comicCover,
               initialPage: targetPage,
-              offlineMode: true,
             })
           }
         >
@@ -304,11 +310,10 @@ function ChapterRow({
           sourceKey,
           comicId,
           epId: chapter.key.epId,
-          chapters: chaptersForReader(sourceKey, comicId),
+          chapters: mergeChapterList(cachedChapterList(sourceKey, comicId), sourceKey, comicId),
           comicTitle,
           comicCover,
           initialPage: resumePage,
-          offlineMode: true,
         })
       }
     >

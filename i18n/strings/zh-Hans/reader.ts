@@ -10,7 +10,6 @@ export default {
   sortDescending: "改为章节倒序",
   sortAscendingShort: "正序",
   sortDescendingShort: "倒序",
-  offlineOnlyDownloaded: "离线模式仅显示已下载的章节",
   locateCurrent: "定位",
   readingBadge: "阅读中",
 

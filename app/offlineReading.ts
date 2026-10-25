@@ -1,13 +1,15 @@
-// 離線閱讀 ChapterSession：完全依賴本機離線 manifest 與已下載檔案，不發起網路請求。
+// 離線閱讀：一話能不能從本機讀、以及完全不碰源的 ChapterSession。
+// 這是「這一話在不在手機上」的判斷，逐話選來源的入口在 `comicLibrary().chapter()`。
+// （跟 `app/offlineSession.ts` 的下載背景工作無關。）
 
-import type { ChapterSession, PageRender } from "../../app/comic"
-import { readBytes } from "../../engine/fs"
-import { chapterOf, offlinePagePath, statusOf, type OfflineKey } from "../../engine/offline"
-import { closeRenderDir, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../../engine/pagefiles"
-import { isSafeForUpscale, sharpenImage } from "../../engine/upscale"
-import { getReaderSettings } from "../../library/readerSettings"
-import { log } from "../../engine/log"
-import { t } from "../../i18n"
+import type { ChapterSession, PageRender } from "./comic"
+import { readBytes } from "../engine/fs"
+import { chapterOf, offlinePagePath, statusOf, type OfflineKey } from "../engine/offline"
+import { closeRenderDir, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../engine/pagefiles"
+import { isSafeForUpscale, sharpenImage } from "../engine/upscale"
+import { getReaderSettings } from "../library/readerSettings"
+import { log } from "../engine/log"
+import { t } from "../i18n"
 
 /** 這一章下載完了沒（目錄能列、閱讀器能開的都必須是 `done`）。 */
 export function isOfflineReadable(key: OfflineKey): boolean {
@@ -15,7 +17,7 @@ export function isOfflineReadable(key: OfflineKey): boolean {
 }
 
 /**
- * 判斷續讀是否走離線模式（上次以離線閱讀且該章節仍保留於本機）。
+ * 判斷續讀是否先開本機（上次以離線閱讀且該章節仍保留於本機）。
  */
 export function canResumeOffline(key: OfflineKey, offline: boolean | undefined): boolean {
   return offline === true && isOfflineReadable(key)
@@ -60,6 +62,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     cover: chapter.cover,
     pageCount: imageKeys.length,
     offline: statusOf(key),
+    local: true,
     imageKey: imageKeyOf,
     pageImage: loadPageBytes,
     loadPage: async (

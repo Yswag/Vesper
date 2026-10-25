@@ -189,6 +189,9 @@ export function savePage(chapter: OfflineChapter, index: number, imageKey: strin
 export function removeChapter(key: OfflineKey): void {
   remove(folderOf(key))
   loadIndex().delete(idOf(key))
+  // 最後一章刪掉時清單快取也收掉（不留孤兒檔）。落點選這裡而不是下載管理員：索引在上一行才更新完，
+  // 刪完立刻看剩下的章最準；下載任務晚到的 manifest 寫回只會讓這部暫時少一份快取，下次線上就補回來。
+  if (!hasOfflineChapters(key.sourceKey, key.comicId)) remove(chapterListFile(key.sourceKey, key.comicId))
   bus.emitDebounced()
 }
 
@@ -242,10 +245,12 @@ export function isComplete(key: OfflineKey): boolean {
   return statusOf(key).state === "done"
 }
 
-/** 閱讀器的章節項（`id` = epId；ReaderScreen 的 `ChapterRef` 同形狀）。 */
+/** 閱讀器的章節項（`id` = epId；ReaderScreen 的 `ChapterRef` 同形狀，清單快取也用這個）。 */
 export interface ReaderChapter {
   id: string
   title: string
+  group?: string
+  locked?: boolean
 }
 
 /**
@@ -257,6 +262,80 @@ export function chaptersForReader(sourceKey: string, comicId: string): ReaderCha
     .filter(chapter => statusOf(chapter.key).state === "done")
     .sort((a, b) => a.updatedAt - b.updatedAt)
     .map(chapter => ({ id: chapter.key.epId, title: chapter.epTitle ?? chapter.key.epId }))
+}
+
+// ------------------------------------------------------------------ 章節清單快取
+//
+// 每部漫畫一份「源給的完整章節清單」。它是快取，不是真相：線上拿到就覆寫，
+// 已下載的章永遠留在顯示清單裡（見 `mergeChapterList`）。
+// 刻意不放進 `offline/`：`loadIndex()` 會把底下每個項目當章節掃 manifest。
+
+/** 這部漫畫有任何離線內容嗎（只掃既有 manifest，不碰磁碟格式）。 */
+export function hasOfflineChapters(sourceKey: string, comicId: string): boolean {
+  const group = comicGroupKey({ sourceKey, comicId })
+  for (const chapter of loadIndex().values()) if (comicGroupKey(chapter.key) === group) return true
+  return false
+}
+
+function chapterListFile(sourceKey: string, comicId: string): string {
+  const hash = Convert.hexEncode(Convert.md5(Convert.encodeUtf8(comicGroupKey({ sourceKey, comicId }))))
+  return join(appDataRoot(), "offline-chapters", `${hash}.json`)
+}
+
+/** 覆寫這部漫畫的章節清單快取（照源給的順序）。 */
+export function saveChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
+  const payload = JSON.stringify({ updatedAt: Date.now(), chapters })
+  if (!writeText(chapterListFile(sourceKey, comicId), payload)) {
+    log("warning", "offline", `章節清單快取寫入失敗：${comicId}`)
+  }
+}
+
+/**
+ * 線上取得清單時記下來。這部完全沒有離線內容就不留檔——不替每部瀏覽過的漫畫存檔。
+ * （下載開始時走 `saveChapterList`：那時第一話還沒落地，這個守衛會把它擋掉。）
+ */
+export function cacheChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
+  if (!hasOfflineChapters(sourceKey, comicId)) return
+  saveChapterList(sourceKey, comicId, chapters)
+}
+
+/** 這部漫畫上一次線上取得的章節清單；沒有、或讀不懂就回 null（呼叫端一律要能退回下載清單）。 */
+export function cachedChapterList(sourceKey: string, comicId: string): ReaderChapter[] | null {
+  const raw = readText(chapterListFile(sourceKey, comicId))
+  if (!raw) return null
+  try {
+    const item = JSON.parse(raw) as Record<string, any>
+    if (!Array.isArray(item.chapters)) return null
+    const chapters: ReaderChapter[] = []
+    for (const entry of item.chapters) {
+      if (!entry || typeof entry !== "object" || entry.id == null) continue
+      chapters.push({
+        id: String(entry.id),
+        title: entry.title != null ? String(entry.title) : String(entry.id),
+        group: entry.group != null ? String(entry.group) : undefined,
+        locked: entry.locked === true ? true : undefined,
+      })
+    }
+    return chapters
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 顯示用的章節清單＝`list`（最新的線上或快取）原順序，加上不在裡面、但已下載完的章
+ * （照下載時間附在最後）。`list` 為 null 就等同現在的 `chaptersForReader()`。
+ * 清單變動永遠不刪下載檔：源把一話拿掉，手機上那一話照樣看得到。
+ */
+export function mergeChapterList(
+  list: ReaderChapter[] | null,
+  sourceKey: string,
+  comicId: string
+): ReaderChapter[] {
+  const downloaded = chaptersForReader(sourceKey, comicId)
+  if (!list) return downloaded
+  const known = new Set(list.map(chapter => chapter.id))
+  return [...list, ...downloaded.filter(chapter => !known.has(chapter.id))]
 }
 
 /** 這一頁的離線檔路徑；沒有、或圖片鍵對不上（源換過這一章的圖）就回 null。 */

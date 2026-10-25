@@ -35,8 +35,8 @@ export interface ChapterDrawerProps {
   chapters: ChapterItem[]
   chapterGroups?: ChapterGroup<ChapterItem>[]
   isGrouped: boolean
-  offlineMode?: boolean
-  hiddenChapters?: number
+  /** 這一話在不在手機上（目錄用它標示哪些話離線也讀得到）。 */
+  isDownloaded?: (epId: string) => boolean
   onSelectChapter: (id: string) => void
   onClose: () => void
 }
@@ -51,8 +51,7 @@ export function ChapterDrawer({
   chapters,
   chapterGroups = [],
   isGrouped,
-  offlineMode = false,
-  hiddenChapters = 0,
+  isDownloaded,
   onSelectChapter,
   onClose,
 }: ChapterDrawerProps) {
@@ -208,17 +207,6 @@ export function ChapterDrawer({
         </VStack>
       ) : null}
 
-      {/* 離線模式提示 */}
-      {offlineMode && hiddenChapters > 0 ? (
-        <HStack spacing={8} padding={{ horizontal: 20, vertical: 10 }} frame={{ maxWidth: "infinity" }}>
-          <Image systemName="info.circle" font="caption" foregroundStyle="secondaryLabel" />
-          <Text font="caption2" foregroundStyle="secondaryLabel">
-            {t("reader.offlineOnlyDownloaded")}
-          </Text>
-          <Spacer />
-        </HStack>
-      ) : null}
-
       {/* 章節清單：普通 VStack 滿幀滑動，由頂部「定位」按鈕一鍵跳轉 */}
       <ScrollView>
         <ScrollViewReader>
@@ -229,6 +217,7 @@ export function ChapterDrawer({
               <VStack spacing={8} padding={{ horizontal: 16, vertical: 12 }} frame={{ maxWidth: "infinity" }}>
                 {list.map((ch: ChapterItem) => {
                   const isCurrent = ch.id === currentEpId
+                  const onDevice = isDownloaded?.(ch.id) === true
                   return (
                     <ZStack key={ch.id} tag={ch.id} alignment="center" frame={{ maxWidth: "infinity" }}>
                       <HStack
@@ -241,7 +230,15 @@ export function ChapterDrawer({
                         onTapGesture={ch.locked ? undefined : () => onSelectChapter(ch.id)}
                       >
                         <Image
-                          systemName={ch.locked ? "lock.fill" : isCurrent ? "bookmark.fill" : "doc.text"}
+                          systemName={
+                            ch.locked
+                              ? "lock.fill"
+                              : isCurrent
+                                ? "bookmark.fill"
+                                : onDevice
+                                  ? "arrow.down.circle.fill"
+                                  : "doc.text"
+                          }
                           font="footnote"
                           foregroundStyle={ch.locked ? "secondaryLabel" : isCurrent ? tint.tint : "tertiaryLabel"}
                         />

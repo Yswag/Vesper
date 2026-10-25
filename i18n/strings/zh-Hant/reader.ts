@@ -18,7 +18,6 @@ export default {
   /** 排序膠囊上的短標（旁邊有上下箭頭圖示）。 */
   sortAscendingShort: "正序",
   sortDescendingShort: "倒序",
-  offlineOnlyDownloaded: "離線模式僅顯示已下載的章節",
   /** 快速跳轉至當前閱讀章節的按鈕文案。 */
   locateCurrent: "定位",
   readingBadge: "閱讀中",

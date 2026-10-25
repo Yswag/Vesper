@@ -5,7 +5,7 @@
 // 2. 全螢幕 HUD Overlay：以 offset / opacity 屬性動畫收放；目錄走原生 Bottom Sheet，設定走系統 Menu。
 // 3. 閱讀模式：畫廊（分頁吸附）與連續（平滑捲動）；方向支援橫向（LTR/RTL）與縱向（TTB）。
 // 4. 進度追蹤：以 onScrollTargetVisibilityChange 領先可見頁為準，就地換話不堆疊 route。
-// 5. 離線模式：讀離線 manifest 與本地檔，不發起網路請求。
+// 5. 逐話選來源：開哪一話由 `comicLibrary().chapter()` 決定（本機讀得到就讀本機），這裡沒有離線分支。
 // 6. 翻頁分區：橫向模式左右 1/4 翻頁、中間 1/2 切換 HUD（手勢採 global 座標系）。
 
 import {
@@ -56,7 +56,7 @@ import {
   type ReaderSettings,
   type SourceViewer,
 } from "../../library/readerSettings"
-import { createOfflineSession, isOfflineReadable } from "./offlineSession"
+import { isOfflineReadable } from "../../app/offlineReading"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
@@ -89,6 +89,7 @@ export interface ReaderProps {
   sourceKey: string
   comicId: string
   epId: string
+  /** 顯示用的章節清單（已由 `mergeChapterList` 把下載中的章併進來）；清單換新不會打斷正在讀的那一話。 */
   chapters: ChapterRef[]
   comicTitle: string
   comicCover?: string
@@ -96,11 +97,6 @@ export interface ReaderProps {
   initialPage?: number
   /** 源宣告的閱讀方式（Aidoku 的 viewer）；沒有就退全域設定。 */
   viewer?: SourceViewer
-  /**
-   * 離線模式：這一話只從離線 manifest 與本機檔案讀，不問源、不發任何請求。
-   * `chapters` 只是「這部有哪些話」的線索，實際能不能讀由離線狀態決定（只列得出下載完的）。
-   */
-  offlineMode?: boolean
 }
 
 type ReaderLayout = {
@@ -195,12 +191,11 @@ function ReaderContent({
   sourceKey,
   comicId,
   epId,
-  chapters: allChapters,
+  chapters,
   comicTitle,
   comicCover,
   initialPage,
   viewer,
-  offlineMode = false,
   viewport,
   safeAreaInsets,
   hudVisible,
@@ -208,15 +203,6 @@ function ReaderContent({
   // 語言一換就重繪：這個畫面的字（HUD、目錄、閱讀設定、狀態遮罩）都是 render 時求值的。
   useSubscription(subscribeLocale)
 
-  // 離線模式只列「下載完」的章：沒下載完的進來也是壞的，不該出現在目錄裡。
-  const chapters = useMemo(
-    () =>
-      offlineMode
-        ? allChapters.filter(chapter => isOfflineReadable({ sourceKey, comicId, epId: chapter.id }))
-        : allChapters,
-    [offlineMode, allChapters, sourceKey, comicId],
-  )
-  const hiddenChapters = allChapters.length - chapters.length
   const dismiss = Navigation.useDismiss()
   // 這一話的取圖 session（頁數、圖片鍵、離線狀態都在裡面）；換話就整個換掉。
   const [session, setSession] = useState<ChapterSession | undefined>(undefined)
@@ -351,13 +337,10 @@ function ReaderContent({
     // 換話就當成新的一話從頭讀；還原只發生在「進來的那一話」。
     setLeadingPage(restoringEntry ? entryRestore : null)
     restored.current = !restoringEntry
-    // 開章：離線模式只讀離線 manifest（整條路不碰源）；平常走 ComicLibrary，
-    // 已下載的章在那裡也是直接吃離線層記下的頁面清單（飛航模式照樣讀）。
+    // 開章：來源由 `chapter()` 逐話決定（本機讀得到就讀本機，不然走線上）。
     void (async () => {
       try {
-        const result = offlineMode
-          ? createOfflineSession({ sourceKey, comicId, epId: currentEpId })
-          : await comicLibrary().chapter({ sourceKey, comicId, epId: currentEpId })
+        const result = await comicLibrary().chapter({ sourceKey, comicId, epId: currentEpId })
         opened = result
         if (!alive) {
           // 還沒看到就被換掉了（連按兩話）：放掉自己（佇列＋在飛的請求與自己那一份記憶體快取），
@@ -392,7 +375,7 @@ function ReaderContent({
           epId: currentEpId,
           epTitle: title,
           pageCount: result.pageCount,
-          offline: offlineMode ? true : undefined,
+          offline: result.local ? true : undefined,
         })
       } catch (error) {
         if (alive) {
@@ -409,7 +392,7 @@ function ReaderContent({
       // 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求 + 把正文的記憶體快取放掉。
       opened?.dispose()
     }
-  }, [sourceKey, comicId, currentEpId, offlineMode, reloadKey])
+  }, [sourceKey, comicId, currentEpId, reloadKey])
 
   // 頁碼落定 → 補預取（以這一頁為中心往前 3）。兩種閱讀模式都吃這一條（leadingPage 是共用的）。
   // 拖曳頁碼列時只動 scrubValue，leadingPage 要放開（commitScrub）才會變 → 拖曳中不會重排。
@@ -438,7 +421,7 @@ function ReaderContent({
       epTitle: title,
       page,
       pageCount,
-      offline: offlineMode ? true : undefined,
+      offline: session?.local ? true : undefined,
     })
   }, [leadingPage, pageCount, currentEpId, sourceKey, comicId])
 
@@ -475,7 +458,7 @@ function ReaderContent({
     setShowChapterSheet(false)
     if (id === currentEpId) return
     // 鎖定的章節只列在目錄裡，點了不換話（也不提示）。
-    if (allChapters.find(chapter => chapter.id === id)?.locked) return
+    if (chapters.find(chapter => chapter.id === id)?.locked) return
     entryPending.current = false
     setZoomed(false)
     // 立即清空過期目標與計時器
@@ -766,8 +749,7 @@ function ReaderContent({
             chapters={chapters}
             chapterGroups={chapterGroups}
             isGrouped={isGrouped}
-            offlineMode={offlineMode}
-            hiddenChapters={hiddenChapters}
+            isDownloaded={epId => isOfflineReadable({ sourceKey, comicId, epId })}
             onSelectChapter={selectChapter}
             onClose={() => setShowChapterSheet(false)}
           />

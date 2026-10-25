@@ -17,7 +17,7 @@ import { capsule, coverShadow, coverStroke, fill, radius, rect } from "../../des
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
-import { canResumeOffline } from "../shared/offlineSession"
+import { canResumeOffline } from "../../app/offlineReading"
 import { PageBackground, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
