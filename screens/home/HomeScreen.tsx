@@ -184,11 +184,13 @@ export function HomeScreen() {
                       }
                       buttonStyle="plain"
                     >
+                      {/* TabView 翻頁要固定高度：字級夹在 xxxLarge，輔助字級下右欄不被裁。 */}
                       <HStack
                         spacing={15}
                         alignment="center"
                         frame={{ maxWidth: "infinity", height: 207 }}
                         padding={{ horizontal: 16, vertical: 14 }}
+                        dynamicTypeSize={{ to: "xxxLarge" }}
                       >
                         {/* 封面立體卡片：124×179（＝詳情頁 hero 的上限寬 `HERO_MAX_WIDTH`、同一組 1.44 比例）。
                             舊值 106×150 比下面那排卡片（112×161）還小，四周又留白 → 看起來很迷你。
@@ -481,6 +483,11 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
     .join(" · ")
   const { width, height } = size
   const episodeText = openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")
+  // page 是 0 起算的領先可見頁；舊紀錄沒有頁數就不畫進度線。
+  const readFraction =
+    entry.page !== undefined && entry.pageCount !== undefined && entry.pageCount > 0
+      ? Math.min(1, (entry.page + 1) / entry.pageCount)
+      : null
   const [opening, setOpening] = useState(false)
 
   const card = (
@@ -523,6 +530,14 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
           <CoverBadge text={episodeText} maxWidth={episodeText.length > 12 ? width - 12 : undefined} />
         </HStack>
       </ZStack>
+
+      {/* 沒頁數也佔位（透明），同一排卡片等高。 */}
+      <ProgressView
+        value={readFraction ?? 0}
+        progressViewStyle="linear"
+        frame={{ width }}
+        opacity={readFraction !== null ? 1 : 0}
+      />
 
       {/* 單行俐落書名（超長自動截斷） */}
       <Text
