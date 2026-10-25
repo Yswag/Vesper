@@ -34,7 +34,7 @@ import {
   type Point,
 } from "scripting"
 
-import type { ChapterSession } from "../../app/comic"
+import type { ChapterSession, ReaderChapter } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { describeError } from "../../engine/errors"
@@ -77,13 +77,8 @@ function BoxReporter({
   return null
 }
 
-export interface ChapterRef {
-  id: string
-  title: string
-  group?: string
-  /** 源標為鎖定（付費／登入）的章節：目錄看得到，不能開。 */
-  locked?: boolean
-}
+/** 閱讀器的章節項：就是離線層清單快取的形狀（`readerChapters()` 給的清單直接放進來）。 */
+export type ChapterRef = ReaderChapter
 
 export interface ReaderProps {
   sourceKey: string

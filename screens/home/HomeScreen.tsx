@@ -12,12 +12,12 @@ import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
+import { resumeEntry } from "../../app/shelf"
 import { EmptyState } from "../../design/status"
 import { capsule, coverShadow, coverStroke, fill, radius, rect } from "../../design/tokens"
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
-import { canResumeOffline } from "../../app/offlineReading"
 import { PageBackground, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
@@ -468,27 +468,18 @@ function formatEpisodeBadge(epTitle?: string): string {
 
 /** 繼續閱讀卡片：包含封面、進度話數磨砂標籤、雙行對齊標題 */
 function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
-  const source = comicLibrary().source(entry.sourceKey)
-  // 同歷史卡：上次是離線讀的、而且那一話還在下載裡 → 這張卡點下去會走離線閱讀器。
-  const offline = canResumeOffline(
-    { sourceKey: entry.sourceKey, comicId: entry.comicId, epId: entry.epId },
-    entry.offline
-  )
-  const openable = source !== undefined || offline
+  const shown = resumeEntry(entry)
   // 來源那一行：離線的紀錄在源名前面標「離線」；源被移除但還有離線內容時就只剩「離線」。
   const sourceLabel = [
-    offline ? t("common.offlineTag") : null,
-    source?.name ?? (offline ? null : t("home.sourceRemoved")),
+    shown.offline ? t("common.offlineTag") : null,
+    shown.sourceName ?? (shown.source === "offlineOnly" ? null : t("home.sourceRemoved")),
   ]
     .filter(Boolean)
     .join(" · ")
   const { width, height } = size
-  const episodeText = openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")
-  // page 是 0 起算的領先可見頁；舊紀錄沒有頁數就不畫進度線。
-  const readFraction =
-    entry.page !== undefined && entry.pageCount !== undefined && entry.pageCount > 0
-      ? Math.min(1, (entry.page + 1) / entry.pageCount)
-      : null
+  const episodeText = shown.openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")
+  // page 是 0 起算的領先可見頁；舊紀錄沒有頁數就沒有這條線（統一門檻在 app/shelf.ts）。
+  const fraction = shown.readFraction ?? null
   const [opening, setOpening] = useState(false)
 
   const card = (
@@ -498,7 +489,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
         alignment="bottomTrailing"
         frame={{ width, height }}
       >
-        {source ? (
+        {shown.source === "present" ? (
           <CoverImage
             sourceKey={entry.sourceKey}
             url={entry.cover}
@@ -534,10 +525,10 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
 
       {/* 沒頁數也佔位（透明），同一排卡片等高。 */}
       <ProgressView
-        value={readFraction ?? 0}
+        value={fraction ?? 0}
         progressViewStyle="linear"
         frame={{ width }}
-        opacity={readFraction !== null ? 1 : 0}
+        opacity={fraction !== null ? 1 : 0}
       />
 
       {/* 單行俐落書名（超長自動截斷） */}
@@ -565,7 +556,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
   )
 
   // 源沒了、也沒有離線內容就進不去（封面也要源才解析得出來）；標籤那顆膠囊改成「源失效」。
-  if (!openable) return card
+  if (!shown.openable) return card
 
   return (
     <Button
@@ -573,14 +564,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
       disabled={opening}
       action={() => {
         setOpening(true)
-        void launchResumeReader({
-          sourceKey: entry.sourceKey,
-          comicId: entry.comicId,
-          epId: entry.epId,
-          page: entry.page,
-          title: entry.title,
-          cover: entry.cover,
-        }).finally(() => {
+        void launchResumeReader({ sourceKey: entry.sourceKey, comicId: entry.comicId }).finally(() => {
           setOpening(false)
         })
       }}

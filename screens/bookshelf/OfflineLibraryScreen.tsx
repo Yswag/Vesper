@@ -3,77 +3,27 @@
 //
 // `OfflineLibraryPage` 是從書架入口推進來的整頁；`OfflineLibraryScreen` 是不帶捲動區的內容。
 //
-// 長按刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
+// 長按刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後由 ComicLibrary 逐章刪
+// （下載中的先取消、等任務收尾才刪檔）。只停下載的人用長按選單的「取消」。
 
-import { Button, LazyVStack, NamespaceReader, NavigationLink, ScrollView, VStack, ZStack } from "scripting"
+import { Button, Group, LazyVStack, NamespaceReader, NavigationLink, ScrollView, VStack, ZStack } from "scripting"
 
-import { isActive } from "../../app/comic"
+import type { OfflineComic } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { PageBackground } from "../../app/theme"
-import { scrollTopBar } from "../../design/glass"
 import { useSubscription } from "../../app/useSubscription"
+import { scrollTopBar } from "../../design/glass"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicListRow } from "../../components/ComicListRow"
 import { Card } from "../../design/layout"
 import { EmptyState } from "../../design/status"
 import { cardShape } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
-import {
-  comicGroupKey,
-  listChapters,
-  statusOf,
-  subscribeOffline,
-  type OfflineChapter,
-} from "../../engine/offline"
 import { OfflineComicScreen } from "./OfflineComicScreen"
 
-/** 一部漫畫的離線內容（清單要的統計都在這裡算好）。 */
-interface ComicGroup {
-  sourceKey: string
-  comicId: string
-  title: string
-  cover?: string
-  sourceName: string
-  chapters: OfflineChapter[]
-  totalBytes: number
-  completedChapters: number
-  updatedAt: number
-}
-
-function groupId(sourceKey: string, comicId: string): string {
-  return comicGroupKey({ sourceKey, comicId })
-}
-
-/** 把離線章節按漫畫分組，最近有人下載的排前面。 */
-function groupByComic(): ComicGroup[] {
-  const groups = new Map<string, ComicGroup>()
-
-  for (const chapter of listChapters()) {
-    const id = groupId(chapter.key.sourceKey, chapter.key.comicId)
-    let group = groups.get(id)
-    if (!group) {
-      const source = comicLibrary().source(chapter.key.sourceKey)
-      group = {
-        sourceKey: chapter.key.sourceKey,
-        comicId: chapter.key.comicId,
-        title: chapter.comicTitle ?? t("bookshelf.unknownComic"),
-        cover: chapter.cover,
-        sourceName: source?.name ?? t("bookshelf.sourceRemovedTitle"),
-        chapters: [],
-        totalBytes: 0,
-        completedChapters: 0,
-        updatedAt: 0,
-      }
-      groups.set(id, group)
-    }
-    const status = statusOf(chapter.key)
-    group.chapters.push(chapter)
-    group.totalBytes += status.bytes
-    if (status.state === "done") group.completedChapters++
-    group.updatedAt = Math.max(group.updatedAt, chapter.updatedAt)
-  }
-
-  return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+/** 這一部在這份清單裡的識別（推頁的 key 與封面 zoom 的 id）。 */
+function comicIdOf(comic: OfflineComic): string {
+  return `${comic.sourceKey}:${comic.comicId}`
 }
 
 export function OfflineLibraryPage() {
@@ -93,26 +43,25 @@ export function OfflineLibraryPage() {
 }
 
 export function OfflineLibraryScreen() {
+  const library = comicLibrary()
   // 下載完成／刪除都會讓這裡重繪；資料在 render 裡重讀（每次重繪重讀）。
-  // 語言也是訂閱源：manifest 的資料名與我們自己的字都在 render 時取自 `t()`
-  // （`groupByComic()` 是 render 裡叫的，不是 import 時算好的常數）。
-  useSubscription(subscribeOffline, subscribeLocale)
+  // 語言也是訂閱源：manifest 的資料名與我們自己的字都在 render 時取自 `t()`。
+  useSubscription(library.onChange, subscribeLocale)
 
-  /** 刪掉整部：先問再刪，一次一章走刪除（下載中的任務也一併收掉）。 */
-  async function deleteComic(group: ComicGroup) {
+  /** 刪掉整部：先問再刪（下載中的也刪得掉，資料層會先取消再等任務收尾）。 */
+  async function deleteComic(comic: OfflineComic) {
+    const title = comic.title ?? t("bookshelf.unknownComic")
     const confirmed = await Dialog.confirm({
       title: t("common.delete"),
-      message: t("bookshelf.deleteComicConfirm", { title: group.title, n: group.chapters.length }),
+      message: t("bookshelf.deleteComicConfirm", { title, n: comic.chapters }),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),
     })
-    if (!confirmed) return
-    const library = comicLibrary()
-    for (const chapter of group.chapters) library.deleteDownload(chapter.key)
+    if (confirmed) await library.offline.deleteComic(comic)
   }
 
-  const groups = groupByComic()
-  if (groups.length === 0) {
+  const comics = library.offline.comics()
+  if (comics.length === 0) {
     return (
       <EmptyState
         variant="page"
@@ -126,81 +75,81 @@ export function OfflineLibraryScreen() {
   return (
     <NamespaceReader>
       {offlineNs => (
-    // 卡片的左滑要外層容器的 swipeActionsContainer（iOS 27）才生效。
-    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
-      {groups.map(group => {
-        // 封面 zoom 進離線作品頁（跟收藏、歷史推詳情一樣）。
-        const zoomID = `offline:${groupId(group.sourceKey, group.comicId)}`
-        // 還在下載的章不能直接刪（任務跑完手上那一張會把 manifest 寫回去）：只能先取消。
-        const downloads = group.chapters.map(chapter => comicLibrary().downloadState(chapter.key))
-        const active = group.chapters.filter((_, index) => isActive(downloads[index].state))
-        const cancelActive = () => {
-          const library = comicLibrary()
-          for (const chapter of active) library.cancelDownload(chapter.key)
-        }
+        // 卡片的左滑要外層容器的 swipeActionsContainer（iOS 27）才生效。
+        <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
+          {comics.map(comic => {
+            const title = comic.title ?? t("bookshelf.unknownComic")
+            // 封面 zoom 進離線作品頁（跟收藏、歷史推詳情一樣）。
+            const zoomID = `offline:${comicIdOf(comic)}`
 
-        return (
-          // 左滑與長按掛在外層（點一下仍然是 NavigationLink 的推入）；外層也裁成卡片形狀，滑動底才不露方角。
-          <VStack
-            key={groupId(group.sourceKey, group.comicId)}
-            spacing={0}
-            clipShape={cardShape}
-            trailingSwipeActions={{
-              allowsFullSwipe: false,
-              actions: [
-                <Button
-                  key="swipe"
-                  title={active.length > 0 ? t("settings.downloads.cancel") : t("common.delete")}
-                  systemImage={active.length > 0 ? "xmark.circle.fill" : "trash.fill"}
-                  role="destructive"
-                  action={active.length > 0 ? cancelActive : () => void deleteComic(group)}
-                />,
-              ],
-            }}
-            contextMenu={{
-              menuItems:
-                active.length > 0 ? (
-                  <Button title={t("settings.downloads.cancel")} action={cancelActive} />
-                ) : (
-                  <Button
-                    title={t("common.delete")}
-                    role="destructive"
-                    action={() => void deleteComic(group)}
-                  />
-                ),
-            }}
-          >
-            <NavigationLink
-              destination={
-                <OfflineComicScreen
-                  sourceKey={group.sourceKey}
-                  comicId={group.comicId}
-                  title={group.title}
-                  cover={group.cover}
-                  zoomFrom={{ sourceID: zoomID, namespace: offlineNs }}
-                />
-              }
-            >
-              <Card>
-                <ComicListRow
-                  sourceKey={group.sourceKey}
-                  cover={group.cover}
-                  title={group.title}
-                  subtitle={group.sourceName}
-                  coverTransition={{ id: zoomID, namespace: offlineNs }}
-                  detail={t("bookshelf.chapterStats", {
-                    done: group.completedChapters,
-                    total: group.chapters.length,
-                    n: group.chapters.length,
-                    size: formatBytes(group.totalBytes),
-                  })}
-                />
-              </Card>
-            </NavigationLink>
-          </VStack>
-        )
-      })}
-    </LazyVStack>
+            return (
+              // 左滑與長按掛在外層（點一下仍然是 NavigationLink 的推入）；外層也裁成卡片形狀，滑動底才不露方角。
+              <VStack
+                key={comicIdOf(comic)}
+                spacing={0}
+                clipShape={cardShape}
+                // 下載中也直接給刪除（先確認）；只想停下載的人走長按選單。
+                trailingSwipeActions={{
+                  allowsFullSwipe: false,
+                  actions: [
+                    <Button
+                      key="swipe"
+                      title={t("common.delete")}
+                      systemImage="trash.fill"
+                      role="destructive"
+                      action={() => void deleteComic(comic)}
+                    />,
+                  ],
+                }}
+                contextMenu={{
+                  menuItems: (
+                    <Group>
+                      {comic.active > 0 ? (
+                        <Button
+                          title={t("settings.downloads.cancel")}
+                          action={() => library.offline.cancelComic(comic)}
+                        />
+                      ) : null}
+                      <Button
+                        title={t("common.delete")}
+                        role="destructive"
+                        action={() => void deleteComic(comic)}
+                      />
+                    </Group>
+                  ),
+                }}
+              >
+                <NavigationLink
+                  destination={
+                    <OfflineComicScreen
+                      sourceKey={comic.sourceKey}
+                      comicId={comic.comicId}
+                      title={title}
+                      cover={comic.cover}
+                      zoomFrom={{ sourceID: zoomID, namespace: offlineNs }}
+                    />
+                  }
+                >
+                  <Card>
+                    <ComicListRow
+                      sourceKey={comic.sourceKey}
+                      cover={comic.cover}
+                      title={title}
+                      subtitle={comic.sourceName ?? t("bookshelf.sourceRemovedTitle")}
+                      coverTransition={{ id: zoomID, namespace: offlineNs }}
+                      detail={t("bookshelf.chapterStats", {
+                        done: comic.completed,
+                        total: comic.chapters,
+                        n: comic.chapters,
+                        size: formatBytes(comic.bytes),
+                      })}
+                    />
+                  </Card>
+                </NavigationLink>
+              </VStack>
+            )
+          })}
+        </LazyVStack>
       )}
     </NamespaceReader>
   )

@@ -17,7 +17,7 @@ import {
 } from "scripting"
 import { Script } from "scripting"
 
-import { isActive, type ChapterRef, type DownloadRecord } from "../../app/comic"
+import { isActive, type ChapterRef, type ComicRef, type DownloadRecord, type ReaderChapter } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { ComicListRow } from "../../components/ComicListRow"
@@ -27,7 +27,6 @@ import { EmptyState } from "../../design/status"
 import { fill, rowPadding, toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
-import { cachedChapterList, mergeChapterList } from "../../engine/offline"
 import { t } from "../../i18n"
 import { ReaderScreen } from "../shared/ReaderScreen"
 import {
@@ -47,12 +46,13 @@ export function DownloadScreen() {
   return (
     <DownloadSections
       records={library.listDownloads()}
-      used={library.downloadsSize()}
+      used={library.offline.totalBytes()}
       background={getBackgroundDownloads()}
       canUseBackground={canUseBackground}
       onToggleBackground={setBackgroundDownloads}
       onCancel={library.cancelDownload}
-      onDelete={library.deleteDownload}
+      onDelete={ref => void library.offline.deleteChapter(ref)}
+      readerChapters={library.offline.readerChapters}
     />
   )
 }
@@ -107,6 +107,7 @@ export function DownloadSections({
   onToggleBackground,
   onCancel,
   onDelete,
+  readerChapters,
 }: {
   records: DownloadRecord[]
   used: number
@@ -115,6 +116,8 @@ export function DownloadSections({
   onToggleBackground: (value: boolean) => void
   onCancel: (ref: ChapterRef) => void
   onDelete: (ref: ChapterRef) => void
+  /** 這一部的閱讀器章節清單（本機快取合併已下載的章）；預覽餵假的就好。 */
+  readerChapters: (ref: ComicRef) => ReaderChapter[]
 }) {
   const active = records.filter(record => isActive(record.state))
   const pending = records.filter(record => record.state === "partial" || record.state === "failed")
@@ -239,6 +242,7 @@ export function DownloadSections({
                 isExpanded={isExpanded}
                 onToggle={() => toggleExpand(group.groupKey)}
                 onDeleteChapter={onDelete}
+                readerChapters={readerChapters}
               />
             )
           })}
@@ -343,11 +347,13 @@ function ComicGroupCard({
   isExpanded,
   onToggle,
   onDeleteChapter,
+  readerChapters,
 }: {
   group: ComicDownloadGroup
   isExpanded: boolean
   onToggle: () => void
   onDeleteChapter: (ref: ChapterRef) => void
+  readerChapters: (ref: ComicRef) => ReaderChapter[]
 }) {
   async function handleDeleteAll() {
     const confirmed = await Dialog.confirm({
@@ -425,7 +431,7 @@ function ComicGroupCard({
                     sourceKey={record.key.sourceKey}
                     comicId={record.key.comicId}
                     epId={record.key.epId}
-                    chapters={mergeChapterList(cachedChapterList(record.key.sourceKey, record.key.comicId), record.key.sourceKey, record.key.comicId)}
+                    chapters={readerChapters(record.key)}
                     comicTitle={record.comicTitle ?? ""}
                     comicCover={record.cover}
                   />

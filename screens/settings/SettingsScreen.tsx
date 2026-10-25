@@ -15,6 +15,7 @@ import {
   useThemeChoice,
 } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
+import { comicLibrary } from "../../app/services"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, SelectRow, rowSeparatorInset } from "../../design/rows"
 import { palette } from "../../design/tokens"
@@ -24,7 +25,6 @@ import { formatBytes } from "../../engine/format"
 import { LOCALE_IDS, subscribe as subscribeLocale, t } from "../../i18n"
 import { allSources, reloadRegistry, subscribeSources } from "../../sources/registry"
 import { listDownloads, subscribeDownloads } from "../../sources/downloads"
-import { totalBytes } from "../../engine/offline"
 import { DownloadScreen } from "./DownloadScreen"
 import { DependencyScreen } from "./DependencyScreen"
 import { ImageCacheSettingsScreen } from "./ImageCacheSettingsScreen"
@@ -56,7 +56,7 @@ export function SettingsScreen() {
   const downloads = listDownloads()
   const downloadDetail =
     downloads.length > 0
-      ? `${t("settings.shared.countChapters", { n: downloads.length })} · ${formatBytes(totalBytes())}`
+      ? `${t("settings.shared.countChapters", { n: downloads.length })} · ${formatBytes(comicLibrary().offline.totalBytes())}`
       : undefined
 
   const cacheDetail =

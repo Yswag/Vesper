@@ -309,8 +309,15 @@ export function cancelChapterDownload(key: OfflineKey): void {
   bus.emitDebounced()
 }
 
-/** 刪掉一章的下載：釋放空間，順便清掉它留下的失敗紀錄。 */
-export function deleteChapterDownload(key: OfflineKey): void {
+/**
+ * 刪掉一章的下載：**先取消、等任務真的收尾再刪檔**。
+ * 直接刪檔的話，跑得中的任務手上的 manifest 物件晚一步寫回去，那一章就復活（只剩幾頁）。
+ * 排隊中的任務在取消時就抽掉了，等於不用等。
+ */
+export async function deleteChapterDownload(key: OfflineKey): Promise<void> {
+  const task = tasks.get(idOf(key))
+  cancelChapterDownload(key)
+  if (task && task.state !== "finished") await task.finished
   tasks.delete(idOf(key))
   removeChapter(key)
 }

@@ -4,6 +4,7 @@
 
 import { Button, Divider, Menu, NavigationLink, ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
 
+import { shelfItems, type ShelfFilter, type ShelfItem, type ShelfSort } from "../../app/shelf"
 import { comicLibrary } from "../../app/services"
 import { PageBackground } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
@@ -15,61 +16,27 @@ import { IconRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
-import { comicCount, comicGroupKey, subscribeOffline, totalBytes } from "../../engine/offline"
 import { subscribe as subscribeLocale, t, type MessageKey } from "../../i18n"
-import { listFavorites, listProgress, removeFavorite, type Favorite, type Progress } from "../../library/bookshelf"
+import { listFavorites, listProgress, removeFavorite } from "../../library/bookshelf"
 import { HistoryScreen } from "./HistoryScreen"
 import { OfflineLibraryPage } from "./OfflineLibraryScreen"
 
-type Sort = "recent" | "added" | "title"
-type Filter = "all" | "read" | "unread"
-
-const SORTS: { value: Sort; key: MessageKey }[] = [
+const SORTS: { value: ShelfSort; key: MessageKey }[] = [
   { value: "recent", key: "bookshelf.sortRecent" },
   { value: "added", key: "bookshelf.sortAdded" },
   { value: "title", key: "bookshelf.sortTitle" },
 ]
-const FILTERS: { value: Filter; key: MessageKey }[] = [
+const FILTERS: { value: ShelfFilter; key: MessageKey }[] = [
   { value: "all", key: "bookshelf.filterAll" },
   { value: "read", key: "bookshelf.filterRead" },
   { value: "unread", key: "bookshelf.filterUnread" },
 ]
 
-interface ShelfItem {
-  favorite: Favorite
-  progress?: Progress
-}
-
-/** 收藏接上閱讀紀錄（同一個鍵），再排序、篩選。 */
-function shelfItems(sort: Sort, filter: Filter): ShelfItem[] {
-  const progress = new Map(listProgress().map(entry => [comicGroupKey(entry), entry]))
-  const items = listFavorites()
-    .map(favorite => ({ favorite, progress: progress.get(comicGroupKey(favorite)) }))
-    .filter(item =>
-      filter === "read" ? item.progress !== undefined : filter === "unread" ? item.progress === undefined : true
-    )
-  // 沒讀過的用收藏時間排，才不會全部沉到最底。
-  const lastTouched = (item: ShelfItem) => item.progress?.updatedAt ?? item.favorite.addedAt
-  return items.sort((a, b) =>
-    sort === "title"
-      ? a.favorite.title.localeCompare(b.favorite.title)
-      : sort === "added"
-        ? b.favorite.addedAt - a.favorite.addedAt
-        : lastTouched(b) - lastTouched(a)
-  )
-}
-
-/** 這一話讀到哪（pageCount 是單話頁數，整本的進度沒有資料）。 */
-function chapterFraction(progress?: Progress): number | undefined {
-  if (!progress || progress.page === undefined || !progress.pageCount || progress.pageCount <= 1) return undefined
-  return Math.min(1, (progress.page + 1) / progress.pageCount)
-}
-
-function gridEntry({ favorite, progress }: ShelfItem): ComicGridEntry {
+function gridEntry({ favorite, progress, readFraction, removed }: ShelfItem): ComicGridEntry {
   return {
     sourceKey: favorite.sourceKey,
-    removed: comicLibrary().source(favorite.sourceKey) === undefined,
-    readFraction: chapterFraction(progress),
+    removed,
+    readFraction,
     comic: {
       id: favorite.comicId,
       title: favorite.title,
@@ -81,20 +48,21 @@ function gridEntry({ favorite, progress }: ShelfItem): ComicGridEntry {
 }
 
 export function BookshelfScreen() {
-  const [sort, setSort] = useState<Sort>("recent")
-  const [filter, setFilter] = useState<Filter>("all")
+  const [sort, setSort] = useState<ShelfSort>("recent")
+  const [filter, setFilter] = useState<ShelfFilter>("all")
 
-  // 源清單、書架（收藏／歷史）、離線層與語言一變就重繪；回傳的 refresh 給 onAppear 用。
-  const refresh = useSubscription(comicLibrary().onChange, subscribeOffline, subscribeLocale)
+  // 源清單、書架（收藏／歷史）、離線層與語言一變就重繪（`onChange` 已含離線層）；回傳的 refresh 給 onAppear 用。
+  const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
 
   useEffect(() => {
     refresh()
   }, [])
 
+  const library = comicLibrary()
   const favoriteCount = listFavorites().length
   const items = shelfItems(sort, filter)
   const historyCount = listProgress().length
-  const offlineCount = comicCount()
+  const offlineCount = library.offline.comicCount()
 
   return (
     <ZStack
@@ -160,7 +128,7 @@ export function BookshelfScreen() {
                   title={t("bookshelf.offlineTab")}
                   detail={
                     offlineCount > 0
-                      ? `${t("bookshelf.comicCount", { n: offlineCount })} · ${formatBytes(totalBytes())}`
+                      ? `${t("bookshelf.comicCount", { n: offlineCount })} · ${formatBytes(library.offline.totalBytes())}`
                       : undefined
                   }
                   chevron

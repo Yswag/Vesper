@@ -12,6 +12,7 @@ import {
   useState,
 } from "scripting"
 
+import { resumeEntry } from "../../app/shelf"
 import { comicLibrary } from "../../app/services"
 import { PageBackground } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
@@ -20,18 +21,16 @@ import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { EmptyState } from "../../design/status"
 import { cardShape, fill, palette, radius, rect } from "../../design/tokens"
-import { subscribeOffline } from "../../engine/offline"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { clearProgress, listProgress, type Progress } from "../../library/bookshelf"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
-import { canResumeOffline } from "../../app/offlineReading"
 import { formatHistoryTime } from "./historyTime"
 
 export function HistoryScreen() {
   // 長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
   const [detailOf, setDetailOf] = useState<Progress | null>(null)
-  const refresh = useSubscription(comicLibrary().onChange, subscribeOffline, subscribeLocale)
+  const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
   const progress = listProgress()
 
   return (
@@ -110,35 +109,25 @@ export function HistoryCard({
   /** 給了就把封面當 zoom 來源（跟收藏網格推詳情一樣）。 */
   zoomNamespace?: NamespaceID
 }) {
-  const source = comicLibrary().source(entry.sourceKey)
-  // 判斷是否可走離線續讀；若無離線則退回線上來源開啟
-  const offline = canResumeOffline(
-    { sourceKey: entry.sourceKey, comicId: entry.comicId, epId: entry.epId },
-    entry.offline
-  )
-  const openable = source !== undefined || offline
+  const shown = resumeEntry(entry)
   // 源被移除時，還有離線內容就只顯示「離線」——內容就在手機上，那筆紀錄不該是紅字「來源已移除」。
-  const sourceName = source?.name ?? (offline ? null : t("bookshelf.sourceRemovedTitle"))
+  const sourceName = shown.sourceName ?? (shown.source === "offlineOnly" ? null : t("bookshelf.sourceRemovedTitle"))
   const [opening, setOpening] = useState(false)
   const meta = [
-    offline ? t("common.offlineTag") : null,
+    shown.offline ? t("common.offlineTag") : null,
     sourceName,
-    openable ? entry.epTitle || t("bookshelf.lastRead") : null,
+    shown.openable ? entry.epTitle || t("bookshelf.lastRead") : null,
   ]
     .filter(Boolean)
     .join(" · ")
-  const pageLabel =
-    entry.page === undefined
-      ? null
-      : entry.pageCount && entry.pageCount > 1
-        ? t("bookshelf.pageOfTotal", { page: entry.page + 1, total: entry.pageCount })
-        : t("bookshelf.pageOf", { page: entry.page + 1 })
-  const barValue =
-    openable && entry.page !== undefined && entry.pageCount && entry.pageCount > 1
-      ? Math.min((entry.page + 1) / entry.pageCount, 1)
-      : null
+  const pageLabel = shown.pageLabel
+    ? shown.pageLabel.total !== undefined
+      ? t("bookshelf.pageOfTotal", { page: shown.pageLabel.page, total: shown.pageLabel.total })
+      : t("bookshelf.pageOf", { page: shown.pageLabel.page })
+    : null
+  const barValue = shown.openable ? (shown.readFraction ?? null) : null
   // 兩段都可能沒有（沒有頁碼的舊資料／時間解析不出來），所以還是「有值的才接」；分隔號是標點。
-  const detail = openable ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ") : null
+  const detail = shown.openable ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ") : null
 
   const body = (
     <Card>
@@ -147,7 +136,7 @@ export function HistoryCard({
         cover={entry.cover}
         title={entry.title}
         subtitle={meta}
-        subtitleColor={openable ? "secondaryLabel" : palette.red}
+        subtitleColor={shown.openable ? "secondaryLabel" : palette.red}
         detail={detail}
         coverTransition={zoomNamespace ? { id: historyZoomID(entry), namespace: zoomNamespace } : undefined}
         footer={barValue !== null ? <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} /> : undefined}
@@ -162,20 +151,13 @@ export function HistoryCard({
     </Card>
   )
 
-  const row = openable ? (
+  const row = shown.openable ? (
     <Button
       buttonStyle="plain"
       disabled={opening}
       action={() => {
         setOpening(true)
-        void launchResumeReader({
-          sourceKey: entry.sourceKey,
-          comicId: entry.comicId,
-          epId: entry.epId,
-          page: entry.page,
-          title: entry.title,
-          cover: entry.cover,
-        }).finally(() => {
+        void launchResumeReader({ sourceKey: entry.sourceKey, comicId: entry.comicId }).finally(() => {
           setOpening(false)
         })
       }}
@@ -187,7 +169,7 @@ export function HistoryCard({
     body
   )
 
-  const canOpenDetail = onOpenDetail !== undefined && source !== undefined
+  const canOpenDetail = onOpenDetail !== undefined && shown.source === "present"
   if (!onDelete && !canOpenDetail) return row
 
   return (

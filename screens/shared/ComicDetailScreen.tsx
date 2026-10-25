@@ -146,12 +146,8 @@ export function ComicDetailScreen({
     }
   }, [sourceKey, comicId])
 
-  const chapters: ChapterRef[] = (detail?.chapters ?? []).map(chapter => ({
-    id: chapter.ref.epId,
-    title: chapter.title || chapter.group || t("detail.singleChapter"),
-    group: chapter.group,
-    locked: chapter.locked,
-  }))
+  // 章節清單的轉換只有一份（`ComicLibrary.readerChapters`）：詳情頁與續讀拿到的是同一個形狀。
+  const chapters: ChapterRef[] = detail ? library.readerChapters(detail) : []
 
   // 續讀點：ComicLibrary 會把越界的頁碼 clamp 到合法範圍；沒讀過就是 null。
   const resumed = library.resume({ sourceKey, comicId })

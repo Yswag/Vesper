@@ -1,13 +1,13 @@
-// 離線漫畫：從書架的離線分頁推入，只寫離線層看得到的章節。
+// 離線漫畫：從書架的離線分頁推入，只列真的在手機上的章節。
 //
-// 順序：有章節清單快取就照源原本的順序；沒有就退回下載時間正序（舊下載只有這個）。
-// 快取裡沒有的章（源把那話拿掉、但手機上還留著）照下載時間附在最後——永遠不因為清單變動而消失。
+// 順序由 ComicLibrary 給（有章節清單快取就照源原本的順序；沒有就退回下載時間正序）。
 //
 // 繼續閱讀：有進度且那一章下載完 → 從那一章那一頁開；否則開第一個下載完的章。
+// 下載中的章也刪得掉：左滑（先確認）交給資料層取消任務、等它收尾再刪檔；長按選單另有「取消」。
 
-import { Button, HStack, Image, LazyVStack, ProgressView, Spacer, Text, VStack } from "scripting"
+import { Button, Group, HStack, Image, LazyVStack, ProgressView, Spacer, Text, VStack } from "scripting"
 
-import type { ChapterDownloadState } from "../../app/comic"
+import { isActive, type OfflineChapterRow } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useTint } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
@@ -19,30 +19,12 @@ import { EmptyState } from "../../design/status"
 import { Tag } from "../../design/Tag"
 import { cardGap, cardShape, fill, radius, rect, rowPadding, tagText } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
-import { cachedChapterList, listChapters, mergeChapterList, statusOf, type OfflineChapter } from "../../engine/offline"
 import { HERO_ASPECT } from "../shared/comicMetrics"
 import { presentReader } from "../shared/ResumeReaderScreen"
+import type { ChapterRef } from "../shared/ReaderScreen"
 
 /** 縮小版 hero：詳情頁封面 124 寬，這裡小一號。 */
 const HERO_COVER = { width: 96, height: Math.round(96 * HERO_ASPECT) }
-
-/** 一部漫畫的離線章節，照源原本的順序（有快取時）；快取是下載時刻才有的，舊下載退回下載時間正序。 */
-function chaptersOf(sourceKey: string, comicId: string): OfflineChapter[] {
-  const downloaded = listChapters()
-    .filter(chapter => chapter.key.sourceKey === sourceKey && chapter.key.comicId === comicId)
-    .sort((a, b) => a.updatedAt - b.updatedAt)
-  const cached = cachedChapterList(sourceKey, comicId)
-  if (!cached) return downloaded
-  const rank = new Map(cached.map((chapter, at) => [chapter.id, at]))
-  // 不是快取裡的排最後；相同 rank 由 Array#sort 的穩定排序保留下載順序。
-  return downloaded.sort(
-    (a, b) => (rank.get(a.key.epId) ?? cached.length) - (rank.get(b.key.epId) ?? cached.length)
-  )
-}
-
-function titleOf(chapter: OfflineChapter): string {
-  return chapter.epTitle ?? chapter.key.epId
-}
 
 export function OfflineComicScreen({
   sourceKey,
@@ -63,31 +45,33 @@ export function OfflineComicScreen({
   // 下載進度、刪除、書架進度都會讓這裡重繪（`onChange` 已含離線層）；語言也是訂閱源。
   useSubscription(library.onChange, subscribeLocale)
 
-  const chapters = chaptersOf(sourceKey, comicId)
-  const rows = chapters.map(chapter => ({ chapter, state: library.downloadState(chapter.key) }))
-  const comicTitle = title ?? chapters.find(chapter => chapter.comicTitle)?.comicTitle ?? t("bookshelf.unknownComic")
-  const comicCover = cover ?? chapters.find(chapter => chapter.cover)?.cover
-  const sourceName = library.source(sourceKey)?.name ?? t("bookshelf.sourceRemoved")
+  const ref = { sourceKey, comicId }
+  const rows = library.offline.chapters(ref)
+  const offline = library.offline.comic(ref)
+  const comicTitle = title ?? offline?.title ?? t("bookshelf.unknownComic")
+  const comicCover = cover ?? offline?.cover
+  const sourceName = offline?.sourceName ?? t("bookshelf.sourceRemoved")
   const doneCount = rows.filter(row => row.state.state === "done").length
-  const bytes = chapters.reduce((sum, chapter) => sum + statusOf(chapter.key).bytes, 0)
+  const bytes = rows.reduce((sum, row) => sum + row.bytes, 0)
 
-  const resume = library.resume({ sourceKey, comicId })
-  const resumeEpId = resume?.chapter.epId
-  const resumeRow = resumeEpId
-    ? rows.find(row => row.chapter.key.epId === resumeEpId && row.state.state === "done")
+  const resume = library.resume(ref)
+  const resumeRow = resume
+    ? rows.find(row => row.ref.epId === resume.chapter.epId && row.state.state === "done")
     : undefined
   const target = resumeRow ?? rows.find(row => row.state.state === "done")
   const targetPage = resume && resumeRow ? resume.page : undefined
 
-  async function deleteChapter(chapter: OfflineChapter) {
+  /** 這一部的章節清單（本機快取合併已下載的章）：開閱讀器、換話都用它。 */
+  const readerChapters = () => library.offline.readerChapters(ref)
+
+  async function deleteChapter(row: OfflineChapterRow) {
     const confirmed = await Dialog.confirm({
       title: t("common.delete"),
-      message: t("bookshelf.deleteChapterConfirm", { chapter: titleOf(chapter) }),
+      message: t("bookshelf.deleteChapterConfirm", { chapter: row.title }),
       confirmLabel: t("common.delete"),
       cancelLabel: t("common.cancel"),
     })
-    if (!confirmed) return
-    library.deleteDownload(chapter.key)
+    if (confirmed) await library.offline.deleteChapter(row.ref)
   }
 
   // 刪光了就留在這一頁說清楚（沒有可用的 pop；回上一頁是使用者的手勢）。
@@ -152,8 +136,8 @@ export function OfflineComicScreen({
             void presentReader({
               sourceKey,
               comicId,
-              epId: target.chapter.key.epId,
-              chapters: mergeChapterList(cachedChapterList(sourceKey, comicId), sourceKey, comicId),
+              epId: target.ref.epId,
+              chapters: readerChapters(),
               comicTitle,
               comicCover,
               initialPage: targetPage,
@@ -164,8 +148,8 @@ export function OfflineComicScreen({
             label={resumeRow ? t("detail.resumeReading") : t("detail.startReading")}
             detail={
               targetPage !== undefined
-                ? t("detail.chapterAtPage", { chapter: titleOf(target.chapter), n: targetPage + 1 })
-                : titleOf(target.chapter)
+                ? t("detail.chapterAtPage", { chapter: target.title, n: targetPage + 1 })
+                : target.title
             }
           />
         </Button>
@@ -177,16 +161,16 @@ export function OfflineComicScreen({
       <LazyVStack spacing={cardGap} frame={{ maxWidth: "infinity" }} swipeActionsContainer={true}>
         {rows.map(row => (
           <ChapterRow
-            key={row.chapter.key.epId}
-            chapter={row.chapter}
-            state={row.state}
-            resumePage={resume && row.chapter.key.epId === resume.chapter.epId ? resume.page : undefined}
+            key={row.ref.epId}
+            row={row}
+            resumePage={resume && row.ref.epId === resume.chapter.epId ? resume.page : undefined}
             sourceKey={sourceKey}
             comicId={comicId}
             comicTitle={comicTitle}
             comicCover={comicCover}
-            onDelete={() => void deleteChapter(row.chapter)}
-            onCancel={() => library.cancelDownload(row.chapter.key)}
+            readerChapters={readerChapters}
+            onDelete={() => void deleteChapter(row)}
+            onCancel={() => library.cancelDownload(row.ref)}
           />
         ))}
       </LazyVStack>
@@ -226,34 +210,34 @@ function PrimaryAction({ label, detail, disabled = false }: { label: string; det
 
 /** 一章：下載完的點進閱讀器；其餘只顯示佇列／進行中的狀態，不給點。 */
 function ChapterRow({
-  chapter,
-  state,
+  row,
   resumePage,
   sourceKey,
   comicId,
   comicTitle,
   comicCover,
+  readerChapters,
   onDelete,
   onCancel,
 }: {
-  chapter: OfflineChapter
-  state: ChapterDownloadState
+  row: OfflineChapterRow
   resumePage?: number
   sourceKey: string
   comicId: string
   comicTitle: string
   comicCover?: string
+  /** 這一部的章節清單（開閱讀器時要一起給）。 */
+  readerChapters: () => ChapterRef[]
   onDelete: () => void
   onCancel: () => void
 }) {
-  const status = statusOf(chapter.key)
+  const { state } = row
   const done = state.state === "done"
   const failed = state.state === "failed"
-  // 還在跑的章不能直接刪：任務跑完手上那一張會把 manifest 寫回去（資料層的邊界，見回報）。
-  const active = state.state === "running" || state.state === "queued"
+  const active = isActive(state.state)
 
   const detail = done
-    ? t("bookshelf.downloadedStats", { n: status.total, size: formatBytes(status.bytes) })
+    ? t("bookshelf.downloadedStats", { n: row.pages, size: formatBytes(row.bytes) })
     : state.state === "running"
       ? t("detail.downloadRunning", { done: state.completed, total: state.total })
       : state.state === "queued"
@@ -284,7 +268,7 @@ function ChapterRow({
             lineLimit={1}
             frame={{ maxWidth: "infinity", alignment: "leading" }}
           >
-            {titleOf(chapter)}
+            {row.title}
           </Text>
           <Text
             font="caption2"
@@ -309,8 +293,8 @@ function ChapterRow({
         void presentReader({
           sourceKey,
           comicId,
-          epId: chapter.key.epId,
-          chapters: mergeChapterList(cachedChapterList(sourceKey, comicId), sourceKey, comicId),
+          epId: row.ref.epId,
+          chapters: readerChapters(),
           comicTitle,
           comicCover,
           initialPage: resumePage,
@@ -328,17 +312,20 @@ function ChapterRow({
     <VStack
       spacing={0}
       clipShape={cardShape}
+      // 下載中也刪得掉（先確認）；只想停下載的人走長按選單。
       trailingSwipeActions={{
         allowsFullSwipe: false,
         actions: [
-          <Button
-            key="swipe"
-            title={active ? t("settings.downloads.cancel") : t("common.delete")}
-            systemImage={active ? "xmark.circle.fill" : "trash.fill"}
-            role="destructive"
-            action={active ? onCancel : onDelete}
-          />,
+          <Button key="swipe" title={t("common.delete")} systemImage="trash.fill" role="destructive" action={onDelete} />,
         ],
+      }}
+      contextMenu={{
+        menuItems: (
+          <Group>
+            {active ? <Button title={t("settings.downloads.cancel")} action={onCancel} /> : null}
+            <Button title={t("common.delete")} role="destructive" action={onDelete} />
+          </Group>
+        ),
       }}
     >
       {content}

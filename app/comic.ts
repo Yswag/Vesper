@@ -7,10 +7,16 @@ import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../e
 import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
 import {
   cacheChapterList,
+  cachedChapterList,
+  chapterOf,
+  comicGroupKey,
+  listChapters,
+  mergeChapterList,
   readerImageBytes,
   saveChapterList,
   statusOf,
   totalBytes,
+  type OfflineChapter,
   type OfflineStatus,
   type ReaderChapter,
 } from "../engine/offline"
@@ -75,7 +81,7 @@ import {
 } from "../sources/runner"
 import { searchAll, searchOne, type SearchProgress, type SourceSearchResult } from "../sources/search"
 import { searchOptionRows, type SearchOptionRow } from "../sources/searchOptions"
-import { createOfflineSession, isOfflineReadable } from "./offlineReading"
+import { canResumeOffline, createOfflineSession, isOfflineReadable } from "./offlineReading"
 
 /** 「還在跑」是下載語意的一部分（畫面判斷要不要給取消／左滑下載都用它）。 */
 export { isActive }
@@ -88,6 +94,8 @@ export type {
   ExploreEntry,
   ListTarget,
   RankingOption,
+  /** 閱讀器／章節清單快取共用的章節形狀（`readerChapters()` 給的就是這個）。 */
+  ReaderChapter,
   SearchOptionRow,
   SearchProgress,
   SectionPage,
@@ -194,14 +202,63 @@ export interface ResumePoint {
   offline: boolean
 }
 
-/** 源的章節清單 → 顯示／快取的形狀（標題缺了沿用詳情頁章節列的替代字）。 */
-function chapterListOf(chapters: ComicDetail["chapters"]): ReaderChapter[] {
-  return chapters.map(chapter => ({
-    id: chapter.id,
+/** 續讀要開的東西：畫面拿到就只是「開」，不必再挑話或決定清單怎麼來。 */
+export interface ResumePlan {
+  /** 要開的那一話。 */
+  epId: string
+  /** 從第幾頁（0 起算）；換話就沒有（從頭）。 */
+  page?: number
+  /** 開場的章節清單（本機合併清單或線上清單）。 */
+  chapters: ReaderChapter[]
+  /** 先開再補：清單是手上的本機版本，背景再向源更新。 */
+  refreshChapters: boolean
+  comicTitle: string
+  comicCover?: string
+  /** 源宣告的閱讀方式（離線那條路沒有，就退全域設定）。 */
+  viewer?: SourceViewer
+}
+
+/** 續讀開不了的原因（字串由畫面挑；`unavailable` 帶下層原文）。 */
+export type ResumeFailure =
+  | { reason: "noChapters" }
+  | { reason: "allLocked" }
+  | { reason: "unavailable"; message: string }
+
+/** 來源的一章 → 閱讀器／清單快取的形狀（標題缺了沿用詳情頁章節列的替代字）。 */
+function readerChapterOf(
+  id: string,
+  chapter: { title?: string; group?: string; locked?: boolean }
+): ReaderChapter {
+  return {
+    id,
     title: chapter.title || chapter.group || t("detail.singleChapter"),
     group: chapter.group,
     locked: chapter.locked === true ? true : undefined,
-  }))
+  }
+}
+
+/** 詳情頁的章節清單 → 閱讀器的章節清單（全 App 一份轉換，詳情頁與續讀共用）。 */
+function readerChaptersOf(chapters: ComicPage["chapters"]): ReaderChapter[] {
+  return chapters.map(chapter => readerChapterOf(chapter.ref.epId, chapter))
+}
+
+/** 源的章節清單 → 顯示／快取的形狀。 */
+function chapterListOf(chapters: ComicDetail["chapters"]): ReaderChapter[] {
+  return chapters.map(chapter => readerChapterOf(chapter.id, chapter))
+}
+
+/** 續讀點（未讀或沒有紀錄就 null；越界自動 clamp）。 */
+function resumePointOf(ref: ComicRef): ResumePoint | null {
+  const progress = getProgress(ref.sourceKey, ref.comicId)
+  if (!progress?.epId) return null
+  const page = progress.page ?? 0
+  const count = progress.pageCount
+  // 兩種越界都收掉：負數歸 0；知道頁數時再往內收到最後一頁（舊資料沒有 pageCount，只能收下界）。
+  return {
+    chapter: { ...ref, epId: progress.epId },
+    page: Math.max(0, count && count > 0 ? Math.min(page, count - 1) : page),
+    offline: progress.offline === true,
+  }
 }
 
 /**
@@ -243,6 +300,60 @@ export interface CommentPage {
 /** 要下載的章節：呼叫端手上有標題就一起帶，省下 ComicLibrary 自己問一次詳情。 */
 export interface ChapterDownloadRequest extends ChapterRef {
   title?: string
+}
+
+/** 一部有離線內容的漫畫（離線書架的一列）。 */
+export interface OfflineComic extends ComicRef {
+  /** manifest 記下來的書名；舊下載可能沒有（畫面挑替代字）。 */
+  title?: string
+  cover?: string
+  /** 源的顯示名稱；源被移除就沒有。 */
+  sourceName?: string
+  /** 手機上有幾章（含沒抓完的）。 */
+  chapters: number
+  /** 其中下載完的章數。 */
+  completed: number
+  /** 還在下載（排隊中或進行中）的章數。 */
+  active: number
+  bytes: number
+  /** 這部最近一次下載的時間（最近有人下載的排前面）。 */
+  updatedAt: number
+}
+
+/** 離線章節列的一章：只有真的在手機上的章才會列出來。 */
+export interface OfflineChapterRow {
+  ref: ChapterRef
+  title: string
+  /** 下載狀態（完成／未完成／下載中／失敗），與詳情頁的章節列同一份語意。 */
+  state: ChapterDownloadState
+  /** 已落地的張數與大小（manifest 為準）。 */
+  pages: number
+  bytes: number
+}
+
+/**
+ * 離線內容的統一入口：分組好的清單、章節狀態、集中／單章刪除與總量。
+ * 畫面的左滑與長按只要說「刪這部／刪這章」，取消任務、等它收尾、再刪檔都在這裡。
+ */
+export interface OfflineLibrary {
+  /** 已分組的離線漫畫，最近有人下載的排前面。 */
+  comics(): OfflineComic[]
+  /** 單一部的統計；這部沒有離線內容就沒有。 */
+  comic(ref: ComicRef): OfflineComic | undefined
+  /** 一部的離線章節列，順序同 `offline-chapter-list` 的合併清單。 */
+  chapters(ref: ComicRef): OfflineChapterRow[]
+  /** 閱讀器要的章節清單：本機快取（源原本的順序）＋不在快取裡但已下載的章。 */
+  readerChapters(ref: ComicRef): ReaderChapter[]
+  /** 刪掉整部（下載中的先取消、等任務收尾再刪檔）。 */
+  deleteComic(ref: ComicRef): Promise<void>
+  /** 刪掉一章（下載中的先取消、等任務收尾再刪檔）。 */
+  deleteChapter(ref: ChapterRef): Promise<void>
+  /** 只停下載、留著已抓到的頁（長按選單的「取消」）。 */
+  cancelComic(ref: ComicRef): void
+  /** 有離線內容的漫畫數（書架入口列）。 */
+  comicCount(): number
+  /** 離線內容總共佔多少位元組（書架入口列、設定頁）。 */
+  totalBytes(): number
 }
 
 /** 整組下載共用的資訊（漫畫名與封面，下載頁要顯示）。 */
@@ -295,6 +406,10 @@ export interface ComicLibrary {
    * 取得續讀進度點（未讀回傳 null，越界自動 clamp）。
    */
   resume(ref: ComicRef): ResumePoint | null
+  /** 續讀計畫：挑哪一話、從第幾頁、開場的清單（本機或線上）與要不要背景再補；開不了就回原因。 */
+  resumePlan(ref: ComicRef): Promise<ResumePlan | ResumeFailure>
+  /** 詳情頁的章節清單 → 閱讀器的章節形狀（全 App 一份轉換）。 */
+  readerChapters(page: ComicPage): ReaderChapter[]
   /** 留言一頁（不落地、不快取：每次進來重新讀）。 */
   comments(target: ComicCommentTarget, page: number): Promise<CommentPage>
   /** 送出留言（空白內容在源邊界就被擋下來）。 */
@@ -312,10 +427,9 @@ export interface ComicLibrary {
   /** 一章現在的下載狀態（畫面每次重繪重讀，才會跟著下載進度動）。 */
   downloadState(ref: ChapterRef): ChapterDownloadState
   cancelDownload(ref: ChapterRef): void
-  deleteDownload(ref: ChapterRef): void
   listDownloads(): DownloadRecord[]
-  /** 離線下載佔用的位元組數。 */
-  downloadsSize(): number
+  /** 離線內容：清單、章節、刪除與總量（離線書架、下載頁、設定頁都走這裡）。 */
+  offline: OfflineLibrary
   /** 源的安裝/變更、下載、書架進度合併成一個訂閱。 */
   onChange(listener: () => void): () => void
 }
@@ -365,6 +479,131 @@ function infoOf(source: InstalledSource): ComicSourceInfo {
   return info
 }
 
+/** 來源的顯示名稱；源被移除就沒有（離線內容照樣看得到，只是不知道本來叫什麼）。 */
+function sourceNameOf(sourceKey: string): string | undefined {
+  const source = findSource(sourceKey)
+  return source ? source.meta?.name ?? source.stored.name : undefined
+}
+
+/** 把離線章節按漫畫分組，最近有人下載的排前面。 */
+function offlineComics(): OfflineComic[] {
+  const groups = new Map<string, OfflineComic>()
+
+  for (const chapter of listChapters()) {
+    const id = comicGroupKey(chapter.key)
+    let group = groups.get(id)
+    if (!group) {
+      group = {
+        sourceKey: chapter.key.sourceKey,
+        comicId: chapter.key.comicId,
+        sourceName: sourceNameOf(chapter.key.sourceKey),
+        chapters: 0,
+        completed: 0,
+        active: 0,
+        bytes: 0,
+        updatedAt: 0,
+      }
+      groups.set(id, group)
+    }
+    const status = statusOf(chapter.key)
+    group.chapters++
+    if (status.state === "done") group.completed++
+    if (isActive(chapterDownloadState(chapter.key).state)) group.active++
+    group.bytes += status.bytes
+    group.updatedAt = Math.max(group.updatedAt, chapter.updatedAt)
+    // 書名與封面缺了就往後面的章找（早期的 manifest 不一定有）。
+    group.title ??= chapter.comicTitle
+    group.cover ??= chapter.cover
+  }
+
+  return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
+/** 離線章節列的一章（只有真的在手機上的章才會列出來）。 */
+function offlineChapterRows(ref: ComicRef): OfflineChapterRow[] {
+  /** 一章的列：標題照 manifest（跟線上清單的取代字無關）。 */
+  const rowOf = (chapter: OfflineChapter): OfflineChapterRow => {
+    const status = statusOf(chapter.key)
+    return {
+      ref: { ...ref, epId: chapter.key.epId },
+      title: chapter.epTitle ?? chapter.key.epId,
+      state: chapterDownloadState(chapter.key),
+      pages: status.total,
+      bytes: status.bytes,
+    }
+  }
+
+  const rows: OfflineChapterRow[] = []
+  const listed = new Set<string>()
+  // 順序同 `offline-chapter-list` 的合併清單（源原本的順序，缺的附在最後）。
+  for (const item of mergeChapterList(cachedChapterList(ref.sourceKey, ref.comicId), ref.sourceKey, ref.comicId)) {
+    const chapter = chapterOf({ ...ref, epId: item.id })
+    if (!chapter) continue
+    rows.push(rowOf(chapter))
+    listed.add(item.id)
+  }
+  // 沒抓完的章不會進合併清單（那份只挑下載完的）：照下載時間附在最後，不然下載中／失敗的章會整個不見。
+  const rest = listChapters()
+    .filter(chapter => chapter.key.sourceKey === ref.sourceKey && chapter.key.comicId === ref.comicId)
+    .filter(chapter => !listed.has(chapter.key.epId))
+    .sort((a, b) => a.updatedAt - b.updatedAt)
+  for (const chapter of rest) rows.push(rowOf(chapter))
+  return rows
+}
+
+/**
+ * 續讀計畫：上次那一話可讀就續、被鎖或不在清單就退第一個沒鎖的章；本機讀得到就秒開不連網。
+ * 清單從哪裡來由呼叫端給（production 就是 `comic()`；探針餵 stub 才驗得到「有沒有連網」）。
+ * 畫面拿到這個就直接開閱讀器，不必自己挑話、也不必自己決定要不要補清單。
+ */
+export async function resumePlan(
+  ref: ComicRef,
+  loadComic: (ref: ComicRef) => Promise<ComicPage>
+): Promise<ResumePlan | ResumeFailure> {
+  const progress = getProgress(ref.sourceKey, ref.comicId)
+  const resumed = resumePointOf(ref)
+  const wantedEpId = resumed?.chapter.epId
+
+  // 先開再補：上次是從本機檔讀的、那一話也還在下載裡 → 不等網路，用本機清單直接開。
+  // 這是「下載了卻被續讀拉回線上（飛航模式下甚至拉不起來）」的那個修正。
+  if (wantedEpId !== undefined && canResumeOffline({ ...ref, epId: wantedEpId }, resumed?.offline)) {
+    return {
+      epId: wantedEpId,
+      page: resumed?.page,
+      chapters: mergeChapterList(cachedChapterList(ref.sourceKey, ref.comicId), ref.sourceKey, ref.comicId),
+      refreshChapters: true,
+      comicTitle: progress?.title ?? wantedEpId,
+      comicCover: progress?.cover,
+    }
+  }
+
+  let page: ComicPage
+  try {
+    page = await loadComic(ref)
+  } catch (error) {
+    // 源不在、沒網路、詳情失敗：原文是下層給的錯誤訊息，照舊給畫面 toast。
+    return { reason: "unavailable", message: error instanceof Error ? error.message : String(error) }
+  }
+
+  const chapters = readerChaptersOf(page.chapters)
+  if (chapters.length === 0) return { reason: "noChapters" }
+  const target = chapters.some(chapter => chapter.id === wantedEpId && !chapter.locked)
+    ? wantedEpId
+    : chapters.find(chapter => !chapter.locked)?.id
+  if (target === undefined) return { reason: "allLocked" }
+
+  return {
+    epId: target,
+    // 續讀同一話才帶頁碼；換話一律從頭。
+    page: target === wantedEpId ? resumed?.page : undefined,
+    chapters,
+    refreshChapters: false,
+    comicTitle: progress?.title ?? page.title,
+    comicCover: progress?.cover ?? page.cover,
+    viewer: page.viewer,
+  }
+}
+
 /** production instance：把既有模組的入口收成一個 domain interface。 */
 export function createComicLibrary(): ComicLibrary {
   /**
@@ -374,6 +613,49 @@ export function createComicLibrary(): ComicLibrary {
   function onChange(listener: () => void): () => void {
     const stops = [subscribeSources(listener), subscribeDownloads(listener), subscribeLibrary(listener)]
     return () => stops.forEach(stop => stop())
+  }
+
+  /**
+   * 詳情（`comic()` 與 `resumePlan()` 共用）；來源名稱與留言能力都由這裡給，呼叫端不必再碰 registry。
+   */
+  const loadComic = async (ref: ComicRef): Promise<ComicPage> => {
+    const { source, handle } = handleOf(ref.sourceKey)
+    const detail = await handle.detail(ref.comicId)
+    // 線上拿到清單就覆寫快取（只在這部有離線內容時留檔，見 engine/offline 的 cacheChapterList）。
+    cacheChapterList(ref.sourceKey, ref.comicId, chapterListOf(detail.chapters))
+    return {
+      ref,
+      title: detail.title,
+      cover: detail.cover,
+      description: detail.description,
+      status: detail.status,
+      contentRating: detail.contentRating,
+      viewer: detail.viewer,
+      stars: detail.stars,
+      subId: detail.subId,
+      tags: detail.tags,
+      updateTime: detail.updateTime,
+      uploadTime: detail.uploadTime,
+      uploader: detail.uploader,
+      artists: detail.artists,
+      likesCount: detail.likesCount,
+      url: detail.url,
+      recommend: detail.recommend,
+      sourceName: source.meta?.name ?? source.stored.name,
+      comments: handle.capabilities?.comments === true,
+      canPostComment: handle.canPostComment(),
+      chapters: detail.chapters.map(chapter => {
+        const chapterRef: ChapterRef = { ...ref, epId: chapter.id }
+        return {
+          ref: chapterRef,
+          title: chapter.title,
+          group: chapter.group,
+          locked: chapter.locked === true,
+          lang: chapter.lang,
+          download: chapterDownloadState(chapterRef),
+        }
+      }),
+    }
   }
 
   return {
@@ -415,46 +697,11 @@ export function createComicLibrary(): ComicLibrary {
 
     onChange,
 
-    comic: async ref => {
-      const { source, handle } = handleOf(ref.sourceKey)
-      const detail = await handle.detail(ref.comicId)
-      // 線上拿到清單就覆寫快取（只在這部有離線內容時留檔，見 engine/offline 的 cacheChapterList）。
-      cacheChapterList(ref.sourceKey, ref.comicId, chapterListOf(detail.chapters))
-      return {
-        ref,
-        title: detail.title,
-        cover: detail.cover,
-        description: detail.description,
-        status: detail.status,
-        contentRating: detail.contentRating,
-        viewer: detail.viewer,
-        stars: detail.stars,
-        subId: detail.subId,
-        tags: detail.tags,
-        updateTime: detail.updateTime,
-        uploadTime: detail.uploadTime,
-        uploader: detail.uploader,
-        artists: detail.artists,
-        likesCount: detail.likesCount,
-        url: detail.url,
-        recommend: detail.recommend,
-        // 來源名稱與留言能力都由這裡給，呼叫端不必再碰 registry / raw source instance。
-        sourceName: source.meta?.name ?? source.stored.name,
-        comments: handle.capabilities?.comments === true,
-        canPostComment: handle.canPostComment(),
-        chapters: detail.chapters.map(chapter => {
-          const chapterRef: ChapterRef = { ...ref, epId: chapter.id }
-          return {
-            ref: chapterRef,
-            title: chapter.title,
-            group: chapter.group,
-            locked: chapter.locked === true,
-            lang: chapter.lang,
-            download: chapterDownloadState(chapterRef),
-          }
-        }),
-      }
-    },
+    comic: loadComic,
+
+    resumePlan: ref => resumePlan(ref, loadComic),
+
+    readerChapters: page => readerChaptersOf(page.chapters),
 
     chapter: async ref => {
       const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
@@ -588,18 +835,7 @@ export function createComicLibrary(): ComicLibrary {
       }
     },
 
-    resume: ref => {
-      const progress = getProgress(ref.sourceKey, ref.comicId)
-      if (!progress?.epId) return null
-      const page = progress.page ?? 0
-      const count = progress.pageCount
-      // 兩種越界都收掉：負數歸 0；知道頁數時再往內收到最後一頁（舊資料沒有 pageCount，只能收下界）。
-      return {
-        chapter: { ...ref, epId: progress.epId },
-        page: Math.max(0, count && count > 0 ? Math.min(page, count - 1) : page),
-        offline: progress.offline === true,
-      }
-    },
+    resume: resumePointOf,
 
     comments: async (target, page) => {
       const { handle } = handleOf(target.sourceKey)
@@ -652,10 +888,34 @@ export function createComicLibrary(): ComicLibrary {
 
     cancelDownload: ref => cancelChapterDownload(ref),
 
-    deleteDownload: ref => deleteChapterDownload(ref),
+    offline: {
+      comics: offlineComics,
+
+      comic: ref =>
+        offlineComics().find(comic => comic.sourceKey === ref.sourceKey && comic.comicId === ref.comicId),
+
+      chapters: offlineChapterRows,
+
+      readerChapters: ref => mergeChapterList(cachedChapterList(ref.sourceKey, ref.comicId), ref.sourceKey, ref.comicId),
+
+      // 逐章刪：下載管理員會先取消、等任務收尾（不再寫回 manifest），再刪檔。
+      deleteComic: async ref => {
+        for (const row of offlineChapterRows(ref)) await deleteChapterDownload(row.ref)
+      },
+
+      deleteChapter: ref => deleteChapterDownload(ref),
+
+      cancelComic: ref => {
+        for (const row of offlineChapterRows(ref)) {
+          if (isActive(row.state.state)) cancelChapterDownload(row.ref)
+        }
+      },
+
+      comicCount: () => offlineComics().length,
+
+      totalBytes: () => totalBytes(),
+    },
 
     listDownloads: () => listDownloads(),
-
-    downloadsSize: () => totalBytes(),
   }
 }
