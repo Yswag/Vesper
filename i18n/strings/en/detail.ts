@@ -40,8 +40,11 @@ export default {
   sortDescending: "Sort chapters newest first",
   downloadSelected: "Download ({n})",
   downloadAll: "Download all",
-  markSelectedRead: "Mark read ({n})",
+  markSelectedRead: "Read ({n})",
   markAllRead: "Mark all read",
+  selectAll: "Select all",
+  deselectAll: "Deselect all",
+  moreActions: "More actions",
 
   downloadQueued: "Queued",
   downloadRunning: "Downloading {done}/{total}",

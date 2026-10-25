@@ -272,6 +272,16 @@ export function ComicDetailScreen({
   // 「全部已讀」只看當前分組裡沒被源鎖定的章節。
   const readable = readableChapters(currentGroupChapters)
   const unreadCount = readable.filter(chapter => !readIds.has(chapter.id)).length
+  const allSelected = readable.length > 0 && readable.every(chapter => selectedIds.includes(chapter.id))
+
+  /** 選取模式：「全選 / 取消全選」切換。 */
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds([])
+    } else {
+      setSelectedIds(readable.map(chapter => chapter.id))
+    }
+  }
 
   /** 這一組章的漫畫資訊（下載頁要顯示的名稱與封面）；詳情還沒到就沒有。 */
   const downloadMeta = detail ? { comicTitle: detail.title, cover: detail.cover } : undefined
@@ -813,72 +823,88 @@ export function ComicDetailScreen({
             {/* 5. 章節列表頭部（緊湊合一工具列，大幅減少垂直佔位） */}
             <VStack spacing={12}>
               <HStack alignment="center" spacing={6}>
-                <HStack spacing={6} alignment="firstTextBaseline">
-                  <Text font="title3" fontWeight="bold">
-                    {t("detail.chaptersTitle")}
-                  </Text>
-                  <Text font="subheadline" fontWeight="medium" foregroundStyle="tertiaryLabel">
-                    {isGrouped ? `${currentGroupChapters.length} / ${chapters.length}` : chapters.length}
-                  </Text>
-                </HStack>
-                <Spacer />
-
-                {/* 排序、選取、下載：工具列膠囊一律用 design/chip 的緊湊版。
-                    選取模式要改擺兩顆批量動作膠囊，排序先收起來（四顆在英文會爆版）。 */}
-                {selecting ? null : (
-                  <Chip
-                    compact
-                    icon="arrow.up.arrow.down"
-                    selected={reverseOrder}
-                    accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
-                    onTap={() => setReverseOrder(!reverseOrder)}
-                  />
-                )}
-
-                <Chip
-                  compact
-                  text={selecting ? t("common.cancel") : t("detail.select")}
-                  selected={selecting}
-                  onTap={() => {
-                    setSelecting(!selecting)
-                    setSelectedIds([])
-                  }}
-                />
-
                 {selecting ? (
-                  <HStack spacing={6}>
-                    <Chip
-                      compact
-                      text={t("detail.downloadSelected", { n: pendingSelected.length })}
-                      selected={pendingSelected.length > 0}
-                      disabled={pendingSelected.length === 0}
-                      onTap={downloadSelected}
-                    />
-                    <Chip
-                      compact
-                      text={t("detail.markSelectedRead", { n: selectedIds.length })}
-                      selected={selectedIds.length > 0}
-                      disabled={selectedIds.length === 0}
-                      onTap={markSelectedRead}
-                    />
-                  </HStack>
+                  <>
+                    <HStack spacing={6} alignment="center">
+                      <Chip
+                        compact
+                        text={allSelected ? t("detail.deselectAll") : t("detail.selectAll")}
+                        onTap={toggleSelectAll}
+                      />
+                      {selectedIds.length > 0 ? (
+                        <Text font="subheadline" fontWeight="medium" foregroundStyle="secondaryLabel">
+                          {selectedIds.length}
+                        </Text>
+                      ) : null}
+                    </HStack>
+                    <Spacer />
+                    <HStack spacing={6}>
+                      <Chip
+                        compact
+                        text={t("detail.downloadSelected", { n: pendingSelected.length })}
+                        selected={pendingSelected.length > 0}
+                        disabled={pendingSelected.length === 0}
+                        onTap={downloadSelected}
+                      />
+                      <Chip
+                        compact
+                        text={t("detail.markSelectedRead", { n: selectedIds.length })}
+                        selected={selectedIds.length > 0}
+                        disabled={selectedIds.length === 0}
+                        onTap={markSelectedRead}
+                      />
+                      <Chip
+                        compact
+                        text={t("common.cancel")}
+                        onTap={() => {
+                          setSelecting(false)
+                          setSelectedIds([])
+                        }}
+                      />
+                    </HStack>
+                  </>
                 ) : (
                   <>
-                    <Chip
-                      compact
-                      text={t("detail.downloadAll")}
-                      disabled={pendingAll.length === 0}
-                      onTap={downloadAll}
-                    />
-                    {/* 全部已讀是低頻的一次性動作：收進選單，行上只留一顆圖示膠囊。 */}
-                    <Menu label={<Chip compact icon="ellipsis.circle" accessibilityLabel={t("detail.markAllRead")} />}>
-                      <Button
-                        title={t("detail.markAllRead")}
-                        systemImage="checkmark.circle"
-                        disabled={unreadCount === 0}
-                        action={markGroupRead}
+                    <HStack spacing={6} alignment="firstTextBaseline">
+                      <Text font="title3" fontWeight="bold">
+                        {t("detail.chaptersTitle")}
+                      </Text>
+                      <Text font="subheadline" fontWeight="medium" foregroundStyle="tertiaryLabel">
+                        {isGrouped ? `${currentGroupChapters.length} / ${chapters.length}` : chapters.length}
+                      </Text>
+                    </HStack>
+                    <Spacer />
+                    <HStack spacing={6}>
+                      <Chip
+                        compact
+                        icon="arrow.up.arrow.down"
+                        selected={reverseOrder}
+                        accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
+                        onTap={() => setReverseOrder(!reverseOrder)}
                       />
-                    </Menu>
+                      <Chip
+                        compact
+                        text={t("detail.select")}
+                        onTap={() => {
+                          setSelecting(true)
+                          setSelectedIds([])
+                        }}
+                      />
+                      <Menu label={<Chip compact icon="ellipsis.circle" accessibilityLabel={t("detail.moreActions")} />}>
+                        <Button
+                          title={t("detail.markAllRead")}
+                          systemImage="checkmark.circle"
+                          disabled={unreadCount === 0}
+                          action={markGroupRead}
+                        />
+                        <Button
+                          title={t("detail.downloadAll")}
+                          systemImage="arrow.down.circle"
+                          disabled={pendingAll.length === 0}
+                          action={downloadAll}
+                        />
+                      </Menu>
+                    </HStack>
                   </>
                 )}
               </HStack>
@@ -920,13 +946,13 @@ export function ComicDetailScreen({
                   const checked = selectedIds.includes(chapter.id)
                   const highlight = selecting ? checked : isCurrent
 
-                  // 選取模式：整列就只有「切換勾選」這一個點擊區（不能再包 NavigationLink）。
+                  // 章節卡片內容
                   const body = (
                     <Card background={highlight ? tint.selectedRow : cardBackground}>
                       <HStack
                         padding={rowPadding}
                         frame={{ maxWidth: "infinity" }}
-                        onTapGesture={selecting && !locked ? () => toggleSelected(chapter.id) : undefined}
+                        contentShape="rect"
                       >
                         {selecting && !locked ? (
                           <Image
@@ -976,19 +1002,24 @@ export function ComicDetailScreen({
                   )
 
                   // 鎖定的章節只顯示，不包按鈕（點了不會進去）。
-                  const row = selecting || locked ? (
+                  // 非鎖定章節一律包 Button：選取模式下點整張卡片任何地方都能切換勾選，正常模式下進閱讀器。
+                  const row = locked ? (
                     body
                   ) : (
                     <Button
                       buttonStyle="plain"
                       frame={{ maxWidth: "infinity" }}
-                      action={() =>
-                        void presentReader({
-                          ...readerProps,
-                          epId: chapter.id,
-                          initialPage: isCurrent ? resumed?.page : undefined,
-                        })
-                      }
+                      action={() => {
+                        if (selecting) {
+                          toggleSelected(chapter.id)
+                        } else {
+                          void presentReader({
+                            ...readerProps,
+                            epId: chapter.id,
+                            initialPage: isCurrent ? resumed?.page : undefined,
+                          })
+                        }
+                      }}
                     >
                       {body}
                     </Button>
