@@ -3,6 +3,7 @@
 // 以及即時跨已啟用漫畫源搜尋並聚合可閱讀章節。
 
 import {
+  AbortController,
   Button,
   Divider,
   GeometryReader,
@@ -21,6 +22,8 @@ import {
 } from "scripting"
 
 import { type BangumiSubject } from "../../engine/bangumi"
+import { isAbortError } from "../../engine/http"
+import { log } from "../../engine/log"
 import { matchComicTitleScore } from "../../engine/titleMatch"
 import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -76,6 +79,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
 
     setSearchProgress({ done: 0, total: list.length })
     let alive = true
+    const controller = new AbortController()
 
     // 跨已啟用源搜尋，帶每個源宣告的預設篩選值（使用者沒改過）。
     void library.search(
@@ -90,13 +94,19 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
         if (!alive) return
         setSearchResults(snapshot.results)
         setSearchProgress({ done: snapshot.done, total: snapshot.total })
+      },
+      { signal: controller.signal }
+    ).catch(error => {
+      if (!isAbortError(error)) {
+        log("warning", "search", `Bangumi「${searchKeyword}」搜尋失敗`, error)
       }
-    ).finally(() => {
+    }).finally(() => {
       if (alive) setSearching(false)
     })
 
     return () => {
       alive = false
+      controller.abort()
     }
   }, [searchKeyword])
 
