@@ -152,6 +152,7 @@ export function ReaderHUD({
 }: ReaderHUDProps) {
   const lastPage = Math.max(pageCount - 1, 0)
   const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
+  const tapZonesUnavailable = settings.direction === "ttb" && settings.mode !== "gallery"
 
   // 拖動時每換一頁輕震一下；按下的第一個值只當起點。
   const scrubPage = clampPage(scrubValue.value)
@@ -305,18 +306,18 @@ export function ReaderHUD({
                       <Text tag="ttb">{t("reader.directionTtb")}</Text>
                     </Picker>
 
-                    {/* 縱向閱讀沒有三分區翻頁；選單列沒有第二行放提示，就接在標題後面。 */}
+                    {/* 縱向連續沒有點擊翻頁（縱向畫廊有，上下分區）；選單列沒有第二行放提示，就接在標題後面。 */}
                     <Toggle
                       title={
-                        settings.direction === "ttb"
+                        tapZonesUnavailable
                           ? `${t("reader.tapZones")}${t("reader.gestureHint")}`
                           : t("reader.tapZones")
                       }
                       systemImage="hand.tap"
-                      disabled={settings.direction === "ttb"}
-                      value={settings.tapZones && settings.direction !== "ttb"}
+                      disabled={tapZonesUnavailable}
+                      value={settings.tapZones && !tapZonesUnavailable}
                       onChanged={value => {
-                        if (settings.direction !== "ttb") onUpdateSettings({ tapZones: value })
+                        if (!tapZonesUnavailable) onUpdateSettings({ tapZones: value })
                       }}
                     />
 

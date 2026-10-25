@@ -5,6 +5,7 @@
 // 2. 縮放與平移採累積量絕對值計算，提升跟手流暢度。
 // 3. onZoomChange 僅在手勢結束（onEnded）時觸發，防範進行中改變父層捲動屬性導致手勢中斷。
 // 4. 未放大狀態不掛載拖曳手勢，避免阻斷外層 ScrollView 滑動與翻頁。
+// 5. 給了 onSingleTap 時單擊／雙擊都由這裡的單一 count 1 手勢判斷（子層手勢會擋掉外層單擊）。
 
 import {
   DragGesture,
@@ -16,8 +17,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type Point,
   type VirtualNode,
 } from "scripting"
+
+/** 兩下點擊判定為雙擊的時間窗（ms）。 */
+const DOUBLE_TAP_WINDOW = 330
 
 /** 量到尺寸就回報。 */
 function SizeReporter({
@@ -41,13 +46,15 @@ export interface ZoomableViewProps {
   box?: { width: number; height: number }
   /** 縮放狀態變化（父層用它停用外層捲動）；只會在**手勢結束**時呼叫。 */
   onZoomChange?: (zoomed: boolean) => void
-  /** 換頁時把縮放歸零（值變了就重置）。 */
+  /** 值變了就把縮放歸零。 */
   resetToken?: string | number
   maxZoom?: number
   /** 雙擊放大的倍率（再雙擊一次還原）。 */
   doubleTapZoom?: number
   /** 平移要不要夾在「內容範圍」內；false ＝自由平移（Lazy 畫布量不到真實尺寸時用）。 */
   clampPan?: boolean
+  /** 單擊（等雙擊時間窗過了才觸發）；座標為本元件的 local 座標。 */
+  onSingleTap?: (location: Point) => void
 }
 
 export function ZoomableView({
@@ -59,6 +66,7 @@ export function ZoomableView({
   maxZoom = 5,
   doubleTapZoom = 2.5,
   clampPan: shouldClamp = true,
+  onSingleTap,
 }: ZoomableViewProps) {
   const [measuredContent, setMeasuredContent] = useState({ width: 0, height: 0 })
   const [zoom, setZoom] = useState(1)
@@ -102,10 +110,13 @@ export function ZoomableView({
   }
 
   /** 手勢結束／雙擊／重置後才通知父層（見檔頭 ③），順便決定要不要掛拖曳手勢。 */
+  // gestures 只建一次，回呼經 ref 讀最新的 prop。
+  const zoomChangeRef = useRef(onZoomChange)
+  zoomChangeRef.current = onZoomChange
   const notify = () => {
     const next = latest.current.zoom > 1.001
     setDragEnabled(next)
-    onZoomChange?.(next)
+    zoomChangeRef.current?.(next)
   }
 
   const clearStart = () => {
@@ -120,10 +131,29 @@ export function ZoomableView({
     notify()
   }
 
+  const singleTapRef = useRef(onSingleTap)
+  singleTapRef.current = onSingleTap
+  const pendingTap = useRef<number | null>(null)
+  const cancelPendingTap = () => {
+    if (pendingTap.current === null) return
+    clearTimeout(pendingTap.current)
+    pendingTap.current = null
+  }
+
   useEffect(() => {
+    cancelPendingTap()
+    const wasZoomed = latest.current.zoom > 1.001
     clearStart()
     commit(1, { x: 0, y: 0 })
+    // 只有真的放大過才通知：別頁掛載不該把父層的「放大中」蓋成 false。
+    if (wasZoomed) notify()
   }, [resetToken])
+
+  // 放大中被卸載（Lazy 回收、換模式重建）也要通知，否則父層的捲動會一直停用。
+  useEffect(() => () => {
+    cancelPendingTap()
+    if (latest.current.zoom > 1.001) zoomChangeRef.current?.(false)
+  }, [])
 
   const gestures = useMemo(
     () => ({
@@ -201,15 +231,33 @@ export function ZoomableView({
     notify()
   }
 
+  /** 第一下先等時間窗；窗內來第二下＝雙擊，否則交給 onSingleTap。 */
+  const handleTap = (location: Point) => {
+    if (pendingTap.current !== null) {
+      cancelPendingTap()
+      toggleAt(location)
+      return
+    }
+    pendingTap.current = setTimeout(() => {
+      pendingTap.current = null
+      singleTapRef.current?.(location)
+    }, DOUBLE_TAP_WINDOW)
+  }
+
   const zoomed = zoom > 1.001
   return (
     <ZStack
       alignment="center"
       gesture={gestures.magnify}
       // 放大時才掛拖曳（dragEnabled 只在手勢結束時翻，捏合途中不會中斷）。
-      // 放大時外層捲動已由閱讀器 scrollDisabled 停用，所以用 simultaneous 就夠。
+      // 放大時外層捲動由父層依 onZoomChange 停用，所以用 simultaneous 就夠。
       simultaneousGesture={dragEnabled ? gestures.drag : undefined}
-      onTapGesture={{ count: 2, coordinateSpace: "local", perform: toggleAt }}
+      contentShape={onSingleTap ? "rect" : undefined}
+      onTapGesture={
+        onSingleTap
+          ? { count: 1, coordinateSpace: "local", perform: handleTap }
+          : { count: 2, coordinateSpace: "local", perform: toggleAt }
+      }
     >
       <VStack
         alignment="center"

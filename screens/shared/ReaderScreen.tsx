@@ -25,6 +25,7 @@ import {
   Text,
   VStack,
   ZStack,
+  useCallback,
   useEffect,
   useMemo,
   useObservable,
@@ -208,13 +209,19 @@ function ReaderContent({
   useSubscription(subscribeLocale)
 
   // 離線模式只列「下載完」的章：沒下載完的進來也是壞的，不該出現在目錄裡。
-  const chapters = offlineMode
-    ? allChapters.filter(chapter => isOfflineReadable({ sourceKey, comicId, epId: chapter.id }))
-    : allChapters
+  const chapters = useMemo(
+    () =>
+      offlineMode
+        ? allChapters.filter(chapter => isOfflineReadable({ sourceKey, comicId, epId: chapter.id }))
+        : allChapters,
+    [offlineMode, allChapters, sourceKey, comicId],
+  )
   const hiddenChapters = allChapters.length - chapters.length
   const dismiss = Navigation.useDismiss()
   // 這一話的取圖 session（頁數、圖片鍵、離線狀態都在裡面）；換話就整個換掉。
   const [session, setSession] = useState<ChapterSession | undefined>(undefined)
+  // session 屬於哪一話：換話那一輪 render 還拿著舊 session，進度不能用它的頁數寫新話。
+  const sessionEpId = useRef<string | null>(null)
   const [status, setStatus] = useState<ReaderStatus>({ kind: "loading" })
   // 重試：把開章流程再跑一次（換 key 讓 effect 重跑，不動翻頁與進度狀態）。
   const [reloadKey, setReloadKey] = useState(0)
@@ -267,7 +274,9 @@ function ReaderContent({
   const entryEpId = useRef(epId)
   const entryPage = useRef(initialPage)
   const entryRestore = entryPage.current !== undefined && entryPage.current > 0 ? entryPage.current : null
-  const restoringEntry = currentEpId === entryEpId.current && entryRestore !== null
+  // 換過一次話就不再還原（換回來也一樣），否則會把後來讀到的位置拉回進入頁。
+  const entryPending = useRef(true)
+  const restoringEntry = entryPending.current && currentEpId === entryEpId.current && entryRestore !== null
   const [leadingPage, setLeadingPage] = useState<number | null>(restoringEntry ? entryRestore : null)
   // 還原捲動完成前忽略可見集合回報，避免頂端初次回報覆蓋進度
   const restored = useRef(!restoringEntry)
@@ -295,6 +304,23 @@ function ReaderContent({
   const hasTriggeredFullHapticRef = useRef(false)
   const PULL_THRESHOLD = 65
 
+  // 畫廊頁放大中：停用外層捲動，否則平移圖片時會順便翻頁。
+  // zoomEpoch 一變就把所有頁的縮放歸零（離開放大的頁時用）。
+  const [zoomed, setZoomed] = useState(false)
+  const [zoomEpoch, setZoomEpoch] = useState(0)
+  const handleZoomChange = useCallback((value: boolean) => {
+    setZoomed(value)
+    if (value) {
+      turnTarget.current = null
+      scrubTarget.current = null
+    }
+  }, [])
+  function releaseZoom() {
+    if (!zoomed) return
+    setZoomed(false)
+    setZoomEpoch(epoch => epoch + 1)
+  }
+
   /** 清掉一個閘門計時器（排程前與 effect cleanup 共用）；一律比 `null`。 */
   function clearGate(timer: { current: number | null }) {
     if (timer.current === null) return
@@ -303,8 +329,16 @@ function ReaderContent({
   }
 
   const index = currentGroupChapters.findIndex(chapter => chapter.id === currentEpId)
-  const previous = index > 0 ? currentGroupChapters[index - 1] : undefined
-  const next = index >= 0 && index < currentGroupChapters.length - 1 ? currentGroupChapters[index + 1] : undefined
+  // 上一話／下一話跳過鎖定章（點了也換不過去）。
+  const neighbour = (step: 1 | -1): ChapterRef | undefined => {
+    if (index < 0) return undefined
+    for (let i = index + step; i >= 0 && i < currentGroupChapters.length; i += step) {
+      if (!currentGroupChapters[i].locked) return currentGroupChapters[i]
+    }
+    return undefined
+  }
+  const previous = neighbour(-1)
+  const next = neighbour(1)
   // 章節預設標題在 render 時求值以支援語言切換
   const title = (index >= 0 ? currentGroupChapters[index]?.title : chapters.find(c => c.id === currentEpId)?.title) || t("reader.chapterFallback", { n: Math.max(1, index + 1) })
   const pageCount = session?.pageCount ?? 0
@@ -331,6 +365,7 @@ function ReaderContent({
           result.dispose()
           return
         }
+        sessionEpId.current = currentEpId
         setSession(result)
         // session 自己建的时候讀的是全域；這裡對齊畫面看到的值（per-comic 可能不同）。
         result.setHardwareSharpen(settingsRef.current.hardwareSharpen)
@@ -392,7 +427,7 @@ function ReaderContent({
   // leadingPage 還沒回報時當成第 1 頁：新開一話若內容不需捲動（例如單張圖），
   // 可見集合永遠不會回呼，不補這一下就會整話都沒有頁碼可用。
   useEffect(() => {
-    if (pageCount === 0) return
+    if (pageCount === 0 || sessionEpId.current !== currentEpId) return
     const page = Math.min(Math.max(leadingPage ?? 0, 0), pageCount - 1)
     setProgress({
       sourceKey,
@@ -422,6 +457,7 @@ function ReaderContent({
     const target = clampPage(scrubValue.value)
     setScrubbing(false)
     if (target === clampPage(leadingPage ?? 0)) return
+    releaseZoom()
     scrubTarget.current = target
     setLeadingPage(target)
     void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
@@ -440,6 +476,8 @@ function ReaderContent({
     if (id === currentEpId) return
     // 鎖定的章節只列在目錄裡，點了不換話（也不提示）。
     if (allChapters.find(chapter => chapter.id === id)?.locked) return
+    entryPending.current = false
+    setZoomed(false)
     // 立即清空過期目標與計時器
     clearGate(restoreTimer)
     clearGate(scrubTimer)
@@ -496,6 +534,7 @@ function ReaderContent({
     if (base === null) return
     const target = Math.min(Math.max(base + delta, 0), pageCount - 1)
     if (target === base) return
+    releaseZoom()
     turnTarget.current = target
     setLeadingPage(target)
     void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
@@ -540,6 +579,11 @@ function ReaderContent({
     turnPage(forward ? 1 : -1)
   }
 
+  // 畫廊頁的單擊由 ZoomableView 接（子層雙擊會擋掉 ScrollView 的單擊）；pages 有記憶化，經 ref 讀最新版。
+  const canvasTapRef = useRef(handleCanvasTap)
+  canvasTapRef.current = handleCanvasTap
+  const onPageTap = useCallback((location: Point) => canvasTapRef.current(location), [])
+
   const vertical = settings.direction === "ttb"
   const rtl = settings.direction === "rtl"
   const paginated = settings.mode === "gallery"
@@ -561,6 +605,25 @@ function ReaderContent({
 
   function updateSettings(patch: Partial<ReaderSettings>) {
     const next = { ...settings, ...patch }
+    // 換模式／方向會重建 ScrollView：先把目前頁寫進捲動位置，並擋住重建後第一個「在頂端」的回報。
+    if (next.mode !== settings.mode || next.direction !== settings.direction) {
+      const page = displayedPage() ?? leadingPage ?? 0
+      clearGate(turnTimer)
+      clearGate(scrubTimer)
+      turnTarget.current = null
+      scrubTarget.current = null
+      setZoomed(false)
+      setLeadingPage(page)
+      scrollPos.setValue(String(page))
+      if (page > 0) {
+        restored.current = false
+        clearGate(restoreTimer)
+        restoreTimer.current = setTimeout(() => {
+          restoreTimer.current = null
+          restored.current = true
+        }, 800)
+      }
+    }
     setSettings(next)
     // per-comic 開著就只寫這本；沒開且源沒宣告 viewer 才寫全域。
     // （源宣告了 viewer 時，寫全域下次還是會被 viewer 蓋掉，所以只算這次 session。）
@@ -600,7 +663,9 @@ function ReaderContent({
                   <ZoomableView
                     contentSize={pageSize}
                     box={pageSize}
-                    resetToken={currentEpId}
+                    resetToken={`${currentEpId}:${zoomEpoch}`}
+                    onSingleTap={onPageTap}
+                    onZoomChange={handleZoomChange}
                   >
                     <ChapterImage
                       key={`${id}:${renderGeneration}`}
@@ -635,7 +700,7 @@ function ReaderContent({
             )
           })
         : [],
-    [session, pageCount, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration],
+    [session, pageCount, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration, zoomEpoch],
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
@@ -649,6 +714,8 @@ function ReaderContent({
             ? { width: pageSize.width, height: pageSize.height }
             : { height: pageSize.height }
         }
+        contentShape={paginated ? "rect" : undefined}
+        onTapGesture={paginated ? { count: 1, coordinateSpace: "global", perform: onPageTap } : undefined}
       >
         <HStack spacing={0} padding={{ top: 40, bottom: 100 }}>
           <Spacer />
@@ -727,6 +794,7 @@ function ReaderContent({
         <ScrollView
           key={`${currentEpId}-${settings.mode}-${settings.direction}`}
           axes={axes}
+          scrollDisabled={zoomed}
           scrollIndicator="never"
           scrollTargetBehavior={
             paginated
@@ -760,7 +828,12 @@ function ReaderContent({
           }}
           environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
           // 座標系必須宣告為 global，避免 local 包含累計滾動位移導致點擊分區漂移
-          onTapGesture={{ count: 1, coordinateSpace: "global", perform: handleCanvasTap }}
+          // 畫廊模式的頁面與章末卡自己接點擊；這裡只管連續模式與載入／錯誤畫面。
+          onTapGesture={
+            !paginated || status !== null
+              ? { count: 1, coordinateSpace: "global", perform: handleCanvasTap }
+              : undefined
+          }
           onScrollGeometryChange={{
             of: "geometry",
             onChanged: (_, geo) => {
@@ -783,12 +856,9 @@ function ReaderContent({
                 const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)
                 overscroll = geo.contentOffset.y - maxScrollY
               } else if (rtl) {
-                // 在 rightToLeft layoutDirection 下，SwiftUI contentOffset.x 為負數或反向
-                // 當滑到最後一張向左滑動時，取超出量
+                // rightToLeft 下 contentOffset.x 的正負號未實測；取絕對值再扣捲動上界，兩種符號都只在末端拉過頭才為正。
                 const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
-                overscroll = geo.contentOffset.x < 0
-                  ? -geo.contentOffset.x
-                  : geo.contentOffset.x - maxScrollX
+                overscroll = Math.abs(geo.contentOffset.x) - maxScrollX
               } else {
                 const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
                 overscroll = geo.contentOffset.x - maxScrollX
@@ -807,7 +877,7 @@ function ReaderContent({
                 } else {
                   hasTriggeredFullHapticRef.current = false
                 }
-              } else if (overscrollRef.current <= 0) {
+              } else {
                 hasTriggeredFullHapticRef.current = false
                 setPullProgress(0)
                 setOverscrollPx(0)
@@ -987,7 +1057,7 @@ function ReaderContent({
           previousChapter={previous}
           nextChapter={next}
           chapterIndex={index + 1}
-          totalChapters={chapters.length}
+          totalChapters={currentGroupChapters.length}
           onSelectChapter={selectChapter}
           pageCount={pageCount}
           currentPage={currentPage}
