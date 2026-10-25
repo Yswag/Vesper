@@ -8,6 +8,7 @@ import {
   Image,
   LazyVStack,
   LazyHStack,
+  Menu,
   NamespaceReader,
   NavigationLink,
   ScrollView,
@@ -23,6 +24,7 @@ import {
   useMemo,
   useState,
   type Color,
+  type VirtualNode,
 } from "scripting"
 
 import { CoverImage } from "../../components/CoverImage"
@@ -30,9 +32,17 @@ import { WidthReporter } from "../../components/WidthReporter"
 import { CoverViewerScreen } from "./CoverViewerScreen"
 import { isActive, type ChapterDownloadState, type ComicLibrary, type ComicPage, type ComicRef } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
+import { comicUpdateRecord, pauseUpdates, resumeUpdates } from "../../app/updates"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { isFavorite, toggleFavorite } from "../../library/bookshelf"
+import {
+  isFavorite,
+  markAllChaptersRead,
+  markChapterRead,
+  readChapterIds,
+  setComicUpdate,
+  toggleFavorite,
+} from "../../library/bookshelf"
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
@@ -62,6 +72,11 @@ export function chapterDownloadStates(
   }
   // 攤成物件：呼叫端只讀自己問過的 epId，取值不必再判 undefined。
   return Object.fromEntries(states)
+}
+
+/** 「全部已讀」算的章節：鎖定的看不到內容，標了也沒意義，直接排除。 */
+export function readableChapters<T extends { locked?: boolean }>(chapters: readonly T[]): T[] {
+  return chapters.filter(chapter => chapter.locked !== true)
 }
 
 /** 連載狀態的介面字（源只給代碼，畫面負責翻）。 */
@@ -124,6 +139,12 @@ export function ComicDetailScreen({
   // 收藏狀態直接從書架讀取
   const favorite = isFavorite(sourceKey, comicId)
 
+  // 詳情頁在畫面上（含被閱讀器蓋住的期間）就是前台：背景追更先讓路，別跟這裡搶連線。
+  useEffect(() => {
+    pauseUpdates()
+    return () => resumeUpdates()
+  }, [])
+
   useEffect(() => {
     let alive = true
     setStatus(null)
@@ -136,6 +157,8 @@ export function ComicDetailScreen({
           if (!alive) return
           setDetail(result)
           setStatus(null)
+          // 零成本同步：章節清單已經在手上，不必再為了「有沒有新話」問一次源。
+          if (result.chapters.length > 0) setComicUpdate(comicUpdateRecord(result))
         },
         error => {
           if (alive) setStatus(error instanceof Error ? error.message : String(error))
@@ -172,6 +195,9 @@ export function ComicDetailScreen({
     const matched = chapterGroups.find((g: ChapterGroup<ChapterRef>) => g.name === activeGroup)
     return matched ? matched.chapters : chapters
   }, [isGrouped, chapterGroups, activeGroup, chapters])
+
+  // 已讀章節：手動標記與閱讀結算共用同一份紀錄（`Progress.readEpIds`）。
+  const readIds = readChapterIds(sourceKey, comicId)
 
   useEffect(() => {
     if (!comicCover) return
@@ -243,6 +269,10 @@ export function ComicDetailScreen({
   const pendingAll = pendingOf(currentGroupChapters.map(chapter => chapter.id))
   const pendingSelected = pendingOf(selectedIds)
 
+  // 「全部已讀」只看當前分組裡沒被源鎖定的章節。
+  const readable = readableChapters(currentGroupChapters)
+  const unreadCount = readable.filter(chapter => !readIds.has(chapter.id)).length
+
   /** 這一組章的漫畫資訊（下載頁要顯示的名稱與封面）；詳情還沒到就沒有。 */
   const downloadMeta = detail ? { comicTitle: detail.title, cover: detail.cover } : undefined
 
@@ -279,6 +309,28 @@ export function ComicDetailScreen({
       [{ sourceKey, comicId, epId: chapter.id, title: chapter.title }],
       downloadMeta
     )
+  }
+
+  /** 章節列左滑：反轉這一話的已讀狀態。 */
+  function toggleRead(chapter: ChapterRef) {
+    markChapterRead(sourceKey, comicId, [chapter.id], !readIds.has(chapter.id))
+  }
+
+  /** 「全部標為已讀」：一次標完當前分組裡還讀得到的章節。 */
+  function markGroupRead() {
+    markAllChaptersRead(
+      sourceKey,
+      comicId,
+      readable.map(chapter => chapter.id)
+    )
+  }
+
+  /** 選取模式的「標為已讀」：勾起來的一次標完，然後退出選取。 */
+  function markSelectedRead() {
+    if (selectedIds.length === 0) return
+    markChapterRead(sourceKey, comicId, selectedIds, true)
+    setSelectedIds([])
+    setSelecting(false)
   }
 
   // 封面尺寸：容器給多少寬度就用多少（見 comicHeroMetrics 與 docs/ui-ux-liquid-glass.md）。
@@ -771,14 +823,17 @@ export function ComicDetailScreen({
                 </HStack>
                 <Spacer />
 
-                {/* 排序、選取、下載：工具列膠囊一律用 design/chip 的緊湊版 */}
-                <Chip
-                  compact
-                  icon="arrow.up.arrow.down"
-                  selected={reverseOrder}
-                  accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
-                  onTap={() => setReverseOrder(!reverseOrder)}
-                />
+                {/* 排序、選取、下載：工具列膠囊一律用 design/chip 的緊湊版。
+                    選取模式要改擺兩顆批量動作膠囊，排序先收起來（四顆在英文會爆版）。 */}
+                {selecting ? null : (
+                  <Chip
+                    compact
+                    icon="arrow.up.arrow.down"
+                    selected={reverseOrder}
+                    accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
+                    onTap={() => setReverseOrder(!reverseOrder)}
+                  />
+                )}
 
                 <Chip
                   compact
@@ -791,20 +846,40 @@ export function ComicDetailScreen({
                 />
 
                 {selecting ? (
-                  <Chip
-                    compact
-                    text={t("detail.downloadSelected", { n: pendingSelected.length })}
-                    selected={pendingSelected.length > 0}
-                    disabled={pendingSelected.length === 0}
-                    onTap={downloadSelected}
-                  />
+                  <HStack spacing={6}>
+                    <Chip
+                      compact
+                      text={t("detail.downloadSelected", { n: pendingSelected.length })}
+                      selected={pendingSelected.length > 0}
+                      disabled={pendingSelected.length === 0}
+                      onTap={downloadSelected}
+                    />
+                    <Chip
+                      compact
+                      text={t("detail.markSelectedRead", { n: selectedIds.length })}
+                      selected={selectedIds.length > 0}
+                      disabled={selectedIds.length === 0}
+                      onTap={markSelectedRead}
+                    />
+                  </HStack>
                 ) : (
-                  <Chip
-                    compact
-                    text={t("detail.downloadAll")}
-                    disabled={pendingAll.length === 0}
-                    onTap={downloadAll}
-                  />
+                  <>
+                    <Chip
+                      compact
+                      text={t("detail.downloadAll")}
+                      disabled={pendingAll.length === 0}
+                      onTap={downloadAll}
+                    />
+                    {/* 全部已讀是低頻的一次性動作：收進選單，行上只留一顆圖示膠囊。 */}
+                    <Menu label={<Chip compact icon="ellipsis.circle" accessibilityLabel={t("detail.markAllRead")} />}>
+                      <Button
+                        title={t("detail.markAllRead")}
+                        systemImage="checkmark.circle"
+                        disabled={unreadCount === 0}
+                        action={markGroupRead}
+                      />
+                    </Menu>
+                  </>
                 )}
               </HStack>
 
@@ -832,11 +907,13 @@ export function ComicDetailScreen({
                 </ScrollView>
               ) : null}
 
-              {/* 章節卡片流（左滑＝單章下載；自訂列的滑動要外層 swipeActionsContainer） */}
+              {/* 章節卡片流（左滑＝切換已讀 ／ 單章下載；自訂列的滑動要外層 swipeActionsContainer） */}
               <LazyVStack spacing={8} swipeActionsContainer={true}>
                 {displayChapters.map(chapter => {
                   const isCurrent = resumed?.chapter.epId === chapter.id
                   const locked = chapter.locked === true
+                  // 已讀＝淡化；當前話的強調色優先，看得到自己讀到哪。
+                  const read = readIds.has(chapter.id)
                   // 這一列的狀態是上面那一輪算好的（與「下載 (n)」共用），不再自己問一次。
                   const download = chapterStates[chapter.id]
                   const settled = isActive(download.state) || download.state === "done"
@@ -864,7 +941,7 @@ export function ComicDetailScreen({
                         <Text
                           font="subheadline"
                           fontWeight={isCurrent ? "bold" : "regular"}
-                          foregroundStyle={isCurrent ? tint.tint : "label"}
+                          foregroundStyle={isCurrent ? tint.tint : read ? "secondaryLabel" : "label"}
                           lineLimit={1}
                         >
                           {chapter.title}
@@ -917,10 +994,29 @@ export function ComicDetailScreen({
                     </Button>
                   )
 
-                  // 下載動作放左滑：一列只能有一個可點元件，塞 Button 會跟 NavigationLink 搶命中。
-                  // 選取模式與鎖定章節不給左滑。
+                  // 左滑：切換已讀＋（還沒下載完才有的）下載。選取模式與鎖定章節不給左滑。
                   // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底。
-                  return selecting || settled || locked ? (
+                  const actions: VirtualNode[] = [
+                    <Button
+                      key="read"
+                      title={read ? t("detail.markUnread") : t("detail.markRead")}
+                      systemImage={read ? "arrow.uturn.backward.circle" : "checkmark.circle"}
+                      action={() => toggleRead(chapter)}
+                    />,
+                  ]
+                  // 全滑只做第一顆（已讀切換）；下載完的就不必再擺一顆。
+                  if (!settled) {
+                    actions.push(
+                      <Button
+                        key="download"
+                        title={download.state === "none" ? t("detail.download") : t("detail.resumeDownload")}
+                        systemImage="arrow.down.circle"
+                        action={() => downloadChapter(chapter)}
+                      />
+                    )
+                  }
+
+                  return selecting || locked ? (
                     <VStack key={chapter.id} spacing={0} clipShape={cardShape}>
                       {row}
                     </VStack>
@@ -929,17 +1025,7 @@ export function ComicDetailScreen({
                       key={chapter.id}
                       spacing={0}
                       clipShape={cardShape}
-                      trailingSwipeActions={{
-                        allowsFullSwipe: true,
-                        actions: [
-                          <Button
-                            key="download"
-                            title={download.state === "none" ? t("detail.download") : t("detail.resumeDownload")}
-                            systemImage="arrow.down.circle"
-                            action={() => downloadChapter(chapter)}
-                          />,
-                        ],
-                      }}
+                      trailingSwipeActions={{ allowsFullSwipe: true, actions }}
                     >
                       {row}
                     </VStack>

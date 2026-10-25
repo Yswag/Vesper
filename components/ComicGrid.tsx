@@ -15,7 +15,7 @@ import {
   type VirtualNode,
 } from "scripting"
 
-import { CoverBadge } from "../design/CoverBadge"
+import { CoverBadge, UnreadBadge } from "../design/CoverBadge"
 import { radius } from "../design/tokens"
 import type { ComicListItem } from "../engine/adapt"
 import { t } from "../i18n"
@@ -33,6 +33,8 @@ export interface ComicGridEntry {
   removed?: boolean
   /** 0–1，這一話讀到哪：封面下方一條進度（跟首頁「繼續閱讀」同一種）。 */
   readFraction?: number
+  /** 未讀章節數：> 0 時封面右上角掛數字膠囊。 */
+  unreadCount?: number
   comic: ComicListItem
 }
 
@@ -143,6 +145,18 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
                       >
                         <CoverBadge text={entry.comic.updateTime} maxWidth={cellWidth - 12} />
+                      </HStack>
+                    ) : null}
+                    {(entry.unreadCount ?? 0) > 0 ? (
+                      // 右上角是唯一空著的角：頁數在左上，來源狀態與更新時間在下緣。
+                      <HStack
+                        offset={{ x: -6, y: 6 }}
+                        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topTrailing" }}
+                      >
+                        <UnreadBadge
+                          count={entry.unreadCount ?? 0}
+                          accessibilityLabel={t("bookshelf.unreadBadge", { n: entry.unreadCount ?? 0 })}
+                        />
                       </HStack>
                     ) : null}
                   </ZStack>

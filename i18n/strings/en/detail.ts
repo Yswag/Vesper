@@ -40,6 +40,8 @@ export default {
   sortDescending: "Sort chapters newest first",
   downloadSelected: "Download ({n})",
   downloadAll: "Download all",
+  markSelectedRead: "Mark read ({n})",
+  markAllRead: "Mark all read",
 
   downloadQueued: "Queued",
   downloadRunning: "Downloading {done}/{total}",
@@ -48,6 +50,8 @@ export default {
   incompleteProgress: "Incomplete {done}/{total}",
   download: "Download",
   resumeDownload: "Resume download",
+  markRead: "Mark read",
+  markUnread: "Mark unread",
 
   lastRead: "Last read",
   lastReadAtPage: "Last read · Page {n}",

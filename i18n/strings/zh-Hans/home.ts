@@ -14,6 +14,12 @@ export default {
   sourceInvalid: "源失效",
   sourceRemoved: "源已移除",
 
+  miniHub: {
+    openApp: "打开完整 App",
+    updatesTitle: "最新追更",
+    allUpToDate: "所有收藏已是最新",
+  },
+
   bangumi: {
     originalName: "原名：{name}",
     author: "作者：{author}",

@@ -14,6 +14,12 @@ export default {
   sourceInvalid: "Source broken",
   sourceRemoved: "Source removed",
 
+  miniHub: {
+    openApp: "Open full app",
+    updatesTitle: "Latest updates",
+    allUpToDate: "All favorites are up to date",
+  },
+
   bangumi: {
     originalName: "Original: {name}",
     author: "Author: {author}",

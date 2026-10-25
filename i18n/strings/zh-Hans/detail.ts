@@ -40,6 +40,8 @@ export default {
   sortDescending: "章节改为倒序",
   downloadSelected: "下载 ({n})",
   downloadAll: "全部下载",
+  markSelectedRead: "标为已读 ({n})",
+  markAllRead: "全部标为已读",
 
   downloadQueued: "等待下载",
   downloadRunning: "下载中 {done}/{total}",
@@ -48,6 +50,8 @@ export default {
   incompleteProgress: "未完成 {done}/{total}",
   download: "下载",
   resumeDownload: "继续下载",
+  markRead: "标为已读",
+  markUnread: "标为未读",
 
   lastRead: "上次读到",
   lastReadAtPage: "上次读到 · 第 {n} 页",

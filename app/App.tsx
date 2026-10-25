@@ -7,9 +7,11 @@
 //    它同時也會自動聚焦、彈鍵盤——所以 SearchScreen 把 searchable 的 presented 綁起來，
 //    讓系統回報展開狀態；但**不要**把它設成 false（那是「取消搜尋」，會把 tab 切回上一個）。
 //
-// 2. hideTabBar（home_screen_default_ui.tsx）：Scripting 首頁分頁裡自己就是一個 tab，
-//    再疊一層 tab bar 會變成兩條；改成單一 NavigationStack + 導覽列左上角的切換分類選單
+// 2. hideTabBar（沒有分頁列）：單一 NavigationStack + 導覽列左上角的切換分類選單
 //    （components/SectionMenu）。代價：切分類會重建畫面，各分類的導航歷史與頁面狀態不留。
+//    Scripting 首頁分頁現在是自己的 Mini Hub（home_screen_default_ui.tsx），不再走這個殼。
+//
+// 啟動 2.5 秒後靜默查一次追更（TTL 與讓路都在 app/updates.ts）。
 //
 // toast 掛在殼上：源的 UI.showMessage 需要一個全域出口（見 app/toast.ts）。
 // 載入指示同樣掛殼的 overlay：源的 UI.showLoading 要一張浮動小卡片，不是 modal（見 app/loadingState.ts）。
@@ -32,6 +34,7 @@ import { LoadingHUD } from "./LoadingHUD"
 import { setToastListener } from "./toast"
 import { setTabBarHidden, setTabChangeListener, switchToTab } from "./navigation"
 import { setInstallListener } from "./installLink"
+import { updatesScheduler } from "./updates"
 import { addRepository } from "../sources/registry"
 import { BookshelfScreen } from "../screens/bookshelf/BookshelfScreen"
 import { RepositoryDetailScreen } from "../screens/settings/RepositoryDetailScreen"
@@ -42,6 +45,9 @@ import { SettingsScreen } from "../screens/settings/SettingsScreen"
 
 /** 依賴狀態。 */
 type DepsState = "installing" | "failed" | "ready"
+
+/** 啟動後多久才背景查追更：先讓首屏與依賴安頓下來。 */
+const STARTUP_UPDATE_DELAY = 2500
 
 /** 分頁編號 → 畫面。順序要跟 app/sections.ts 的 SECTIONS 一致（切換分類的選單照它畫）。 */
 function sectionScreen(index: number): VirtualNode {
@@ -94,6 +100,18 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
     setInstallListener(url => setInstallTarget(url))
     return () => setInstallListener(null)
   }, [])
+
+  // 啟動延遲 2.5 秒後背景查一次追更：不跟首屏搶資源；TTL 沒到期就零連線，
+  // 前台正在讀時排程器自己讓路（見 app/updates.ts）。依賴沒好就不查——那只會換來一小時退避。
+  useEffect(() => {
+    if (depsState !== "ready") return
+    const timer = setTimeout(() => {
+      void updatesScheduler().checkUpdates({ background: true })
+    }, STARTUP_UPDATE_DELAY)
+    return () => {
+      if (timer !== null) clearTimeout(timer)
+    }
+  }, [depsState])
 
   // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
   // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。

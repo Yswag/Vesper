@@ -3,11 +3,20 @@
 
 import { canResumeOffline } from "./offlineReading"
 import { comicLibrary } from "./services"
-import { comicGroupKey } from "../engine/offline"
-import { listFavorites, listProgress, type Favorite, type Progress } from "../library/bookshelf"
+import { cachedChapterList, comicGroupKey, type ReaderChapter } from "../engine/offline"
+import {
+  getComicUpdate,
+  listFavorites,
+  listProgress,
+  readChapterIds,
+  type ComicUpdateRecord,
+  type Favorite,
+  type Progress,
+} from "../library/bookshelf"
 
 export type ShelfSort = "recent" | "added" | "title"
-export type ShelfFilter = "all" | "read" | "unread"
+/** `updates`＝有未讀章節（見 {@link unreadCountOf}）。 */
+export type ShelfFilter = "all" | "updates" | "read" | "unread"
 
 /**
  * 這一話讀到幾 %；沒有就 undefined。
@@ -58,6 +67,34 @@ export function resumeEntry(progress: Progress): ResumeEntry {
   }
 }
 
+/**
+ * 未讀章節數的算式（純函式）：追更紀錄的章數扣掉已讀。
+ *
+ * `chapters` 是這部的章節清單快取，**跟追更紀錄對得上時才用**：鎖住的章節不算未讀，
+ * 已讀也只認清單裡真的有的 ID。對不上（快取比紀錄舊）就退回「章數 − 已讀數」——
+ * 一時多算一話，總比快取過期把整部作品的角標歸零好。
+ */
+export function unreadChapters(
+  record: ComicUpdateRecord | undefined,
+  readIds: ReadonlySet<string>,
+  chapters?: readonly ReaderChapter[] | null
+): number {
+  if (!record || record.chapterCount <= 0) return 0
+  if (chapters && chapters.length === record.chapterCount) {
+    return chapters.filter(chapter => chapter.locked !== true && !readIds.has(chapter.id)).length
+  }
+  return Math.max(0, record.chapterCount - readIds.size)
+}
+
+/** 這一部收藏的未讀章節數；> 0 就是「有更新」。沒有追更紀錄＝還沒查過，不算更新。 */
+export function unreadCountOf(favorite: Favorite): number {
+  return unreadChapters(
+    getComicUpdate(favorite.sourceKey, favorite.comicId),
+    readChapterIds(favorite.sourceKey, favorite.comicId),
+    cachedChapterList(favorite.sourceKey, favorite.comicId)
+  )
+}
+
 /** 收藏網格的一格：收藏接上閱讀紀錄，判斷都算好了。 */
 export interface ShelfItem {
   favorite: Favorite
@@ -66,6 +103,8 @@ export interface ShelfItem {
   readFraction?: number
   /** 源被移除了（封面只能用標題佔位）。 */
   removed: boolean
+  /** 未讀章節數：封面角標畫這個數字，「更新」篩選也看它。 */
+  unreadCount: number
 }
 
 /** 收藏接閱讀紀錄（同一部一個鍵），再篩選、排序。 */
@@ -79,18 +118,40 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
         progress: read,
         readFraction: readFraction(read),
         removed: comicLibrary().source(favorite.sourceKey) === undefined,
+        unreadCount: unreadCountOf(favorite),
       }
     })
     .filter(item =>
-      filter === "read" ? item.progress !== undefined : filter === "unread" ? item.progress === undefined : true
+      filter === "read"
+        ? item.progress !== undefined
+        : filter === "unread"
+          ? item.progress === undefined
+          : filter === "updates"
+            ? item.unreadCount > 0
+            : true
     )
+
+  // 「更新」照檢查時間排；同一批檢查幾乎同秒，撞在一起時就退回下面原本的規則。
+  const checkedAt = new Map<string, number>()
+  if (filter === "updates") {
+    for (const item of items) {
+      const record = getComicUpdate(item.favorite.sourceKey, item.favorite.comicId)
+      if (record) checkedAt.set(comicGroupKey(item.favorite), record.checkedAt)
+    }
+  }
+
   // 沒讀過的用收藏時間排，才不會全部沉到最底。
   const lastTouched = (item: ShelfItem) => item.progress?.updatedAt ?? item.favorite.addedAt
-  return items.sort((a, b) =>
-    sort === "title"
+  return items.sort((a, b) => {
+    if (sort === "recent" && filter === "updates") {
+      const delta =
+        (checkedAt.get(comicGroupKey(b.favorite)) ?? 0) - (checkedAt.get(comicGroupKey(a.favorite)) ?? 0)
+      if (delta !== 0) return delta
+    }
+    return sort === "title"
       ? a.favorite.title.localeCompare(b.favorite.title)
       : sort === "added"
         ? b.favorite.addedAt - a.favorite.addedAt
         : lastTouched(b) - lastTouched(a)
-  )
+  })
 }

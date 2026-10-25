@@ -13,21 +13,29 @@ export default {
   /** 入口列右側的數量。 */
   comicCount: { one: "{n} 本", other: "{n} 本" },
 
-  /** 導覽列右上的排序／篩選選單。 */
-  sortMenu: "排序與篩選",
+  /** 導覽列右上的排序與篩選選單。 */
+  menu: "排序與篩選",
   sortGroup: "排序",
+  filterGroup: "顯示範圍",
   sortRecent: "最近閱讀",
   sortAdded: "最近收藏",
   sortTitle: "標題",
-  filterGroup: "顯示",
   filterAll: "全部",
+  filterUpdates: "更新",
   filterRead: "讀過",
   filterUnread: "未讀",
   /** 收藏格子的狀態行：沒有閱讀紀錄。 */
   unread: "未讀",
+  /** 封面右上角的未讀數字（讀屏用；畫面只顯示數字）。 */
+  unreadBadge: "未讀 {n} 話",
+  /** 下拉檢查追更時的進度列。 */
+  checkingUpdates: "正在檢查更新 {done}/{total}",
   /** 篩選後一本都不剩。 */
   emptyFilteredTitle: "沒有符合的收藏",
   emptyFilteredDetail: "從右上角選單切換顯示範圍。",
+  /** 「更新」篩選：收藏裡沒有未讀的章節。 */
+  emptyUpdatesTitle: "目前沒有更新",
+  emptyUpdatesDetail: "收藏的作品有新章節時，會出現在這裡。",
 
   /** 各個清單沒有內容時。 */
   emptyFavoritesTitle: "書架是空的",

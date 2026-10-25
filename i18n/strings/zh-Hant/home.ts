@@ -19,6 +19,13 @@ export default {
   sourceInvalid: "源失效",
   sourceRemoved: "源已移除",
 
+  /** Scripting 首頁分頁的 Mini Hub（`home_screen_default_ui.tsx`）：開啟完整 App 與追更看板。 */
+  miniHub: {
+    openApp: "開啟完整 App",
+    updatesTitle: "最新追更",
+    allUpToDate: "所有收藏已是最新",
+  },
+
   /** Bangumi 條目詳情頁。 */
   bangumi: {
     originalName: "原名：{name}",

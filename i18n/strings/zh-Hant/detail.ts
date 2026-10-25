@@ -54,6 +54,10 @@ export default {
   /** 選取模式的下載鈕；`{n}` 是還沒下載的章節數。 */
   downloadSelected: "下載 ({n})",
   downloadAll: "全載",
+  /** 選取模式的已讀鈕；`{n}` 是已選章節數。 */
+  markSelectedRead: "標為已讀 ({n})",
+  /** 章節工具列選單：一次把當前分組全部標成已讀。 */
+  markAllRead: "全部標為已讀",
 
   /** 章節列的下載狀態。`{done}`／`{total}` 是已下載與總頁數。 */
   downloadQueued: "等待下載",
@@ -64,6 +68,8 @@ export default {
   /** 章節列左滑的動作。 */
   download: "下載",
   resumeDownload: "繼續下載",
+  markRead: "標為已讀",
+  markUnread: "標為未讀",
 
   /** 續讀徽章；`{n}` 是頁碼。 */
   lastRead: "上次讀到",

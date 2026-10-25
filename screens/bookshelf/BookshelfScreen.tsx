@@ -1,12 +1,27 @@
-// 書架：上面兩列入口（閱讀歷史、離線內容，各推一頁），下面是收藏網格。
+// 書架：上面兩列入口（閱讀歷史、離線內容，各推一頁）、顯示範圍的膠囊列，下面是收藏網格。
 // 整頁一個直向捲動區，導覽列才有柔和淡出、tab bar 才會跟著捲動縮放（見 design/LANGUAGE.md）。
-// 收藏格子接上閱讀紀錄：狀態行寫讀到哪一話，封面下的進度條是那一話讀到哪。
+// 收藏格子接上閱讀紀錄：狀態行寫讀到哪一話，封面下的進度條是那一話讀到哪，
+// 右上的數字膠囊是還沒讀的章數（追更快取 × 已讀清單）。下拉則手動跑一輪追更檢查。
 
-import { Button, Divider, Menu, NavigationLink, ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
+import {
+  Button,
+  Divider,
+  Image,
+  Menu,
+  NavigationLink,
+  ProgressView,
+  ScrollView,
+  Text,
+  VStack,
+  ZStack,
+  useEffect,
+  useState,
+} from "scripting"
 
 import { shelfItems, type ShelfFilter, type ShelfItem, type ShelfSort } from "../../app/shelf"
 import { comicLibrary } from "../../app/services"
-import { PageBackground } from "../../app/theme"
+import { PageBackground, useTint } from "../../app/theme"
+import { updatesScheduler } from "../../app/updates"
 import { useSubscription } from "../../app/useSubscription"
 import { ComicGridLayout, type ComicGridEntry } from "../../components/ComicGrid"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
@@ -28,15 +43,17 @@ const SORTS: { value: ShelfSort; key: MessageKey }[] = [
 ]
 const FILTERS: { value: ShelfFilter; key: MessageKey }[] = [
   { value: "all", key: "bookshelf.filterAll" },
+  { value: "updates", key: "bookshelf.filterUpdates" },
   { value: "read", key: "bookshelf.filterRead" },
   { value: "unread", key: "bookshelf.filterUnread" },
 ]
 
-function gridEntry({ favorite, progress, readFraction, removed }: ShelfItem): ComicGridEntry {
+function gridEntry({ favorite, progress, readFraction, removed, unreadCount }: ShelfItem): ComicGridEntry {
   return {
     sourceKey: favorite.sourceKey,
     removed,
     readFraction,
+    unreadCount,
     comic: {
       id: favorite.comicId,
       title: favorite.title,
@@ -48,10 +65,13 @@ function gridEntry({ favorite, progress, readFraction, removed }: ShelfItem): Co
 }
 
 export function BookshelfScreen() {
+  const tint = useTint()
   const [sort, setSort] = useState<ShelfSort>("recent")
   const [filter, setFilter] = useState<ShelfFilter>("all")
+  /** 手動檢查的進度（null＝沒在跑，進度列不出現）。 */
+  const [checking, setChecking] = useState<{ done: number; total: number } | null>(null)
 
-  // 源清單、書架（收藏／歷史）、離線層與語言一變就重繪（`onChange` 已含離線層）；回傳的 refresh 給 onAppear 用。
+  // 源清單、書架（收藏／歷史／追更）、離線層與語言一變就重繪（`onChange` 已含離線層與書架）；回傳的 refresh 給 onAppear 用。
   const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
 
   useEffect(() => {
@@ -64,6 +84,26 @@ export function BookshelfScreen() {
   const historyCount = listProgress().length
   const offlineCount = library.offline.comicCount()
 
+  /**
+   * 下拉：無視 TTL 重查一輪。背景剛好在跑就接管它（見 app/updates.ts）：
+   * 不重啟、不重複連線，只是把並行升到前台速度並把進度接到這裡。
+   */
+  async function checkUpdates() {
+    if (checking) return
+    setChecking({ done: 0, total: favoriteCount })
+    try {
+      await updatesScheduler().checkUpdates({
+        force: true,
+        onProgress: (done, total) => setChecking({ done, total }),
+      })
+    } finally {
+      setChecking(null)
+      refresh()
+    }
+  }
+
+  const isFiltered = filter !== "all"
+
   return (
     <ZStack
       // 被推入的閱讀器蓋住時不會重繪；回來時重新讀一次書架。
@@ -74,27 +114,21 @@ export function BookshelfScreen() {
         scrollContentBackground="hidden"
         navigationTitle={t("common.tabs.bookshelf")}
         navigationBarTitleDisplayMode="inline"
+        // iOS 自己會顯示轉圈；檢查的進度另外寫在膠囊列下面。
+        refreshable={checkUpdates}
         toolbar={{
           topBarLeading: <LeadingToolbar />,
           topBarTrailing: (
-            // 跟左上角關閉鍵同色；只有篩選中才改用主題色，顏色就是「有東西被藏起來」的提示。
             <Menu
-              title={t("bookshelf.sortMenu")}
-              foregroundStyle={filter === "all" ? "label" : undefined}
-              systemImage={
-                filter === "all" ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill"
+              label={
+                <Image
+                  systemName={isFiltered ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"}
+                  font="body"
+                  fontWeight="medium"
+                  foregroundStyle={isFiltered ? tint.tint : "label"}
+                />
               }
             >
-              <Menu title={t("bookshelf.sortGroup")}>
-                {SORTS.map(option => (
-                  <Button
-                    key={option.value}
-                    title={t(option.key)}
-                    systemImage={sort === option.value ? "checkmark" : undefined}
-                    action={() => setSort(option.value)}
-                  />
-                ))}
-              </Menu>
               <Menu title={t("bookshelf.filterGroup")}>
                 {FILTERS.map(option => (
                   <Button
@@ -102,6 +136,16 @@ export function BookshelfScreen() {
                     title={t(option.key)}
                     systemImage={filter === option.value ? "checkmark" : undefined}
                     action={() => setFilter(option.value)}
+                  />
+                ))}
+              </Menu>
+              <Menu title={t("bookshelf.sortGroup")}>
+                {SORTS.map(option => (
+                  <Button
+                    key={option.value}
+                    title={t(option.key)}
+                    systemImage={sort === option.value ? "checkmark" : undefined}
+                    action={() => setSort(option.value)}
                   />
                 ))}
               </Menu>
@@ -137,6 +181,18 @@ export function BookshelfScreen() {
             </Card>
           </VStack>
 
+          {checking && checking.total > 0 ? (
+            <VStack spacing={6} padding={{ horizontal: pageInsets.horizontal, bottom: 4 }}>
+              <ProgressView
+                value={checking.done / checking.total}
+                progressViewStyle="linear"
+              />
+              <Text font="caption2" foregroundStyle="secondaryLabel" monospacedDigit>
+                {t("bookshelf.checkingUpdates", { done: checking.done, total: checking.total })}
+              </Text>
+            </VStack>
+          ) : null}
+
           {items.length > 0 ? (
             <ComicGridLayout
               entries={items.map(gridEntry)}
@@ -154,6 +210,13 @@ export function BookshelfScreen() {
               icon="heart"
               title={t("bookshelf.emptyFavoritesTitle")}
               detail={t("bookshelf.emptyFavoritesDetail")}
+            />
+          ) : filter === "updates" ? (
+            <EmptyState
+              variant="page"
+              icon="arrow.triangle.2.circlepath"
+              title={t("bookshelf.emptyUpdatesTitle")}
+              detail={t("bookshelf.emptyUpdatesDetail")}
             />
           ) : (
             <EmptyState

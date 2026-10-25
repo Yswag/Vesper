@@ -55,6 +55,8 @@ export function Chip({
         padding={compact ? chipCompactPadding : chipPadding}
         background={selected ? tint.selected : undefined}
         clipShape={capsule("circular")}
+        // 沒有 `onTap`（例如當成 Menu 的 label）時，說法掛在膠囊本身，不然圖示 chip 讀不出來。
+        accessibilityLabel={onTap ? undefined : accessibilityLabel}
       >
         {icon ? (
           <Image
