@@ -1,10 +1,22 @@
 // English. **LLM 產出、未經母語者校對**.
 
 export default {
-  pickerLabel: "Bookshelf content",
-  favoritesTab: "Favorites",
   historyTab: "History",
   offlineTab: "Offline",
+  comicCount: { one: "{n} title", other: "{n} titles" },
+
+  sortMenu: "Sort and filter",
+  sortGroup: "Sort",
+  sortRecent: "Recently read",
+  sortAdded: "Recently added",
+  sortTitle: "Title",
+  filterGroup: "Show",
+  filterAll: "All",
+  filterRead: "Started",
+  filterUnread: "Unread",
+  unread: "Unread",
+  emptyFilteredTitle: "No matching favorites",
+  emptyFilteredDetail: "Change what's shown from the menu in the top-right corner.",
 
   emptyFavoritesTitle: "Your bookshelf is empty",
   emptyFavoritesDetail: "Tap the heart in the top-right corner while browsing a comic to save it here.",

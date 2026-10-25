@@ -1,4 +1,4 @@
-// 書架（`screens/bookshelf/**`）：收藏／閱讀歷史／離線內容三個分頁，與離線書架的卡片。
+// 書架（`screens/bookshelf/**`）：收藏網格、閱讀歷史與離線內容兩個推入頁。
 //
 // 源的東西不翻：漫畫標題、章節名、來源名稱（`entry.title`／`entry.epTitle`／`comicTitle` 都是資料）。
 // 導覽列標題也不在這裡：它與書架分頁的標題同一個字，來源是 `common.tabs.bookshelf`。
@@ -7,14 +7,29 @@
 // `screens/bookshelf/historyTime.ts` → `screens/shared/commentTime.ts` 的同一支。
 
 export default {
-  /** 三個分頁那個 picker 的存取標籤。 */
-  pickerLabel: "書架內容",
-  /** picker 的三個選項；`{n}` 是該分頁的數量。三種語言的量詞都不隨數字變，所以不是複數形。 */
-  favoritesTab: "收藏",
+  /** 書架頂部的兩個入口列，也是推入頁的標題。 */
   historyTab: "閱讀歷史",
   offlineTab: "離線內容",
+  /** 入口列右側的數量。 */
+  comicCount: { one: "{n} 本", other: "{n} 本" },
 
-  /** 三個分頁各自沒有內容時。 */
+  /** 導覽列右上的排序／篩選選單。 */
+  sortMenu: "排序與篩選",
+  sortGroup: "排序",
+  sortRecent: "最近閱讀",
+  sortAdded: "最近收藏",
+  sortTitle: "標題",
+  filterGroup: "顯示",
+  filterAll: "全部",
+  filterRead: "讀過",
+  filterUnread: "未讀",
+  /** 收藏格子的狀態行：沒有閱讀紀錄。 */
+  unread: "未讀",
+  /** 篩選後一本都不剩。 */
+  emptyFilteredTitle: "沒有符合的收藏",
+  emptyFilteredDetail: "從右上角選單切換顯示範圍。",
+
+  /** 各個清單沒有內容時。 */
   emptyFavoritesTitle: "書架是空的",
   emptyFavoritesDetail: "在瀏覽漫畫時點擊右上角愛心即可收藏。",
   emptyHistoryTitle: "還沒有閱讀紀錄",

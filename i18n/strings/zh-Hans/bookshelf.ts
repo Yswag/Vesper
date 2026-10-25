@@ -1,10 +1,22 @@
 // 简体中文。**LLM 產出、未經母語者校對**。
 
 export default {
-  pickerLabel: "书架内容",
-  favoritesTab: "收藏",
   historyTab: "阅读历史",
   offlineTab: "离线内容",
+  comicCount: { one: "{n} 本", other: "{n} 本" },
+
+  sortMenu: "排序与筛选",
+  sortGroup: "排序",
+  sortRecent: "最近阅读",
+  sortAdded: "最近收藏",
+  sortTitle: "标题",
+  filterGroup: "显示",
+  filterAll: "全部",
+  filterRead: "读过",
+  filterUnread: "未读",
+  unread: "未读",
+  emptyFilteredTitle: "没有符合的收藏",
+  emptyFilteredDetail: "从右上角菜单切换显示范围。",
 
   emptyFavoritesTitle: "书架是空的",
   emptyFavoritesDetail: "浏览漫画时点击右上角爱心即可收藏。",

@@ -1,20 +1,22 @@
 // 離線書架：已下載內容的入口。整頁只讀離線層（標題／封面／頁數／大小都在 manifest 裡），
 // 點一部漫畫推入它的離線章節頁（OfflineComicScreen），不經過詳情頁、不發任何請求。
 //
-// 純內容元件：自己的捲動區由書架那一頁提供（見票 04）。
+// `OfflineLibraryPage` 是從書架入口推進來的整頁；`OfflineLibraryScreen` 是不帶捲動區的內容。
 //
 // 長按刪除整部：先問一次（Dialog.confirm，跟下載頁同一條路），確認後逐章刪。
-// 書架把它放在左右滑翻頁的容器裡，左滑會被刪除搶走，所以刪除收在長按選單。
 
-import { Button, LazyVStack, NamespaceReader, NavigationLink, VStack } from "scripting"
+import { Button, LazyVStack, NamespaceReader, NavigationLink, ScrollView, VStack, ZStack } from "scripting"
 
 import { isActive } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
+import { PageBackground } from "../../app/theme"
+import { scrollTopBar } from "../../design/glass"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicListRow } from "../../components/ComicListRow"
 import { Card } from "../../design/layout"
 import { EmptyState } from "../../design/status"
+import { cardShape } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import {
   comicGroupKey,
@@ -74,6 +76,22 @@ function groupByComic(): ComicGroup[] {
   return [...groups.values()].sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+export function OfflineLibraryPage() {
+  return (
+    <ZStack>
+      <PageBackground />
+      <ScrollView
+        scrollContentBackground="hidden"
+        navigationTitle={t("bookshelf.offlineTab")}
+        navigationBarTitleDisplayMode="inline"
+        {...scrollTopBar(null)}
+      >
+        <OfflineLibraryScreen />
+      </ScrollView>
+    </ZStack>
+  )
+}
+
 export function OfflineLibraryScreen() {
   // 下載完成／刪除都會讓這裡重繪；資料在 render 裡重讀（每次重繪重讀）。
   // 語言也是訂閱源：manifest 的資料名與我們自己的字都在 render 時取自 `t()`
@@ -108,29 +126,41 @@ export function OfflineLibraryScreen() {
   return (
     <NamespaceReader>
       {offlineNs => (
-    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }}>
+    // 卡片的左滑要外層容器的 swipeActionsContainer（iOS 27）才生效。
+    <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
       {groups.map(group => {
         // 封面 zoom 進離線作品頁（跟收藏、歷史推詳情一樣）。
         const zoomID = `offline:${groupId(group.sourceKey, group.comicId)}`
         // 還在下載的章不能直接刪（任務跑完手上那一張會把 manifest 寫回去）：只能先取消。
         const downloads = group.chapters.map(chapter => comicLibrary().downloadState(chapter.key))
         const active = group.chapters.filter((_, index) => isActive(downloads[index].state))
+        const cancelActive = () => {
+          const library = comicLibrary()
+          for (const chapter of active) library.cancelDownload(chapter.key)
+        }
 
         return (
-          // 長按選單掛在外層（點一下仍然是 NavigationLink 的推入）。
+          // 左滑與長按掛在外層（點一下仍然是 NavigationLink 的推入）；外層也裁成卡片形狀，滑動底才不露方角。
           <VStack
             key={groupId(group.sourceKey, group.comicId)}
             spacing={0}
+            clipShape={cardShape}
+            trailingSwipeActions={{
+              allowsFullSwipe: false,
+              actions: [
+                <Button
+                  key="swipe"
+                  title={active.length > 0 ? t("settings.downloads.cancel") : t("common.delete")}
+                  systemImage={active.length > 0 ? "xmark.circle.fill" : "trash.fill"}
+                  role="destructive"
+                  action={active.length > 0 ? cancelActive : () => void deleteComic(group)}
+                />,
+              ],
+            }}
             contextMenu={{
               menuItems:
                 active.length > 0 ? (
-                  <Button
-                    title={t("settings.downloads.cancel")}
-                    action={() => {
-                      const library = comicLibrary()
-                      for (const chapter of active) library.cancelDownload(chapter.key)
-                    }}
-                  />
+                  <Button title={t("settings.downloads.cancel")} action={cancelActive} />
                 ) : (
                   <Button
                     title={t("common.delete")}

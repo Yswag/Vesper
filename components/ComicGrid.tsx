@@ -6,6 +6,7 @@ import {
   LazyVGrid,
   NamespaceReader,
   NavigationLink,
+  ProgressView,
   ScrollView,
   Text,
   VStack,
@@ -30,6 +31,8 @@ export interface ComicGridEntry {
   sourceName?: string
   /** 來源已被移除：封面下緣掛 danger 角標，下面那行來源名就不再重複。 */
   removed?: boolean
+  /** 0–1，這一話讀到哪：封面下方一條進度（跟首頁「繼續閱讀」同一種）。 */
+  readFraction?: number
   comic: ComicListItem
 }
 
@@ -51,6 +54,8 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
   const measured = containerWidth > 0
   const lastIndex = entries.length - 1
+  // 有任何一格帶進度才留這一行；瀏覽、搜尋的網格不受影響。
+  const hasProgress = entries.some(entry => entry.readFraction !== undefined)
 
   return (
     <NamespaceReader>
@@ -141,6 +146,15 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       </HStack>
                     ) : null}
                   </ZStack>
+                  {hasProgress ? (
+                    // 沒進度的格子也佔位（透明），同一排的書名才對得齊。
+                    <ProgressView
+                      value={entry.readFraction ?? 0}
+                      progressViewStyle="linear"
+                      frame={{ width: cellWidth }}
+                      opacity={entry.readFraction !== undefined ? 1 : 0}
+                    />
+                  ) : null}
                   <Text
                     font="caption"
                     fontWeight="medium"
