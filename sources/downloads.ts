@@ -130,6 +130,13 @@ function chapterStateOf(task: AnyTask | undefined, offline: OfflineStatus): Chap
   return { state: "none", completed: offline.completed, total: offline.total }
 }
 
+/** 排隊中＋跑得中的章數。 */
+export function activeDownloadCount(): number {
+  let count = 0
+  for (const task of tasks.values()) if (isActive(task.state)) count += 1
+  return count
+}
+
 /** 這一組章節裡還沒下載完的（已下載的跳過，重複的只算一次）。「下載 (n)」的 n 與「下載全部」都用它。 */
 export function undownloadedChapters(sourceKey: string, comicId: string, epIds: string[]): string[] {
   const pending: string[] = []

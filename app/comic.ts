@@ -44,6 +44,7 @@ import {
   type CategoryPart,
 } from "../sources/category"
 import {
+  activeDownloadCount,
   cancelChapterDownload,
   chapterDownloadState,
   deleteChapterDownload,
@@ -354,6 +355,8 @@ export interface OfflineLibrary {
   comicCount(): number
   /** 離線內容總共佔多少位元組（書架入口列、設定頁）。 */
   totalBytes(): number
+  /** 排隊中＋下載中的章數（書架入口列）。 */
+  activeChapterCount(): number
 }
 
 /** 整組下載共用的資訊（漫畫名與封面，下載頁要顯示）。 */
@@ -914,6 +917,8 @@ export function createComicLibrary(): ComicLibrary {
       comicCount: () => offlineComics().length,
 
       totalBytes: () => totalBytes(),
+
+      activeChapterCount: () => activeDownloadCount(),
     },
 
     listDownloads: () => listDownloads(),

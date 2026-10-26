@@ -12,6 +12,7 @@ export default {
   offlineTab: "離線內容",
   /** 入口列右側的數量。 */
   comicCount: { one: "{n} 本", other: "{n} 本" },
+  downloadingCount: { one: "下載中 {n} 話", other: "下載中 {n} 話" },
 
   /** 導覽列右上的排序與篩選選單。 */
   menu: "排序與篩選",

@@ -4,6 +4,7 @@ export default {
   historyTab: "阅读历史",
   offlineTab: "离线内容",
   comicCount: { one: "{n} 本", other: "{n} 本" },
+  downloadingCount: { one: "下载中 {n} 话", other: "下载中 {n} 话" },
 
   menu: "排序与筛选",
   sortGroup: "排序",

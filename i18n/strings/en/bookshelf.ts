@@ -4,6 +4,7 @@ export default {
   historyTab: "History",
   offlineTab: "Offline",
   comicCount: { one: "{n} title", other: "{n} titles" },
+  downloadingCount: { one: "{n} chapter downloading", other: "{n} chapters downloading" },
 
   menu: "Sort & Filter",
   sortGroup: "Sort by",
