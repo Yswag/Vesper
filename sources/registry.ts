@@ -6,6 +6,7 @@ import { setCloudflareSourceNameLookup } from "../engine/cloudflare"
 import { clearCredentials, loadCredentials, saveCredentials } from "../engine/credentials"
 import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
+import { requirePro } from "../engine/pro"
 import { createHostContext } from "../engine/host"
 import { hostUI } from "../app/hostUI"
 import { extractSettings, loadSource, mergeSettings, type SettingSpec, type SourceCapabilities, type SourceMeta } from "../engine/loader"
@@ -560,6 +561,8 @@ export async function installRepositoryEntry(repositoryUrl: string, key: string)
   if (!entry) throw new Error(t("sources.repository.entryNotFound"))
 
   if (repositoryStore.kindOf(repository) === "aidoku-index") {
+    // 宿主頁要靠本機 HttpServer，那是 Scripting Pro 的功能：沒有就別讓檔案落地。
+    requirePro("aidoku")
     if (!entry.url) throw new Error(t("sources.catalog.relativeOnly"))
     const existed = findSource(entry.key) !== undefined
     const aix = await fetchBytes(entry.url)

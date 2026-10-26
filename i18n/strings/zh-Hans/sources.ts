@@ -43,6 +43,9 @@ export default {
     volume: "第 {n} 卷",
     unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
 
+    requiresPro: "Aidoku 源需要 Scripting Pro",
+    requiresProDetail: "Aidoku 源要靠本机 HTTP 服务器运行源的 WebAssembly。升级 Scripting Pro 后再回来安装。",
+
     indexInvalid: "Aidoku 索引格式不对（要 { sources: [...] } 或 JSON 数组）",
     indexBadId: "源 id 不合法：{id}",
     indexBadEntry: "索引条目缺 name、version 或下载路径",

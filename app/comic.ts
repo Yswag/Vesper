@@ -25,6 +25,7 @@ import { getReaderSettings, type SourceViewer } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
+import { hasPro } from "../engine/pro"
 import {
   closeRenderDir,
   findSharpenedPage,
@@ -751,7 +752,8 @@ export function createComicLibrary(): ComicLibrary {
         onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
       })
 
-      let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
+      // 沒有 Scripting Pro 就沒有本機 HttpServer，超分根本跑不起來：不要每頁白試兩次再降級。
+      let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen && hasPro()
 
       // 這一話的暫存檔目錄（每頁的原圖與超分圖），生命週期＝這個 session。
       // 開場順手清掉上一輪被系統殺掉時留下的孤兒。
@@ -824,7 +826,7 @@ export function createComicLibrary(): ComicLibrary {
         pageImage: loadPageBytes,
         loadPage,
         setHardwareSharpen: enabled => {
-          hardwareSharpenEnabled = enabled
+          hardwareSharpenEnabled = enabled && hasPro()
         },
         warm: page => prefetch.focus(page),
         dispose: () => {

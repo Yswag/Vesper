@@ -4,6 +4,7 @@
 
 import { Script } from "scripting"
 import { t } from "../i18n"
+import { hasPro } from "../engine/pro"
 
 import { isActive, listDownloads, subscribeDownloads } from "../sources/downloads"
 import { getBackgroundDownloads, subscribeBackgroundDownloads } from "../sources/downloadSettings"
@@ -151,7 +152,7 @@ export function realOfflineRuntime(): OfflineSessionRuntime {
       minimize: () => Script.minimize(),
       exit: () => Script.exit(),
     },
-    hasFullAccess: () => Script.hasFullAccess(),
+    hasFullAccess: hasPro,
     confirmContinueDownloading: realConfirmContinueDownloading,
   }
 }

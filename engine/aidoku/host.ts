@@ -9,6 +9,7 @@ import { Script, fetch } from "scripting"
 import { cookieHeader, mergeCookieHeader } from "../cookies"
 import { join, readBytes } from "../fs"
 import { log } from "../log"
+import { requirePro } from "../pro"
 import { isCloudflareChallenge } from "../cloudflareDetect"
 
 const CALL_TIMEOUT_MS = 15_000
@@ -616,6 +617,9 @@ let creatingHost: Promise<WebViewController> | null = null
 
 async function ensureHost(): Promise<WebViewController> {
   if (controller) return controller
+  // 宿主頁與 runtime 都住在本機 HttpServer（Scripting Pro）。在 createHost 之前擋，
+  // 才不會被 withHealing 當成「宿主壞掉」重建一輪。
+  requirePro("aidoku")
   // 兩個源同時第一次用到時只建一個頁面。
   if (!creatingHost) creatingHost = createHost().finally(() => {
     creatingHost = null

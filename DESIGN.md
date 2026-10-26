@@ -36,6 +36,7 @@ engine/              源執行沙箱與媒體管線
   pagefiles.ts       正文頁面暫存檔（位元組落地、格式嗅探、session 生命週期）
   upscale.ts         ACNet ONNX 2x 超解析度引擎（WebViewController 沙箱 + LRU 位元組快取）
   offline.ts         離線章節下載與讀取
+  pro.ts             Scripting Pro 能力判定（HttpServer 為 Pro 專屬）
 sources/             漫畫源管理
   runner.ts          SourceRunner：執行源邏輯的唯一中介
   store.ts           源腳本儲存

@@ -96,6 +96,8 @@ export interface ReaderHUDProps {
   chapterTitle: string
   settings: ReaderSettings
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void
+  /** 有沒有 Scripting Pro 的超分能力：沒有時開關看得見但按不下去。 */
+  canUpscale: boolean
   /** 這本有沒有自己的閱讀設定（開關狀態）。 */
   perComic: boolean
   onTogglePerComic: (on: boolean) => void
@@ -131,6 +133,7 @@ export function ReaderHUD({
   chapterTitle,
   settings,
   onUpdateSettings,
+  canUpscale,
   perComic,
   onTogglePerComic,
   onDismiss,
@@ -323,10 +326,17 @@ export function ReaderHUD({
                     />
 
                     <Toggle
-                      title={t("reader.hardwareSharpen")}
+                      title={
+                        canUpscale
+                          ? t("reader.hardwareSharpen")
+                          : `${t("reader.hardwareSharpen")}${t("reader.requiresPro")}`
+                      }
                       systemImage="sparkles"
+                      disabled={!canUpscale}
                       value={settings.hardwareSharpen}
-                      onChanged={value => onUpdateSettings({ hardwareSharpen: value })}
+                      onChanged={value => {
+                        if (canUpscale) onUpdateSettings({ hardwareSharpen: value })
+                      }}
                     />
                   </Menu>
                 </HStack>

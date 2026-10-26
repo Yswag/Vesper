@@ -43,6 +43,10 @@ export default {
     volume: "Vol. {n}",
     unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
 
+    requiresPro: "Aidoku sources need Scripting Pro",
+    requiresProDetail:
+      "Aidoku sources run their WebAssembly on a local HTTP server. Upgrade to Scripting Pro, then come back and install.",
+
     indexInvalid: "Not an Aidoku index (expected { sources: [...] } or a JSON array)",
     indexBadId: "Invalid source id: {id}",
     indexBadEntry: "Index entry is missing name, version or a download path",

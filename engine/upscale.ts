@@ -4,6 +4,7 @@
 import { Script } from "scripting"
 import { join, readBytes } from "./fs"
 import { log } from "./log"
+import { requirePro } from "./pro"
 
 let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
@@ -243,6 +244,8 @@ function staticResponse(bytes: Uint8Array, contentType: string, extraHeaders: Re
 
 async function ensureServer(): Promise<number> {
   if (serverInstance && currentPort) return currentPort
+  // 本機 HttpServer 是 Scripting Pro 的功能；沒有它這裡只會失敗兩次再降級。
+  requirePro("upscale")
 
   const server = new HttpServer()
 

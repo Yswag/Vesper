@@ -57,6 +57,9 @@ export default {
   gestureHint: "（縱向僅滑動）",
   tapZones: "三分區翻頁",
   hardwareSharpen: "AI 超解析度 (ACNet ONNX)",
+  /** 超分開關的後綴與錯誤訊息：沒有 Scripting Pro 就按不下去。 */
+  requiresPro: "（需要 Scripting Pro）",
+  upscaleRequiresPro: "AI 超解析度需要 Scripting Pro",
   /** 預設跟隨源宣告的閱讀方式（沒有就退全域）；打開就存成這本的獨立設定。 */
   perComic: "記住這本的設定",
 

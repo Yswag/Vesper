@@ -10,6 +10,7 @@ import { Chip } from "../../design/chip"
 import { Caption, Footnote } from "../../design/text"
 import { radius, rect, rowPadding } from "../../design/tokens"
 import { useTint } from "../../app/theme"
+import { hasPro } from "../../engine/pro"
 import { t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
@@ -39,6 +40,16 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     setLoaded(true)
   }
 
+  /** Aidoku 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
+  async function blockedByPro(): Promise<boolean> {
+    if (!repository || kindOf(repository) !== "aidoku-index" || hasPro()) return false
+    await Dialog.alert({
+      title: t("sources.aidoku.requiresPro"),
+      message: t("sources.aidoku.requiresProDetail"),
+    })
+    return true
+  }
+
   useEffect(() => {
     sync()
     const offRepositories = subscribeRepositories(sync)
@@ -50,6 +61,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   }, [repositoryUrl])
 
   async function install(entry: CatalogEntry) {
+    if (await blockedByPro()) return
     setBusyKey(entry.key)
     setStatus({ kind: "loading", text: t("settings.repo.installing", { name: entry.name }) })
     try {
@@ -88,6 +100,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   /** 一鍵安裝：掃描衝突、彈窗確認、循序/受控安裝 */
   async function installAll() {
     if (entries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
+    if (await blockedByPro()) return
 
     // 1. 同倉重複去重：同一倉庫內同 key 只保留第一筆
     const seenInRepo = new Set<string>()

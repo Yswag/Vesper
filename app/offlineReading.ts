@@ -9,6 +9,7 @@ import { closeRenderDir, findSharpenedPage, openRenderDir, writeSharpenedPage } 
 import { isSafeForUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings } from "../library/readerSettings"
 import { log } from "../engine/log"
+import { hasPro } from "../engine/pro"
 import { t } from "../i18n"
 
 /** 這一章下載完了沒（目錄能列、閱讀器能開的都必須是 `done`）。 */
@@ -38,7 +39,8 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     return imageKey
   }
 
-  let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen
+  // 超分需要本機 HttpServer（Scripting Pro）；沒有就別排隊。
+  let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen && hasPro()
 
   // 原圖直接採用本地磁碟檔案路徑；超分圖產生後寫入 session 暫存目錄供 Canvas 渲染
   const renderDir = openRenderDir(key.epId)
@@ -116,7 +118,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       return { path, aspect }
     },
     setHardwareSharpen: enabled => {
-      hardwareSharpenEnabled = enabled
+      hardwareSharpenEnabled = enabled && hasPro()
     },
     // 檔案就在本機、又沒有記憶體快取，所以沒有預取可做；超分圖的暫存檔要收掉。
     warm: () => {},

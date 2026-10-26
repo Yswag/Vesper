@@ -38,6 +38,7 @@ import type { ChapterSession, ReaderChapter } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { describeError } from "../../engine/errors"
+import { hasPro } from "../../engine/pro"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
@@ -244,6 +245,9 @@ function ReaderContent({
   const scope = useMemo(() => ({ sourceKey, comicId }), [sourceKey, comicId])
   const [initialSettings] = useState(() => resolveReaderSettings(scope, viewer))
   const [settings, setSettings] = useState<ReaderSettings>(initialSettings.settings)
+  // 超分要 Scripting Pro 的本機 HttpServer；沒有 Pro 時開關看得見但按不下去。
+  // 只問一次：這是同步原生呼叫，不該跟著每次翻頁跑。
+  const [canUpscale] = useState(() => hasPro())
   // 這本有沒有自己的設定（HUD 的 per-comic 開關）。
   const [perComic, setPerComic] = useState(initialSettings.perComic)
   // 開章的非同步流程不能把 settings 放進 deps（會重開章）；用 ref 讀當下的值。
@@ -1019,6 +1023,7 @@ function ReaderContent({
         {/* 2. 全螢幕 HUD Overlay */}
         <ReaderHUD
           hudVisible={hudVisible}
+          canUpscale={canUpscale}
           safeAreaInsets={safeAreaInsets}
           comicTitle={comicTitle}
           chapterTitle={title}

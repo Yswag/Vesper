@@ -58,6 +58,10 @@ export default {
     /** 源被判定不可用；`{reason}` 是最後一次的失敗原因。 */
     unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
 
+    /** 本機 HTTP 伺服器是 Scripting Pro 的功能；沒有它 Aidoku 源跑不起來。 */
+    requiresPro: "Aidoku 源需要 Scripting Pro",
+    requiresProDetail: "Aidoku 源要靠本機 HTTP 伺服器執行源的 WebAssembly。升級 Scripting Pro 後再回來安裝。",
+
     /** 倉庫索引（community／zh-sources 兩種 schema）。 */
     indexInvalid: "Aidoku 索引格式不對（要 { sources: [...] } 或 JSON 陣列）",
     /** `{id}` 是索引條目裡的源 id。 */

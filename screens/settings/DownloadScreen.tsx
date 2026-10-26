@@ -15,7 +15,6 @@ import {
   VStack,
   useState,
 } from "scripting"
-import { Script } from "scripting"
 
 import { isActive, type ChapterRef, type ComicRef, type DownloadRecord, type ReaderChapter } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -27,6 +26,7 @@ import { EmptyState } from "../../design/status"
 import { fill, rowPadding, toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
+import { hasPro } from "../../engine/pro"
 import { t } from "../../i18n"
 import { ReaderScreen } from "../shared/ReaderScreen"
 import {
@@ -41,7 +41,7 @@ export function DownloadScreen() {
   useSubscription(library.onChange, subscribeBackgroundDownloads)
 
   // 背景續傳是 Scripting Pro 的功能；沒有 Pro 時開關看得見但按不下去。
-  const canUseBackground = Script.hasFullAccess()
+  const canUseBackground = hasPro()
 
   return (
     <DownloadSections
