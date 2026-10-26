@@ -8,7 +8,6 @@ import {
   Image,
   LazyVStack,
   LazyHStack,
-  Menu,
   NamespaceReader,
   NavigationLink,
   ScrollView,
@@ -45,6 +44,7 @@ import {
 } from "../../library/bookshelf"
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
+import { ChapterListHeader, ChapterSelectionBar, selectionAnimation, selectionBarClearance } from "./ChapterSelection"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { presentReader } from "./ResumeReaderScreen"
 import { type ChapterRef } from "./ReaderScreen"
@@ -94,6 +94,9 @@ function statusText(status: NonNullable<ComicPage["status"]>): string {
       return t("detail.statusNotPublished")
   }
 }
+
+/** 選取圓點的欄位寬：平常 0，選取時擐開把標題推向右，圓點從卡片左緣外滑入。 */
+const markSlotWidth = 28
 
 /** 只有 `suggestive`／`nsfw` 會走到這裡（safe 不占位置）。 */
 function ratingText(rating: NonNullable<ComicPage["contentRating"]>): string {
@@ -303,8 +306,7 @@ export function ComicDetailScreen({
       title: chapters.find(chapter => chapter.id === epId)?.title,
     }))
     if (requests.length > 0) void library.download(requests, downloadMeta)
-    setSelectedIds([])
-    setSelecting(false)
+    setSelectionMode(false)
   }
 
   /** 「下載全部」：僅下載當前選中組別（避免多語言源一次下載所有語言）。 */
@@ -339,8 +341,15 @@ export function ComicDetailScreen({
   function markSelectedRead() {
     if (selectedIds.length === 0) return
     markChapterRead(sourceKey, comicId, selectedIds, true)
-    setSelectedIds([])
-    setSelecting(false)
+    setSelectionMode(false)
+  }
+
+  /** 進出選取模式：清空勾選，工具列與圓點用動畫切換。 */
+  function setSelectionMode(on: boolean) {
+    void withAnimation(selectionAnimation, () => {
+      setSelecting(on)
+      setSelectedIds([])
+    })
   }
 
   // 封面尺寸：容器給多少寬度就用多少（見 comicHeroMetrics 與 docs/ui-ux-liquid-glass.md）。
@@ -448,6 +457,20 @@ export function ComicDetailScreen({
           frame={{ maxWidth: "infinity" }}
           // 跟首頁一樣：內容捲到導覽列下面時是柔和淡出，不是硬邊的分隔線。
           {...scrollTopBar(null)}
+          overlay={{
+            alignment: "bottom",
+            content: (
+              <ChapterSelectionBar
+                visible={selecting}
+                allSelected={allSelected}
+                downloadCount={pendingSelected.length}
+                readCount={selectedIds.length}
+                onToggleAll={toggleSelectAll}
+                onDownload={downloadSelected}
+                onMarkRead={markSelectedRead}
+              />
+            ),
+          }}
           onScrollTargetVisibilityChange={{
             idType: "string",
             threshold: 0.1,
@@ -824,92 +847,18 @@ export function ComicDetailScreen({
 
             {/* 5. 章節列表頭部（緊湊合一工具列，大幅減少垂直佔位） */}
             <VStack spacing={12}>
-              <HStack alignment="center" spacing={6}>
-                {selecting ? (
-                  <>
-                    <HStack spacing={6} alignment="center">
-                      <Chip
-                        compact
-                        text={allSelected ? t("detail.deselectAll") : t("detail.selectAll")}
-                        onTap={toggleSelectAll}
-                      />
-                      {selectedIds.length > 0 ? (
-                        <Text font="subheadline" fontWeight="medium" foregroundStyle="secondaryLabel">
-                          {selectedIds.length}
-                        </Text>
-                      ) : null}
-                    </HStack>
-                    <Spacer />
-                    <HStack spacing={6}>
-                      <Chip
-                        compact
-                        text={t("detail.downloadSelected", { n: pendingSelected.length })}
-                        selected={pendingSelected.length > 0}
-                        disabled={pendingSelected.length === 0}
-                        onTap={downloadSelected}
-                      />
-                      <Chip
-                        compact
-                        text={t("detail.markSelectedRead", { n: selectedIds.length })}
-                        selected={selectedIds.length > 0}
-                        disabled={selectedIds.length === 0}
-                        onTap={markSelectedRead}
-                      />
-                      <Chip
-                        compact
-                        text={t("common.cancel")}
-                        onTap={() => {
-                          setSelecting(false)
-                          setSelectedIds([])
-                        }}
-                      />
-                    </HStack>
-                  </>
-                ) : (
-                  <>
-                    <HStack spacing={6} alignment="firstTextBaseline">
-                      <Text font="title3" fontWeight="bold">
-                        {t("detail.chaptersTitle")}
-                      </Text>
-                      <Text font="subheadline" fontWeight="medium" foregroundStyle="tertiaryLabel">
-                        {isGrouped ? `${currentGroupChapters.length} / ${chapters.length}` : chapters.length}
-                      </Text>
-                    </HStack>
-                    <Spacer />
-                    <HStack spacing={6}>
-                      <Chip
-                        compact
-                        icon="arrow.up.arrow.down"
-                        selected={reverseOrder}
-                        accessibilityLabel={reverseOrder ? t("detail.sortAscending") : t("detail.sortDescending")}
-                        onTap={() => setReverseOrder(!reverseOrder)}
-                      />
-                      <Chip
-                        compact
-                        text={t("detail.select")}
-                        onTap={() => {
-                          setSelecting(true)
-                          setSelectedIds([])
-                        }}
-                      />
-                      <Menu label={<Chip compact icon="ellipsis.circle" accessibilityLabel={t("detail.moreActions")} />}>
-                        <Button
-                          title={t("detail.markAllRead")}
-                          systemImage="checkmark.circle"
-                          disabled={unreadCount === 0}
-                          action={markGroupRead}
-                        />
-                        <Button
-                          title={t("detail.downloadAll")}
-                          systemImage="arrow.down.circle"
-                          disabled={pendingAll.length === 0}
-                          action={downloadAll}
-                        />
-                      </Menu>
-                    </HStack>
-                  </>
-                )}
-              </HStack>
+              <ChapterListHeader
+                selecting={selecting}
+                selectedCount={selectedIds.length}
+                countText={isGrouped ? `${currentGroupChapters.length} / ${chapters.length}` : String(chapters.length)}
+                reverseOrder={reverseOrder}
+                canMarkAllRead={unreadCount > 0}
+                canDownloadAll={pendingAll.length > 0}
+                onToggleSort={() => setReverseOrder(!reverseOrder)}
+                onToggleSelecting={() => setSelectionMode(!selecting)}
+                onMarkAllRead={markGroupRead}
+                onDownloadAll={downloadAll}
+              />
 
               {/* 5.1 分組切換標籤列（僅在有多個分組時顯示，水平滾動膠囊列） */}
               {isGrouped ? (
@@ -947,58 +896,67 @@ export function ComicDetailScreen({
                   const settled = isActive(download.state) || download.state === "done"
                   const checked = selectedIds.includes(chapter.id)
                   const highlight = selecting ? checked : isCurrent
+                  const markVisible = selecting && !locked
 
                   // 章節卡片內容
                   const body = (
                     <Card background={highlight ? tint.selectedRow : cardBackground}>
                       <HStack
+                        spacing={0}
                         padding={rowPadding}
                         frame={{ maxWidth: "infinity" }}
                         contentShape="rect"
                       >
-                        {selecting && !locked ? (
+                        {/* 圓點常駐：進出選取只動寬度與位移，標題才會被推著走（插入新元件標題會被當成新的）。 */}
+                        <ZStack frame={{ width: markVisible ? markSlotWidth : 0, alignment: "leading" }}>
                           <Image
                             systemName={checked ? "checkmark.circle.fill" : "circle"}
+                            font="subheadline"
                             fontWeight="medium"
                             foregroundStyle={checked ? tint.tint : "tertiaryLabel"}
+                            offset={{ x: markVisible ? 0 : -markSlotWidth - rowPadding.horizontal, y: 0 }}
+                            opacity={markVisible ? 1 : 0}
                           />
-                        ) : null}
-                        {locked ? (
-                          <Image systemName="lock.fill" font="caption2" foregroundStyle="tertiaryLabel" />
-                        ) : null}
-                        <Text
-                          font="subheadline"
-                          fontWeight={isCurrent ? "bold" : "regular"}
-                          foregroundStyle={isCurrent ? tint.tint : read ? "secondaryLabel" : "label"}
-                          lineLimit={1}
-                        >
-                          {chapter.title}
-                        </Text>
-                        <Spacer />
-                        <DownloadStateText state={download} />
-                        {isCurrent ? (
-                          <HStack
-                            spacing={3}
-                            padding={{ horizontal: 8, vertical: 3 }}
-                            background={tint.tint}
-                            clipShape={capsule()}
+                        </ZStack>
+                        <HStack>
+                          {locked ? (
+                            <Image systemName="lock.fill" font="caption2" foregroundStyle="tertiaryLabel" />
+                          ) : null}
+                          <Text
+                            font="subheadline"
+                            fontWeight={isCurrent ? "bold" : "regular"}
+                            foregroundStyle={isCurrent ? tint.tint : read ? "secondaryLabel" : "label"}
+                            lineLimit={1}
                           >
+                            {chapter.title}
+                          </Text>
+                          <Spacer />
+                          <DownloadStateText state={download} />
+                          {isCurrent ? (
+                            <HStack
+                              spacing={3}
+                              padding={{ horizontal: 8, vertical: 3 }}
+                              background={tint.tint}
+                              clipShape={capsule()}
+                            >
+                              <Image
+                                systemName="clock.arrow.circlepath"
+                                font="caption2"
+                                foregroundStyle={tint.onTint}
+                              />
+                              <Text font="caption2" foregroundStyle={tint.onTint} fontWeight="semibold">
+                                {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
+                              </Text>
+                            </HStack>
+                          ) : selecting || locked ? null : (
                             <Image
-                              systemName="clock.arrow.circlepath"
+                              systemName="chevron.right"
                               font="caption2"
-                              foregroundStyle={tint.onTint}
+                              foregroundStyle="tertiaryLabel"
+                              transition={Transition.opacity()}
                             />
-                            <Text font="caption2" foregroundStyle={tint.onTint} fontWeight="semibold">
-                              {resumed ? t("detail.lastReadAtPage", { n: resumed.page + 1 }) : t("detail.lastRead")}
-                            </Text>
-                          </HStack>
-                        ) : selecting || locked ? null : (
-                          <Image
-                            systemName="chevron.right"
-                            font="caption2"
-                            foregroundStyle="tertiaryLabel"
-                          />
-                        )}
+                          )}
+                        </HStack>
                       </HStack>
                     </Card>
                   )
@@ -1049,7 +1007,8 @@ export function ComicDetailScreen({
                     )
                   }
 
-                  return selecting || locked ? (
+                  // 選取模式只清空動作、不拿掉修飾子：結構一變整列會被換掉，圓點與位移就沒有動畫。
+                  return locked ? (
                     <VStack key={chapter.id} spacing={0} clipShape={cardShape}>
                       {row}
                     </VStack>
@@ -1058,13 +1017,15 @@ export function ComicDetailScreen({
                       key={chapter.id}
                       spacing={0}
                       clipShape={cardShape}
-                      trailingSwipeActions={{ allowsFullSwipe: true, actions }}
+                      trailingSwipeActions={{ allowsFullSwipe: !selecting, actions: selecting ? [] : actions }}
                     >
                       {row}
                     </VStack>
                   )
                 })}
               </LazyVStack>
+              {/* 選取時讓出底部列的高度。 */}
+              <VStack frame={{ height: selecting ? selectionBarClearance : 0 }} />
             </VStack>
 
           </VStack>

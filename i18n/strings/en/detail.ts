@@ -36,6 +36,8 @@ export default {
 
   chaptersTitle: "Chapters",
   select: "Select",
+  selectedCount: "{n} selected",
+  selectDone: "Done",
   sortAscending: "Sort chapters oldest first",
   sortDescending: "Sort chapters newest first",
   downloadSelected: "Download ({n})",

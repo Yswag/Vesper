@@ -36,6 +36,8 @@ export default {
 
   chaptersTitle: "章节列表",
   select: "选择",
+  selectedCount: "已选 {n} 话",
+  selectDone: "完成",
   sortAscending: "章节改为正序",
   sortDescending: "章节改为倒序",
   downloadSelected: "下载 ({n})",

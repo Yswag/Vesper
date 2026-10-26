@@ -49,6 +49,9 @@ export default {
   /** 章節列表的工具列。 */
   chaptersTitle: "章節列表",
   select: "選取",
+  /** 選取模式的標題與結束鈕。 */
+  selectedCount: "已選 {n} 話",
+  selectDone: "完成",
   sortAscending: "章節改為正序",
   sortDescending: "章節改為倒序",
   /** 選取模式的下載鈕；`{n}` 是還沒下載的章節數。 */
