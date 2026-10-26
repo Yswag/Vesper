@@ -178,12 +178,33 @@ export const dotStroke: { shapeStyle: DynamicShapeStyle; strokeStyle: { lineWidt
   strokeStyle: { lineWidth: 1 },
 }
 
-/** 封面投影。封面是不透明圖片，影子壓在任何底色上都是黑影，所以不屬於「卡片不加陰影」那條。 */
-export const coverShadow: { color: Color; radius: number; x: number; y: number } = {
-  color: "rgba(0, 0, 0, 0.35)",
-  radius: 6,
+/**
+ * 封面投影三層（照 Material elevation 的 key／penumbra／ambient 分工，數值縮到封面尺寸）：
+ * key 貼底給厚度、penumbra 是它邊緣的軟化、ambient 是很淡的環繞影。
+ * 單層大模糊＝四邊同暗糊成一圈，看起來像髒污；只留 key 又像貼紙。三層缺一不可。
+ * 引擎的 shadow 一次只有一層，三層要疊 view（`design/CoverShadow`）。
+ */
+export const coverShadowKey: { color: Color; radius: number; x: number; y: number } = {
+  color: "rgba(0, 0, 0, 0.20)",
+  radius: 2,
   x: 0,
   y: 3,
+}
+
+/** penumbra：key 旁邊的半影，讓底邊不會切得太硬。 */
+export const coverShadowPenumbra: { color: Color; radius: number; x: number; y: number } = {
+  color: "rgba(0, 0, 0, 0.14)",
+  radius: 2,
+  x: 0,
+  y: 2,
+}
+
+/** ambient：漫射光造成的極淡環繞影，只負責「離底」。 */
+export const coverShadowAmbient: { color: Color; radius: number; x: number; y: number } = {
+  color: "rgba(0, 0, 0, 0.12)",
+  radius: 5,
+  x: 0,
+  y: 2,
 }
 
 /** 漫畫封面 1px 微描邊：深色模式 8% 白線防融黑，淺色模式 6% 極淡暗線防白封面融白。 */

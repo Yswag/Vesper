@@ -51,7 +51,7 @@
 
 - 卡片與玻璃面**不用陰影**。層次＝表面亮度：`cardBackgroundSubtle`（空狀態）< `cardBackground`（卡片）< `cardBackgroundStrong`（卡片內再一層）；再加 1px `hairlineStroke` 高光邊（`Card` 內建，頁面不要自己刻）。
 - 理由：卡片底半透明，陰影照不透明度投 → 每個字後面各一團影（`compositingGroup` 也救不了）；玻璃的深度由系統材質負責。
-- 封面的投影屬於圖片本身（封面不透明，壓在任何底色上都是黑影）：`CoverImage lifted`（`coverShadow`），只掛在圖片那層。
+- 封面的投影屬於圖片本身（封面不透明，壓在任何底色上都是黑影）：`CoverImage lifted`，key／penumbra／ambient 三層（`design/CoverShadow`），只掛在圖片那層。
 
 ## 封面
 
@@ -118,3 +118,4 @@ sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，�
 - 2026-10-26 書架重做：拿掉三分頁，改「閱讀歷史／離線內容」入口列（推新頁）＋收藏網格；格子帶閱讀狀態與封面下進度條（跟首頁繼續閱讀同位置），不標離線角標（下載一章也會被標，誤導）。歷史頁恢復左滑刪除。
 - 2026-10-27 移除收藏是兩段式：那一格先縮小上移淡出（220ms）＋輕觸覺，演完才真的刪，其餘格子彈性靠攏（`components/gridRemoval.ts`）。直接消失太突兀。
   - `LazyVGrid` 的補位不吃 `withAnimation`（實機是直接跳位），所以位置是 `ComicGridLayout` 自己算的：先畫在舊位置、下一幀收成 0。改動那塊前先看全域記憶的 grid-reflow 條目。
+- 2026-10-27 封面投影改成三層（`coverShadowKey`／`coverShadowPenumbra`／`coverShadowAmbient`，包在 `design/CoverShadow`）：單層大模糊＝四邊同暗糊成一圈，看起來像髒污不是懸浮。數值照 Material elevation level 1 的 key／penumbra／ambient 分工縮到封面尺寸；沒有 spread，所以三層都壓在小半徑、小偏移，側面才不會散開。

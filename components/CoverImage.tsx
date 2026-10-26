@@ -18,7 +18,8 @@ import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect,
 
 import { comicLibrary } from "../app/services"
 import { PALETTES } from "../app/theme"
-import { coverShadow, coverStroke, fill, radius, rect } from "../design/tokens"
+import { CoverShadow } from "../design/CoverShadow"
+import { coverStroke, fill, radius, rect } from "../design/tokens"
 
 export interface CoverImageProps {
   /** 哪個來源的圖（快取鍵與 Referer 都由它決定）。 */
@@ -166,26 +167,20 @@ export function CoverImage({
     }
   }, [url, sourceKey, mode, width, height])
 
-  const shadow = lifted ? coverShadow : undefined
-
-  if (image) {
-    return (
-      <ZStack frame={{ width, height }} shadow={shadow}>
-        <Image
-          image={image}
-          resizable={true}
-          // 一律 fit：mode="fill" 的圖已經先裁成格子比例了，fit 剛好填滿又不會外溢。
-          aspectRatio={{ contentMode: "fit" }}
-          frame={{ width, height }}
-          clipShape={rect(cornerRadius)}
-        />
-        <RoundedRectangle cornerRadius={cornerRadius} stroke={coverStroke} frame={{ width, height }} />
-      </ZStack>
-    )
-  }
-
-  return (
-    <ZStack frame={{ width, height }} shadow={shadow}>
+  const body = image ? (
+    <ZStack frame={{ width, height }}>
+      <Image
+        image={image}
+        resizable={true}
+        // 一律 fit：mode="fill" 的圖已經先裁成格子比例了，fit 剛好填滿又不會外溢。
+        aspectRatio={{ contentMode: "fit" }}
+        frame={{ width, height }}
+        clipShape={rect(cornerRadius)}
+      />
+      <RoundedRectangle cornerRadius={cornerRadius} stroke={coverStroke} frame={{ width, height }} />
+    </ZStack>
+  ) : (
+    <ZStack frame={{ width, height }}>
       <CoverPlaceholder
         title={title}
         width={width}
@@ -195,4 +190,6 @@ export function CoverImage({
       />
     </ZStack>
   )
+
+  return lifted ? <CoverShadow>{body}</CoverShadow> : body
 }

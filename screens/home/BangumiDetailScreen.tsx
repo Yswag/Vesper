@@ -36,9 +36,10 @@ import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { CoverBadge } from "../../design/CoverBadge"
+import { CoverShadow } from "../../design/CoverShadow"
 import { Tag } from "../../design/Tag"
 import { EmptyState } from "../../design/status"
-import { badgePadding, capsule, coverShadow, fill, pageInsets, pageSpacing, radius, rect } from "../../design/tokens"
+import { badgePadding, capsule, fill, pageInsets, pageSpacing, radius, rect } from "../../design/tokens"
 import { PageBackground, useTint } from "../../app/theme"
 import { navigateToSearch } from "../../app/navigation"
 
@@ -214,18 +215,19 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
               frame={{ maxWidth: "infinity" }}
             >
               {subject.image ? (
-                <Image
-                  imageUrl={subject.image}
-                  resizable={true}
-                  scaleToFill={true}
-                  frame={{ width: hero.width, height: hero.height }}
-                  clipShape={rect(radius.md)}
-                  shadow={coverShadow}
-                />
+                <CoverShadow>
+                  <Image
+                    imageUrl={subject.image}
+                    resizable={true}
+                    scaleToFill={true}
+                    frame={{ width: hero.width, height: hero.height }}
+                    clipShape={rect(radius.md)}
+                  />
+                </CoverShadow>
               ) : (
-                <ZStack shadow={coverShadow}>
+                <CoverShadow>
                   <CoverPlaceholder title={title} width={hero.width} height={hero.height} cornerRadius={radius.md} />
-                </ZStack>
+                </CoverShadow>
               )}
 
               <VStack

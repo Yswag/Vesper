@@ -5,6 +5,7 @@ import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, L
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { CoverBadge } from "../../design/CoverBadge"
+import { CoverShadow } from "../../design/CoverShadow"
 import { glass, liquidGlass, scrollTopBar } from "../../design/glass"
 import { Tag } from "../../design/Tag"
 import { WidthReporter } from "../../components/WidthReporter"
@@ -14,7 +15,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
 import { resumeEntry } from "../../app/shelf"
 import { EmptyState } from "../../design/status"
-import { capsule, coverShadow, coverStroke, fill, radius, rect } from "../../design/tokens"
+import { capsule, coverStroke, fill, radius, rect } from "../../design/tokens"
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
@@ -202,33 +203,35 @@ export function HomeScreen() {
                             frame={{ width: 124, height: 179 }}
                             matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
                           >
-                            <Image
-                              imageUrl={item.image}
-                              resizable={true}
-                              scaleToFill={true}
-                              frame={{ width: 124, height: 179 }}
-                              clipShape={rect(radius.md)}
-                              shadow={coverShadow}
-                              overlay={
-                                <RoundedRectangle
-                                  cornerRadius={radius.md}
-                                  stroke={coverStroke}
-                                />
-                              }
-                            />
+                            <CoverShadow>
+                              <Image
+                                imageUrl={item.image}
+                                resizable={true}
+                                scaleToFill={true}
+                                frame={{ width: 124, height: 179 }}
+                                clipShape={rect(radius.md)}
+                                overlay={
+                                  <RoundedRectangle
+                                    cornerRadius={radius.md}
+                                    stroke={coverStroke}
+                                  />
+                                }
+                              />
+                            </CoverShadow>
                           </ZStack>
                         ) : (
                           <ZStack
                             frame={{ width: 124, height: 179 }}
-                            shadow={coverShadow}
                             matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
                           >
-                            <CoverPlaceholder
-                              title={item.name_cn || item.name}
-                              width={124}
-                              height={179}
-                              cornerRadius={radius.md}
-                            />
+                            <CoverShadow>
+                              <CoverPlaceholder
+                                title={item.name_cn || item.name}
+                                width={124}
+                                height={179}
+                                cornerRadius={radius.md}
+                              />
+                            </CoverShadow>
                           </ZStack>
                         )}
 
@@ -504,9 +507,9 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
             lifted={true}
           />
         ) : (
-          <ZStack shadow={coverShadow}>
+          <CoverShadow>
             <CoverPlaceholder title={entry.title} width={width} height={height} cornerRadius={radius.md} />
-          </ZStack>
+          </CoverShadow>
         )}
 
         {/* 原位 In-place 微載入指示層（封面暗化 + 微轉圈） */}
@@ -616,24 +619,25 @@ function BangumiCard({
           matchedTransitionSource={namespace ? { id: sourceID, namespace } : undefined}
         >
           {subject.image ? (
-            <Image
-              imageUrl={subject.image}
-              resizable={true}
-              scaleToFill={true}
-              frame={{ width, height }}
-              clipShape={rect(radius.md)}
-              shadow={coverShadow}
-              overlay={
-                <RoundedRectangle
-                  cornerRadius={radius.md}
-                  stroke={coverStroke}
-                />
-              }
-            />
+            <CoverShadow>
+              <Image
+                imageUrl={subject.image}
+                resizable={true}
+                scaleToFill={true}
+                frame={{ width, height }}
+                clipShape={rect(radius.md)}
+                overlay={
+                  <RoundedRectangle
+                    cornerRadius={radius.md}
+                    stroke={coverStroke}
+                  />
+                }
+              />
+            </CoverShadow>
           ) : (
-            <ZStack shadow={coverShadow}>
+            <CoverShadow>
               <CoverPlaceholder title={title} width={width} height={height} cornerRadius={radius.md} />
-            </ZStack>
+            </CoverShadow>
           )}
 
           {/* 排名或評分角標（圖上的短角標一律 CoverBadge）；
