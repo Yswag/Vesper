@@ -39,6 +39,17 @@ export function SourceAvatar({
   const firstLetter = (name.trim().slice(0, 1) || "?").toUpperCase()
   const cornerRadius = Math.round(size * 0.22)
   const iconShape = rect(cornerRadius)
+  // 首字放 overlay：List 的分隔線對齊列內第一個 Text，直接當子節點會把線拉到頭像底下。
+  const letter = (
+    <ZStack
+      frame={{ width: size, height: size }}
+      overlay={
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
+          {firstLetter}
+        </Text>
+      }
+    />
+  )
 
   useEffect(() => {
     // 列被重用到別的源時，state 還是上一個源的圖：一律先換成這個源現有的（沒有就清掉）。
@@ -91,9 +102,7 @@ export function SourceAvatar({
         background={cardBackgroundStrong}
         clipShape={iconShape}
       >
-        <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
-          {firstLetter}
-        </Text>
+        {letter}
         <Image
           imageUrl={remoteIcon}
           resizable={true}
@@ -111,9 +120,7 @@ export function SourceAvatar({
       background={cardBackgroundStrong}
       clipShape={iconShape}
     >
-      <Text font="subheadline" fontWeight="semibold" foregroundStyle="label">
-        {firstLetter}
-      </Text>
+      {letter}
     </ZStack>
   )
 }
