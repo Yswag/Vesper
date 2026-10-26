@@ -23,6 +23,7 @@ import { PageBackground, useTint } from "../../app/theme"
 import { updatesScheduler } from "../../app/updates"
 import { useSubscription } from "../../app/useSubscription"
 import { ComicGridLayout, type ComicGridEntry } from "../../components/ComicGrid"
+import { useGridRemoval } from "../../components/gridRemoval"
 import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
@@ -46,10 +47,11 @@ const FILTERS: { value: ShelfFilter; key: MessageKey }[] = [
   { value: "unread", key: "bookshelf.filterUnread" },
 ]
 
-function gridEntry({ favorite, progress, readFraction, removed, unreadCount }: ShelfItem): ComicGridEntry {
+function gridEntry({ favorite, progress, readFraction, removed, unreadCount }: ShelfItem, removing: boolean): ComicGridEntry {
   return {
     sourceKey: favorite.sourceKey,
     removed,
+    removing,
     readFraction,
     unreadCount,
     comic: {
@@ -68,6 +70,8 @@ export function BookshelfScreen() {
   const [filter, setFilter] = useState<ShelfFilter>("all")
   /** 手動檢查的進度（null＝沒在跑，進度列不出現）。 */
   const [checking, setChecking] = useState<{ done: number; total: number } | null>(null)
+  /** 移除收藏：那一格先退場，演完才真的從書架刪掉（見 components/gridRemoval.ts）。 */
+  const removal = useGridRemoval()
 
   // 源清單、書架（收藏／歷史／追更）、離線層與語言一變就重繪（`onChange` 已含離線層與書架）；回傳的 refresh 給 onAppear 用。
   const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
@@ -101,6 +105,11 @@ export function BookshelfScreen() {
   }
 
   const isFiltered = filter !== "all"
+
+  function removeFromShelf(sourceKey: string, comicId: string) {
+    HapticFeedback.lightImpact()
+    removal.remove(`${sourceKey}:${comicId}`, () => removeFavorite(sourceKey, comicId))
+  }
 
   return (
     <ZStack
@@ -189,12 +198,15 @@ export function BookshelfScreen() {
 
           {items.length > 0 ? (
             <ComicGridLayout
-              entries={items.map(gridEntry)}
+              entries={items.map(item => {
+                const { sourceKey, comicId } = item.favorite
+                return gridEntry(item, removal.isRemoving(`${sourceKey}:${comicId}`))
+              })}
               menuItems={entry => (
                 <Button
                   title={t("detail.unfavorite")}
                   role="destructive"
-                  action={() => removeFavorite(entry.sourceKey, entry.comic.id)}
+                  action={() => removeFromShelf(entry.sourceKey, entry.comic.id)}
                 />
               )}
             />

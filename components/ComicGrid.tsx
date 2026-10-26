@@ -11,6 +11,8 @@ import {
   Text,
   VStack,
   ZStack,
+  useEffect,
+  useRef,
   useState,
   type VirtualNode,
 } from "scripting"
@@ -23,6 +25,7 @@ import { ComicDetailScreen } from "../screens/shared/ComicDetailScreen"
 import { CoverImage } from "./CoverImage"
 import { WidthReporter } from "./WidthReporter"
 import { comicGridMetrics, H_PADDING, H_SPACING, V_SPACING } from "./comicGridMetrics"
+import { GRID_EXIT_ANIM, GRID_REGRID_ANIM } from "./gridRemoval"
 
 export interface ComicGridEntry {
   /** 這張屬於哪個源（導到詳情頁與封面解析都用它）。 */
@@ -35,6 +38,8 @@ export interface ComicGridEntry {
   readFraction?: number
   /** 未讀章節數：> 0 時封面右上角掛數字膠囊。 */
   unreadCount?: number
+  /** 正在被移出（由 `useGridRemoval` 標記）：原地縮小、往上淡出。 */
+  removing?: boolean
   comic: ComicListItem
 }
 
@@ -50,14 +55,85 @@ export interface ComicGridProps {
   menuItems?: (entry: ComicGridEntry) => VirtualNode
 }
 
+/** 一格的身分；跟 `useGridRemoval` 的 key 同一套。 */
+function entryKey(entry: ComicGridEntry): string {
+  return `${entry.sourceKey}:${entry.comic.id}`
+}
+
+/** 這一輪是不是只少了一格：換篩選、整批換掉都不算，不然會亂飛。 */
+function isSingleRemoval(previous: readonly string[], next: readonly string[]): boolean {
+  if (previous.length !== next.length + 1) return false
+  const current = new Set(next)
+  const kept = previous.filter(key => current.has(key))
+  return kept.length === next.length && kept.every((key, index) => key === next[index])
+}
+
+/**
+ * 每一格「舊位置 − 新位置」的像素位移（沒動的不列）。
+ * 格子位置是格子自己算的：第 i 格在 (i % columns, ⌊i / columns⌋) 個欄距／列距上，
+ * 少一格之後後面每一格正好遞補前一格的位置。
+ */
+function collapseShift(
+  previous: readonly string[],
+  next: readonly string[],
+  columns: number,
+  columnPitch: number,
+  rowPitch: number
+): Record<string, { x: number; y: number }> {
+  const shift: Record<string, { x: number; y: number }> = {}
+  next.forEach((key, index) => {
+    const before = previous.indexOf(key)
+    if (before <= index) return
+    shift[key] = {
+      x: (before % columns - index % columns) * columnPitch,
+      y: (Math.floor(before / columns) - Math.floor(index / columns)) * rowPitch,
+    }
+  })
+  return shift
+}
+
 /** 只有格子，不含 ScrollView。 */
 export function ComicGridLayout({ entries, showSource = false, onLastAppear, menuItems }: ComicGridProps) {
   const [containerWidth, setContainerWidth] = useState(0)
+  /** 列高（＝一格撐滿的高度）；補位時換列的格子靠它算飛多遠。 */
+  const [rowHeight, setRowHeight] = useState(0)
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
   const measured = containerWidth > 0
   const lastIndex = entries.length - 1
   // 有任何一格帶進度才留這一行；瀏覽、搜尋的網格不受影響。
   const hasProgress = entries.some(entry => entry.readFraction !== undefined)
+
+  const keys = entries.map(entryKey)
+
+  // LazyVGrid 自己不會演「少一格」的補位（版面變化不吃 `withAnimation`，實機是直接跳位）。
+  // 所以位置自己補：先讓還留著的格子畫在舊位置，下一輪再將 offset 收成 0，
+  // 靠 `animation(value:)` 演靠攏——這條路徑跟退場一樣只靠修飾子，不靠交易。
+  const previousKeys = useRef<string[]>([])
+  const pendingShift = useRef<Record<string, { x: number; y: number }>>({})
+  const [settleToken, setSettleToken] = useState(0)
+
+  if (measured && isSingleRemoval(previousKeys.current, keys)) {
+    pendingShift.current = collapseShift(
+      previousKeys.current,
+      keys,
+      columns,
+      cellWidth + H_SPACING,
+      (rowHeight > 0 ? rowHeight : cellHeight) + V_SPACING
+    )
+  }
+  previousKeys.current = keys
+  const shift = pendingShift.current
+
+  // 先讓上面那一輪畫在舊位置，下一輪才收線並出手。
+  // 用 macrotask（16ms 約一個影格）而不是直接設 state：確保「畫在舊位置」這帧真的出現過。
+  useEffect(() => {
+    if (Object.keys(pendingShift.current).length === 0) return
+    const timer = setTimeout(() => {
+      pendingShift.current = {}
+      setSettleToken(token => token + 1)
+    }, 16)
+    return () => clearTimeout(timer)
+  }, [settleToken, keys.length])
 
   return (
     <NamespaceReader>
@@ -73,10 +149,11 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
           }
         >
           {measured ? entries.map((entry, index) => {
+            const key = entryKey(entry)
             const sourceID = `grid:${entry.sourceKey}:${entry.comic.id}`
             return (
               <NavigationLink
-                key={`${entry.sourceKey}:${entry.comic.id}`}
+                key={key}
                 destination={
                   <ComicDetailScreen
                     sourceKey={entry.sourceKey}
@@ -86,10 +163,18 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                   />
                 }
                 buttonStyle="plain"
+                offset={shift[key] ?? { x: 0, y: 0 }}
+                animation={{ animation: GRID_REGRID_ANIM, value: settleToken }}
               >
                 <VStack
                   alignment="leading"
                   spacing={6}
+                  // 量第一格的高（每一格都撐滿列高）：補位時換列的格子才算得準。
+                  background={index === 0 ? (
+                    <GeometryReader>
+                      {geometry => <WidthReporter width={geometry.size.height} onWidth={setRowHeight} />}
+                    </GeometryReader>
+                  ) : undefined}
                   // 每列的內容高度不一樣（有的源有副標、有的沒有）——LazyVGrid 會把矮的置中，
                   // 封面就會参差不齊。填滿列高 + 靠上對齊，封面才會排成一直線。
                   // 寬度要用**已知的 cellWidth 釘死**，不要用 `maxWidth: "infinity"`：
@@ -97,6 +182,11 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                   // 內容比螢幕寬時引擎的命中表會跟畫面錯開（點一格卻開別格）。
                   // 見 dev/probe-cover-overflow.tsx 的 `mode:"wide"`（一排 6 張 765pt 會壞、3 張 378pt 正常）。
                   frame={{ width: cellWidth, maxHeight: "infinity", alignment: "top" }}
+                  // 退場的三件套一起換，動畫短到看不出是三個獨立屬性。
+                  opacity={entry.removing ? 0 : 1}
+                  scaleEffect={entry.removing ? 0.84 : 1}
+                  offset={{ x: 0, y: entry.removing ? -10 : 0 }}
+                  animation={{ animation: GRID_EXIT_ANIM, value: entry.removing === true }}
                   onAppear={containerWidth > 0 && index === lastIndex ? onLastAppear : undefined}
                   contextMenu={menuItems ? { menuItems: menuItems(entry) } : undefined}
                 >
