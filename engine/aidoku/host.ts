@@ -487,6 +487,56 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   })
 }
 
+/** 一批最多同時幾個（源自己通常一批 5 個）。 */
+const BATCH_CONCURRENCY = 6
+
+/**
+ * `send_all` 的整批預取：平行送出，一次回給 worker。
+ * 回應格式：4 byte LE meta 長度 + meta JSON（每筆 status／headers／length 或 error）+ 各 body 依序接起來。
+ */
+async function proxyBatchResponse(request: HttpRequest): Promise<HttpResponse> {
+  const payload = jsonBody(request)
+  const requests: any[] = Array.isArray(payload?.requests) ? payload.requests : []
+  if (requests.length === 0) return HttpResponse.badRequest()
+  const sourceKey = sourceKeyOf(payload)
+
+  const results: (AidokuProxyResult | null)[] = new Array(requests.length).fill(null)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < requests.length) {
+      const index = next++
+      const item = requests[index]
+      if (!item || typeof item.url !== "string") continue
+      try {
+        results[index] = await performProxy(
+          { url: item.url, method: item.method, headers: item.headers, body: item.body },
+          PROXY_TIMEOUT_MS,
+          sourceKey
+        )
+      } catch {
+        // 留 null：worker 那邊會退回單筆送出
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(BATCH_CONCURRENCY, requests.length) }, worker))
+
+  const meta = results.map(result =>
+    result ? { status: result.status, headers: result.headers, length: result.bytes.byteLength } : { error: true }
+  )
+  const metaBytes = new TextEncoder().encode(JSON.stringify(meta))
+  const total = 4 + metaBytes.byteLength + results.reduce((sum, result) => sum + (result?.bytes.byteLength ?? 0), 0)
+  const out = new Uint8Array(total)
+  new DataView(out.buffer).setUint32(0, metaBytes.byteLength, true)
+  out.set(metaBytes, 4)
+  let offset = 4 + metaBytes.byteLength
+  for (const result of results) {
+    if (!result) continue
+    out.set(result.bytes, offset)
+    offset += result.bytes.byteLength
+  }
+  return staticResponse(out, "application/octet-stream")
+}
+
 async function waitForHostReady(target: WebViewController): Promise<void> {
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
@@ -540,6 +590,7 @@ async function ensureServer(): Promise<number> {
     return staticResponse(pkg.wasm, "application/octet-stream")
   })
   instance.registerAsyncHandler("/proxy", proxyResponse)
+  instance.registerAsyncHandler("/proxy-batch", proxyBatchResponse)
   instance.registerAsyncHandler("/settings", async request => {
     const payload = jsonBody(request)
     const key = typeof payload?.sourceKey === "string" ? payload.sourceKey : ""
@@ -613,6 +664,32 @@ async function createHost(): Promise<WebViewController> {
   return controller
 }
 
+/**
+ * 畫面外的 WebView 一陣子沒被碰就會被 WebKit 暫停：一次呼叫連發幾十個同步 XHR
+ * （例如逐頁抓解密 key）會停在半路，直到下一次 evaluateJavaScript 才醒。
+ * 有呼叫在跑時每 500ms 碰一下頁面；所有呼叫共用一個計時器。
+ */
+const AWAKE_INTERVAL_MS = 500
+let awakeCount = 0
+let awakeTimer: number | null = null
+
+/** 要在主佇列呼叫（建 timer 的限制同 runTask）。 */
+function keepAwake(): void {
+  awakeCount += 1
+  if (awakeTimer !== null) return
+  awakeTimer = setInterval(() => {
+    const page = controller
+    if (page) Promise.resolve(page.evaluateJavaScript("return 0")).catch(() => {})
+  }, AWAKE_INTERVAL_MS) as unknown as number
+}
+
+function releaseAwake(): void {
+  awakeCount = Math.max(0, awakeCount - 1)
+  if (awakeCount > 0 || awakeTimer === null) return
+  clearInterval(awakeTimer)
+  awakeTimer = null
+}
+
 /** 先把工作丟給頁面（立即返回），結果由 script message handler 推回來。 */
 async function runTask(sourceKey: string, startScript: (id: number) => string, timeoutMs: number, label: string): Promise<any> {
   const id = nextTaskId++
@@ -625,10 +702,12 @@ async function runTask(sourceKey: string, startScript: (id: number) => string, t
         // 一次呼叫拖太久是這個源自己的事（卡住的源不該連累別的源）。
         if (taskWaiters.delete(id)) reject(new AidokuWorkerError(`${label} timed out after ${timeoutMs}ms`))
       }, timeoutMs)
+      keepAwake()
     } catch {
       // 連這裡都建不了就沒有逾時。
     }
   })
+  result.then(releaseAwake, releaseAwake)
 
   let target: WebViewController
   try {
@@ -797,15 +876,20 @@ export async function notifyAidoku(sourceKey: string, notification: string): Pro
   )
 }
 
-/** 源有沒有 `process_page_image`（頁面圖要解密／解拼）：載入後問一次。 */
-export async function hasImageProcessorAidoku(sourceKey: string): Promise<boolean> {
+export interface AidokuImageProcessors {
+  page: boolean
+  cover: boolean
+}
+
+/** 源有沒有 `process_page_image`／`process_cover_image`（圖要解密／解拼）：載入後問一次。 */
+export async function hasImageProcessorAidoku(sourceKey: string): Promise<AidokuImageProcessors> {
   const value = await runTask(
     sourceKey,
     (id) => `return window.__aidoku.startHasImageProcessor(${id}, ${JSON.stringify(sourceKey)})`,
     CALL_TIMEOUT_MS,
     "aidoku hasImageProcessor"
   )
-  return value === true
+  return { page: value?.page === true, cover: value?.cover === true }
 }
 
 export async function selfTestAidoku(sourceKey: string): Promise<any> {
@@ -893,6 +977,10 @@ export function aidokuPageJobTotal(): number {
 export interface AidokuPageImageRequest {
   url: string
   headers: Record<string, string>
+  /** `getPageList` 給這一頁的 context（例如解密 key）；沒有就是 null。 */
+  context?: Record<string, string> | null
+  /** 走 `process_cover_image`（封面／縮圖）而不是頁面處理。 */
+  cover?: boolean
   status: number
   responseHeaders: Record<string, string>
 }

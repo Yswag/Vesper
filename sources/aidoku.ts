@@ -23,6 +23,7 @@ import {
   runAidokuExclusive,
   setAidokuSettingWriter,
   takeAidokuChallenge,
+  type AidokuImageProcessors,
   type AidokuPackage,
   type AidokuPageImageRequest,
 } from "../engine/aidoku/host"
@@ -745,7 +746,7 @@ class SourceLoadError extends Error {}
 const failures = new Map<string, string>()
 
 /** 載入時問到的「需要圖片後處理」（解密／解拼）：只有載入過才知道。 */
-const imageProcessors = new Map<string, boolean>()
+const imageProcessors = new Map<string, AidokuImageProcessors>()
 
 let stateListener: (() => void) | null = null
 
@@ -754,17 +755,22 @@ export function setStateListener(listener: (() => void) | null): void {
   stateListener = listener
 }
 
-/** 這個源需不需要圖片後處理；還沒載入過就是 false。 */
+/** 這個源的正文頁需不需要後處理；還沒載入過就是 false。 */
 export function needsImageProcessing(key: string): boolean {
-  return imageProcessors.get(key) === true
+  return imageProcessors.get(key)?.page === true
+}
+
+/** 這個源的封面需不需要後處理；還沒載入過就是 false。 */
+export function needsCoverProcessing(key: string): boolean {
+  return imageProcessors.get(key)?.cover === true
 }
 
 /** 載入後問一次 `hasImageProcessor`；結果改變才通知畫面。 */
 async function rememberImageProcessor(key: string): Promise<void> {
   const previous = imageProcessors.get(key)
-  const flag = await hasImageProcessorAidoku(key)
-  if (flag === previous) return
-  imageProcessors.set(key, flag)
+  const flags = await hasImageProcessorAidoku(key)
+  if (flags.page === previous?.page && flags.cover === previous?.cover) return
+  imageProcessors.set(key, flags)
   stateListener?.()
 }
 
@@ -885,7 +891,7 @@ function toBytes(value: any): Uint8Array {
   return value instanceof Uint8Array ? value : new Uint8Array(value)
 }
 
-/** 有 `process_page_image` 的源：抓回來的位元組先交給源處理。 */
+/** 有 `process_page_image`／`process_cover_image` 的源：抓回來的位元組先交給源處理。 */
 async function processPageImageBytes(
   source: InstalledSource,
   bytes: any,
@@ -895,7 +901,7 @@ async function processPageImageBytes(
     return await withHealing(source, "processPageImage", () => processAidokuPageImage(source.stored.key, toBytes(bytes), request), false)
   } catch (failure) {
     if (failure instanceof AidokuUnavailableError) throw failure
-    log("error", "aidoku", `${source.stored.key} 的頁面圖處理失敗`, failure)
+    log("error", "aidoku", `${source.stored.key} 的${request.cover ? "封面" : "頁面圖"}處理失敗`, failure)
     throw new Error(t("sources.aidoku.failed", { message: userMessageOf(failure) }))
   }
 }
@@ -1119,6 +1125,26 @@ export function detail(source: InstalledSource, comicId: string): Promise<ComicD
   })
 }
 
+/** 頁面的 `context`（例如解密用的 key／iv）：`modifyImageRequest` 與 `process_page_image` 要原樣拿回去。 */
+const pageContexts = new Map<string, Record<string, string>>()
+const PAGE_CONTEXT_LIMIT = 2000
+
+function pageContextKey(sourceKey: string, url: string): string {
+  return `${sourceKey}\n${url}`
+}
+
+function rememberPageContext(sourceKey: string, url: string, context: unknown): void {
+  if (!context || typeof context !== "object") return
+  const entries = Object.entries(context as Record<string, unknown>).filter(([, value]) => value != null)
+  if (entries.length === 0) return
+  const key = pageContextKey(sourceKey, url)
+  pageContexts.delete(key)
+  pageContexts.set(key, Object.fromEntries(entries.map(([name, value]) => [name, String(value)])))
+  while (pageContexts.size > PAGE_CONTEXT_LIMIT) {
+    pageContexts.delete(pageContexts.keys().next().value as string)
+  }
+}
+
 /** 章節的頁面清單（回圖片的原始網址，取圖前會再問 `modifyImageRequest`）。 */
 export async function pages(source: InstalledSource, comicId: string, epId: string): Promise<string[]> {
   const urls = await ask("pages", async () => {
@@ -1128,18 +1154,33 @@ export async function pages(source: InstalledSource, comicId: string, epId: stri
       [{ key: comicId, id: comicId }, { key: epId, id: epId, mangaId: comicId }],
       SLOW_CALL_TIMEOUT_MS
     )
-    return (Array.isArray(raw) ? raw : [])
-      .map((page: any) => String(page?.url ?? ""))
-      .filter((url: string) => url.length > 0)
+    const list: string[] = []
+    for (const page of Array.isArray(raw) ? raw : []) {
+      const url = String(page?.url ?? "")
+      if (!url) continue
+      rememberPageContext(source.stored.key, url, page?.context)
+      list.push(url)
+    }
+    return list
   })
   if (urls.length === 0) throw new Error(t("sources.emptyChapter"))
   return urls
 }
 
-/** 圖片的請求：URL 與 header（UA／cookie／Referer）都由源的 `modifyImageRequest` 決定。 */
-export function imageRequest(source: InstalledSource, url: string, chapterId?: string): Promise<ImageRequest> {
+/** 封面／縮圖：同樣問 `modifyImageRequest`，後處理走 `process_cover_image` 而不是頁面的。 */
+export function coverRequest(source: InstalledSource, url: string): Promise<ImageRequest> {
+  return buildImageRequest(source, url, false)
+}
+
+/** 正文頁的請求：URL 與 header（UA／cookie／Referer）都由源的 `modifyImageRequest` 決定。 */
+export function imageRequest(source: InstalledSource, url: string, _chapterId?: string): Promise<ImageRequest> {
+  return buildImageRequest(source, url, true)
+}
+
+function buildImageRequest(source: InstalledSource, url: string, isPage: boolean): Promise<ImageRequest> {
   return ask("image", async () => {
-    const raw = await call(source, "modifyImageRequest", [url, chapterId ?? null])
+    const context = isPage ? pageContexts.get(pageContextKey(source.stored.key, url)) ?? null : null
+    const raw = await call(source, "modifyImageRequest", [url, context])
     const headers: Record<string, string> = {}
     if (raw?.headers && typeof raw.headers === "object") {
       for (const [name, value] of Object.entries(raw.headers as Record<string, unknown>)) {
@@ -1149,11 +1190,14 @@ export function imageRequest(source: InstalledSource, url: string, chapterId?: s
     const target = typeof raw?.url === "string" && raw.url ? raw.url : url
     const request: ImageRequest = { url: target, method: "GET", data: null, headers }
     // 只有真的有 hook 的源才多走一次處理（沒有的話連 onResponse 都不裝）。
-    if (needsImageProcessing(source.stored.key)) {
+    const processing = isPage ? needsImageProcessing(source.stored.key) : needsCoverProcessing(source.stored.key)
+    if (processing) {
       request.onResponse = (bytes: any, response?: ImageResponseInfo) =>
         processPageImageBytes(source, bytes, {
           url: target,
           headers,
+          context,
+          cover: !isPage,
           status: response?.status ?? 200,
           responseHeaders: response?.headers ?? {},
         })

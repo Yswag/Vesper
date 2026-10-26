@@ -107,8 +107,54 @@ function parseHeaders(raw) {
   return headers
 }
 
+/** `send_all` 預取回來的回應：同一份請求（JSON 完全相同）後續 `request()` 直接拿，不對就照常送。 */
+const prefetched = new Map()
+
+function prefetchKey(request) {
+  return JSON.stringify([request.url, request.method || "GET", request.headers || {}, request.body == null ? null : request.body])
+}
+
 const httpBridge = {
+  /** 一次同步 XHR 把整批交給宿主平行送。回應：4 byte LE meta 長度 + meta JSON + 各 body 依序接起來。 */
+  prefetch(requests) {
+    prefetched.clear()
+    try {
+      const xhr = new XMLHttpRequest()
+      xhr.open("POST", "/proxy-batch", false)
+      xhr.responseType = "arraybuffer"
+      xhr.setRequestHeader("Content-Type", "application/json")
+      xhr.send(JSON.stringify({ sourceKey: currentSourceKey, requests }))
+      if (xhr.status !== 200 || !xhr.response) return
+      const buffer = xhr.response
+      const metaLength = new DataView(buffer).getUint32(0, true)
+      const meta = JSON.parse(new TextDecoder("utf-8").decode(new Uint8Array(buffer, 4, metaLength)))
+      let offset = 4 + metaLength
+      meta.forEach((entry, index) => {
+        if (!entry || entry.error) return
+        const bytes = new Uint8Array(buffer.slice(offset, offset + entry.length))
+        offset += entry.length
+        const headers = {}
+        for (const [name, value] of Object.entries(entry.headers || {})) headers[name.toLowerCase()] = value
+        prefetched.set(prefetchKey(requests[index]), {
+          status: entry.status,
+          headers,
+          body: new TextDecoder("utf-8").decode(bytes),
+          bytes,
+          url: headers["x-nemu-final-url"] || requests[index].url,
+        })
+      })
+    } catch (error) {
+      prefetched.clear()
+      console.warn("[Aidoku] prefetch failed:", error && error.message)
+    }
+  },
   request(request) {
+    const key = prefetchKey(request)
+    const hit = prefetched.get(key)
+    if (hit) {
+      prefetched.delete(key)
+      return hit
+    }
     const xhr = new XMLHttpRequest()
     xhr.open("POST", "/proxy", false)
     xhr.responseType = "arraybuffer"
@@ -217,30 +263,39 @@ async function handle(message) {
     return true
   }
 
-  // 源有沒有 `process_page_image`：有就代表頁面圖要解密／解拼。
+  // 源有沒有 `process_page_image`／`process_cover_image`：有就代表這類圖要解密／解拼。
   if (message.type === "hasImageProcessor") {
-    return Boolean(current?.hasImageProcessor)
+    return { page: Boolean(current?.hasImageProcessor), cover: Boolean(current?.hasCoverImageProcessor) }
   }
 
   // 頁面圖位元組走 loopback HTTP（worker 裡是 async fetch，主執行緒不會被凍住）。
   if (message.type === "processPageImage") {
     if (!current) throw new Error("source not loaded")
-    if (!current.hasImageProcessor) throw new Error("source has no process_page_image")
+    const meta = message.request || {}
+    const cover = meta.cover === true
+    if (cover ? !current.hasCoverImageProcessor : !current.hasImageProcessor) {
+      throw new Error(cover ? "source has no process_cover_image" : "source has no process_page_image")
+    }
     const token = encodeURIComponent(String(message.token || ""))
     const input = await fetch(`/job/${token}`)
     if (!input.ok) throw new Error(`job fetch failed: ${input.status}`)
     const bytes = new Uint8Array(await input.arrayBuffer())
 
-    const meta = message.request || {}
-    const processed = await current.processPageImage(
-      bytes,
-      null,
-      String(meta.url || ""),
-      meta.headers || {},
-      Number(meta.status || 200),
-      meta.responseHeaders || {}
-    )
-    if (!processed) throw new Error("process_page_image returned no image")
+    const url = String(meta.url || "")
+    const headers = meta.headers || {}
+    const status = Number(meta.status || 200)
+    const responseHeaders = meta.responseHeaders || {}
+    const processed = cover
+      ? await current.processCoverImage(bytes, url, headers, status, responseHeaders)
+      : await current.processPageImage(
+          bytes,
+          meta.context && typeof meta.context === "object" ? meta.context : null,
+          url,
+          headers,
+          status,
+          responseHeaders
+        )
+    if (!processed) throw new Error(cover ? "process_cover_image returned no image" : "process_page_image returned no image")
 
     const output = await fetch(`/result/${token}`, { method: "POST", body: processed })
     if (!output.ok) throw new Error(`result post failed: ${output.status}`)

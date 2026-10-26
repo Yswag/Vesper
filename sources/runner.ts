@@ -206,7 +206,7 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     relogin: () => Promise.resolve("no-credentials"),
     imageRetry: () => call => Promise.resolve(call()),
     comicModule: aidoku.comicModule(source),
-    thumbnailRequest: url => aidoku.imageRequest(source, url),
+    thumbnailRequest: url => aidoku.coverRequest(source, url),
   }
 }
 
