@@ -56,7 +56,7 @@ import { Tag } from "../../design/Tag"
 import { Chip } from "../../design/chip"
 import { PageLoading } from "../../design/status"
 import { GlassSurface } from "../../design/GlassSurface"
-import { liquidGlass } from "../../design/glass"
+import { liquidGlass, scrollTopBar } from "../../design/glass"
 
 /**
  * 批次解析章節下載狀態映射表（單次重繪單一章節僅查詢一次，提升效能）。
@@ -446,6 +446,8 @@ export function ComicDetailScreen({
         <ScrollView
           scrollContentBackground="hidden"
           frame={{ maxWidth: "infinity" }}
+          // 跟首頁一樣：內容捲到導覽列下面時是柔和淡出，不是硬邊的分隔線。
+          {...scrollTopBar(null)}
           onScrollTargetVisibilityChange={{
             idType: "string",
             threshold: 0.1,
