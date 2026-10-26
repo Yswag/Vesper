@@ -41,19 +41,11 @@ export function SourceAvatar({
   const iconShape = rect(cornerRadius)
 
   useEffect(() => {
-    // 源自己給的本機圖示：直接讀，不必碰網路。
+    // 列被重用到別的源時，state 還是上一個源的圖：一律先換成這個源現有的（沒有就清掉）。
     const local = localIconOf(iconUrl)
-    if (local) {
-      setIcon(local)
-      return
-    }
-
-    // 檢查或重新整理網站圖標
-    const cached = getCachedSourceIcon(sourceKey)
-    if (cached) {
-      setIcon(cached)
-      return
-    }
+    const cached = local ? null : getCachedSourceIcon(sourceKey)
+    setIcon(local ?? cached)
+    if (local || cached) return
 
     let alive = true
     void (async () => {
