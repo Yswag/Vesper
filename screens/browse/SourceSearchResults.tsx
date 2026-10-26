@@ -337,7 +337,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     ]
 
     return (
-      <ScrollView axes="horizontal">
+      <ScrollView axes="horizontal" scrollIndicator="hidden">
         <HStack spacing={6} padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}>
           {/* 改過的排前面（Aidoku 的 `sortedFilters`）。 */}
           <Chip

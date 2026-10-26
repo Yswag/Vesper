@@ -318,6 +318,7 @@ function MagazineSectionRow({
           {/* 橫向滑動卡片架 */}
           <ScrollView
             axes="horizontal"
+            scrollIndicator="hidden"
             background={
               <GeometryReader>
                 {geometry => (

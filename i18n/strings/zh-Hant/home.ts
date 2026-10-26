@@ -21,7 +21,7 @@ export default {
 
   /** Scripting 首頁分頁的 Mini Hub（`home_screen_default_ui.tsx`）：開啟完整 App 與追更看板。 */
   miniHub: {
-    openApp: "開啟完整 App",
+    openApp: "開啟 App",
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
   },

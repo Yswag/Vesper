@@ -349,7 +349,7 @@ export function HomeScreen() {
                   <Spacer />
                 </HStack>
 
-                <ScrollView axes="horizontal" background={carouselWidthProbe(setResumeCarouselWidth)}>
+                <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setResumeCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>
                     {progress.slice(0, 10).map(entry => (
                       <ResumeCard key={`${entry.sourceKey}:${entry.comicId}`} entry={entry} size={resumeCard} />
@@ -369,7 +369,7 @@ export function HomeScreen() {
               </HStack>
 
               {trending.length > 0 ? (
-                <ScrollView axes="horizontal" background={carouselWidthProbe(setBangumiCarouselWidth)}>
+                <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setBangumiCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>
                     {trending.map(item => (
                       <BangumiCard
@@ -398,7 +398,7 @@ export function HomeScreen() {
               </HStack>
 
               {following.length > 0 ? (
-                <ScrollView axes="horizontal" background={carouselWidthProbe(setBangumiCarouselWidth)}>
+                <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setBangumiCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>
                     {following.map(item => (
                       <BangumiCard
@@ -427,7 +427,7 @@ export function HomeScreen() {
               </HStack>
 
               {topRank.length > 0 ? (
-                <ScrollView axes="horizontal" background={carouselWidthProbe(setBangumiCarouselWidth)}>
+                <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setBangumiCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>
                     {topRank.map(item => (
                       <BangumiCard

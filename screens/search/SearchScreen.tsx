@@ -328,7 +328,7 @@ function SourceRow({
       </NavigationLink>
 
       {result ? (
-        <ScrollView axes="horizontal">
+        <ScrollView axes="horizontal" scrollIndicator="hidden">
           <LazyHStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
             {result.comics.map(comic => (
               <ResultCard key={comic.id} sourceKey={source.key} comic={comic} size={size} />

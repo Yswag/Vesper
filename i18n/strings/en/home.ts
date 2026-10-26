@@ -15,7 +15,7 @@ export default {
   sourceRemoved: "Source removed",
 
   miniHub: {
-    openApp: "Open full app",
+    openApp: "Open App",
     updatesTitle: "Latest updates",
     allUpToDate: "All favorites are up to date",
   },

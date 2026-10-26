@@ -707,7 +707,7 @@ export function ComicDetailScreen({
 
             {/* 3. 標籤膠囊群 (Pills)：約束在 maxWidth: "infinity" 內，防止大量 tags 撐破父容器 */}
             {allTags.length > 0 ? (
-              <ScrollView axes="horizontal" frame={{ maxWidth: "infinity" }}>
+              <ScrollView axes="horizontal" scrollIndicator="hidden" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
                   {allTags.map((tag, i) => (
                     <Tag key={`tag:${i}:${tag}`} text={tag} />
@@ -776,7 +776,7 @@ export function ComicDetailScreen({
                   <Spacer />
                 </HStack>
 
-                <ScrollView axes="horizontal" padding={{ horizontal: -pageInsets.horizontal }}>
+                <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
                   <LazyHStack spacing={10} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
                     {detail.recommend.map((item, idx) => {
                       const recCard = recommendCardSize(heroContainerWidth)
@@ -911,7 +911,7 @@ export function ComicDetailScreen({
 
               {/* 5.1 分組切換標籤列（僅在有多個分組時顯示，水平滾動膠囊列） */}
               {isGrouped ? (
-                <ScrollView axes="horizontal">
+                <ScrollView axes="horizontal" scrollIndicator="hidden">
                   <HStack spacing={8} padding={{ vertical: 2 }}>
                     {chapterGroups.map((group: ChapterGroup<ChapterRef>) => {
                       const isCurrentGroup = group.name === activeGroup

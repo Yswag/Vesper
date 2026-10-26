@@ -287,7 +287,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
 
             {/* 2. 標籤群 */}
             {subject.tags.length > 0 ? (
-              <ScrollView axes="horizontal" frame={{ maxWidth: "infinity" }}>
+              <ScrollView axes="horizontal" scrollIndicator="hidden" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
                   {subject.tags.map((tag, i) => (
                     <Tag key={`tag:${i}:${tag}`} text={`#${tag}`} />
@@ -374,6 +374,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
               {matchedSources.length > 0 ? (
                 <ScrollView
                   axes="horizontal"
+                  scrollIndicator="hidden"
                   // 卡片都在橫向捲動列裡，量的是捲動視窗自己的寬（見 dev/probe-carousel-width.tsx）。
                   background={
                     <GeometryReader>

@@ -162,7 +162,7 @@ function dormant(updateTime: string | undefined, now: number): boolean {
  * 源的 `updateTime` 是 `YYYY-MM-DD`（後面可能帶時間，也有用 `/` 的）。解析不出來就當沒有：
  * 寧可退回 12 小時的 TTL，也不要拿亂猜的日期把冷卻拉長到 7 天。
  */
-function parseUpdateTime(value: string | undefined): number | undefined {
+export function parseUpdateTime(value: string | undefined): number | undefined {
   if (!value) return undefined
   const match = /(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/.exec(value)
   if (!match) return undefined

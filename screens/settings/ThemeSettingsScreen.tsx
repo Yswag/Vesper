@@ -46,7 +46,7 @@ export function ThemeSettingsScreen() {
           {proxy => {
             paletteProxy.current = proxy
             return (
-              <ScrollView axes="horizontal">
+              <ScrollView axes="horizontal" scrollIndicator="hidden">
                 <HStack spacing={8} padding={{ horizontal: 16, vertical: 12 }}>
                   <CustomColorButton
                     key="palette:custom"

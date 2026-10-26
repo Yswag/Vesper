@@ -8,6 +8,7 @@
 
 import {
   Button,
+  Circle,
   Divider,
   Device,
   HStack,
@@ -16,6 +17,8 @@ import {
   NavigationStack,
   ProgressView,
   Script,
+  ScrollView,
+  Spacer,
   Text,
   VStack,
   ZStack,
@@ -30,15 +33,14 @@ import { installLocaleSetting } from "./app/localeSetting"
 import { comicLibrary, installComicLibrary } from "./app/services"
 import { resumeEntry, unreadCountOf, type ResumeEntry } from "./app/shelf"
 import { PageBackground, useTint } from "./app/theme"
-import { updatesScheduler } from "./app/updates"
+import { parseUpdateTime, updatesScheduler } from "./app/updates"
 import { useSubscription } from "./app/useSubscription"
 import { CoverImage } from "./components/CoverImage"
 import { composeImage } from "./components/ModifyImageRenderer"
-import { UnreadBadge } from "./design/CoverBadge"
 import { Card, GroupHeader, PageScroll } from "./design/layout"
 import { Chevron } from "./design/rows"
 import { EmptyState } from "./design/status"
-import { capsule, cardGap, rowPadding } from "./design/tokens"
+import { capsule, cardBackground, cardGap, pageInsets, rowPadding } from "./design/tokens"
 import { ensureFileAccess, fileAccess } from "./engine/fs"
 import { comicGroupKey } from "./engine/offline"
 import { setImageCompositor } from "./engine/imagecache"
@@ -59,13 +61,15 @@ import { reloadRegistry } from "./sources/registry"
 
 /** 首次進首頁先讓畫面呼吸一下，再背景查追更。 */
 const STARTUP_UPDATE_DELAY = 2500
-/** 追更看板最多幾部（再多就不叫看板了）。 */
-const UPDATE_LIMIT = 5
+/** 追更看板最多幾部（橫向滾動列可多放幾部）。 */
+const UPDATE_LIMIT = 10
 
 const HERO_COVER = { width: 84, height: 120 }
-const ROW_COVER = { width: 40, height: 56 }
+const RAIL_COVER = { width: 84, height: 118 }
 /** 封面與文字之間。 */
 const COVER_GAP = 12
+const DORMANT_AFTER_DAYS = 90
+const DAY_MS = 24 * 60 * 60 * 1000
 
 let isInitialized = false
 
@@ -197,7 +201,7 @@ function OpenAppButton() {
   )
 }
 
-/** 續讀 Hero：封面、作品名、上次那一話與進度；卡片推詳情，「繼續閱讀」直接開閱讀器。 */
+/** 續讀 Hero：封面、作品名、上次那一話與進度；卡片推詳情，「繼續閱讀」按鈕內嵌右下角直接開閱讀器。 */
 function ResumeHero({ entry }: { entry: ResumeEntry }) {
   const tint = useTint()
   const [opening, setOpening] = useState(false)
@@ -207,11 +211,12 @@ function ResumeHero({ entry }: { entry: ResumeEntry }) {
     <VStack spacing={cardGap} alignment="leading" frame={{ maxWidth: "infinity" }}>
       <GroupHeader title={t("home.resumeTitle")} />
       <Card>
-        <NavigationLink
-          destination={<ComicDetailScreen sourceKey={entry.sourceKey} comicId={entry.comicId} title={entry.title} />}
-          buttonStyle="plain"
-        >
-          <HStack spacing={COVER_GAP} alignment="top" padding={rowPadding}>
+        <HStack spacing={COVER_GAP} alignment="top" padding={rowPadding} frame={{ maxWidth: "infinity" }}>
+          {/* 點封面進詳情 */}
+          <NavigationLink
+            destination={<ComicDetailScreen sourceKey={entry.sourceKey} comicId={entry.comicId} title={entry.title} />}
+            buttonStyle="plain"
+          >
             <CoverImage
               sourceKey={entry.sourceKey}
               url={entry.cover}
@@ -220,14 +225,36 @@ function ResumeHero({ entry }: { entry: ResumeEntry }) {
               title={entry.title}
               lifted={true}
             />
-            <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-              <Text font="headline" lineLimit={2}>
-                {entry.title}
-              </Text>
-              <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>
-                {entry.epTitle || t("home.lastRead")}
-              </Text>
-              {/* 沒有頁數的舊紀錄就讓它佔位（透明），卡片高度不跳。 */}
+          </NavigationLink>
+
+          {/* 右側資訊與操作欄：高度對齊封面，上下分佈更勻稱 */}
+          <VStack
+            alignment="leading"
+            frame={{ maxWidth: "infinity", height: HERO_COVER.height, alignment: "leading" }}
+          >
+            {/* 標題與進入詳情箭頭 */}
+            <NavigationLink
+              destination={<ComicDetailScreen sourceKey={entry.sourceKey} comicId={entry.comicId} title={entry.title} />}
+              buttonStyle="plain"
+            >
+              <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+                <HStack alignment="top" spacing={6} frame={{ maxWidth: "infinity" }}>
+                  <Text font="headline" fontWeight="bold" lineLimit={2}>
+                    {entry.title}
+                  </Text>
+                  <Spacer />
+                  <Chevron />
+                </HStack>
+                <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={1}>
+                  {entry.epTitle || t("home.lastRead")}
+                </Text>
+              </VStack>
+            </NavigationLink>
+
+            <Spacer />
+
+            {/* 進度條與頁碼 */}
+            <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity" }}>
               <ProgressView
                 value={fraction ?? 0}
                 progressViewStyle="linear"
@@ -242,43 +269,45 @@ function ResumeHero({ entry }: { entry: ResumeEntry }) {
                 </Text>
               ) : null}
             </VStack>
-            <Chevron />
-          </HStack>
-        </NavigationLink>
 
-        <VStack padding={{ horizontal: rowPadding.horizontal, bottom: rowPadding.vertical }}>
-          {entry.openable ? (
-            <Button
-              buttonStyle="plain"
-              disabled={opening}
-              action={() => {
-                setOpening(true)
-                void launchResumeReader({ sourceKey: entry.sourceKey, comicId: entry.comicId }).finally(() =>
-                  setOpening(false)
-                )
-              }}
-            >
-              <HStack
-                spacing={6}
-                alignment="center"
-                padding={{ horizontal: 16, vertical: 10 }}
-                frame={{ maxWidth: "infinity" }}
-                background={tint.tint}
-                clipShape={capsule()}
-                opacity={opening ? 0.6 : 1}
+            <Spacer />
+
+            {/* 繼續閱讀按鈕：緊湊膠囊內嵌於右側欄底部，不再全寬墊底 */}
+            {entry.openable ? (
+              <Button
+                buttonStyle="plain"
+                disabled={opening}
+                action={() => {
+                  setOpening(true)
+                  void launchResumeReader({ sourceKey: entry.sourceKey, comicId: entry.comicId }).finally(() =>
+                    setOpening(false)
+                  )
+                }}
               >
-                <Image systemName="play.fill" font="caption" foregroundStyle={tint.onTint} />
-                <Text font="subheadline" fontWeight="semibold" foregroundStyle={tint.onTint}>
-                  {t("home.resumeTitle")}
+                <HStack
+                  spacing={5}
+                  alignment="center"
+                  padding={{ horizontal: 12, vertical: 6 }}
+                  background={tint.tint}
+                  clipShape={capsule()}
+                  opacity={opening ? 0.6 : 1}
+                >
+                  <Image systemName="play.fill" font="caption2" foregroundStyle={tint.onTint} />
+                  <Text font="caption" fontWeight="semibold" foregroundStyle={tint.onTint}>
+                    {t("home.resumeTitle")}
+                  </Text>
+                </HStack>
+              </Button>
+            ) : (
+              <HStack spacing={4} alignment="center">
+                <Image systemName="exclamationmark.triangle" font="caption2" foregroundStyle="secondaryLabel" />
+                <Text font="caption2" foregroundStyle="secondaryLabel">
+                  {t("home.sourceInvalid")}
                 </Text>
               </HStack>
-            </Button>
-          ) : (
-            <Text font="caption" foregroundStyle="secondaryLabel">
-              {t("home.sourceInvalid")}
-            </Text>
-          )}
-        </VStack>
+            )}
+          </VStack>
+        </HStack>
       </Card>
     </VStack>
   )
@@ -291,13 +320,27 @@ interface UpdateItem {
   unreadCount: number
 }
 
-/** 有未讀的作品，最新檢查的在前。沒有追更紀錄＝還沒查過，不算更新。 */
+/** 判斷是否為近期活躍的更新作品（完結或超過 90 天未更的老漫畫不列入）。 */
+function isRecentUpdate(record: ComicUpdateRecord, now: number): boolean {
+  if (record.status === "completed") return false
+  if (record.updateTime) {
+    const time = parseUpdateTime(record.updateTime)
+    if (time !== undefined && now - time > DORMANT_AFTER_DAYS * DAY_MS) {
+      return false
+    }
+  }
+  return true
+}
+
+/** 有未讀的活躍作品，最新檢查的在前。沒有追更紀錄＝還沒查過，不算更新。 */
 function pendingUpdates(): UpdateItem[] {
   const favorites = new Map(listFavorites().map(favorite => [comicGroupKey(favorite), favorite]))
   const items: UpdateItem[] = []
+  const now = Date.now()
   for (const record of Object.values(allComicUpdates())) {
     const favorite = favorites.get(comicGroupKey(record))
     if (!favorite) continue
+    if (!isRecentUpdate(record, now)) continue
     const unreadCount = unreadCountOf(favorite)
     if (unreadCount > 0) items.push({ favorite, record, unreadCount })
   }
@@ -305,25 +348,32 @@ function pendingUpdates(): UpdateItem[] {
 }
 
 function UpdatesSection({ items, shelfEmpty }: { items: UpdateItem[]; shelfEmpty: boolean }) {
+  const tint = useTint()
+
   return (
     <VStack spacing={cardGap} alignment="leading" frame={{ maxWidth: "infinity" }}>
-      <GroupHeader title={t("home.miniHub.updatesTitle")} />
+      <GroupHeader
+        title={items.length > 0 ? `${t("home.miniHub.updatesTitle")} (${items.length})` : t("home.miniHub.updatesTitle")}
+      />
       {items.length === 0 ? (
-        shelfEmpty ? (
-          <EmptyState
-            icon="books.vertical"
-            title={t("bookshelf.emptyFavoritesTitle")}
-            detail={t("bookshelf.emptyFavoritesDetail")}
-          />
-        ) : (
-          <EmptyState icon="checkmark.circle" title={t("home.miniHub.allUpToDate")} />
-        )
-      ) : (
         <Card>
-          {items.map((item, index) => (
-            <VStack key={comicGroupKey(item.favorite)} spacing={0}>
-              {index > 0 ? <Divider padding={{ leading: rowPadding.horizontal + ROW_COVER.width + COVER_GAP }} /> : null}
+          <HStack spacing={10} alignment="center" padding={rowPadding} frame={{ maxWidth: "infinity" }}>
+            <Image
+              systemName={shelfEmpty ? "books.vertical" : "checkmark.circle.fill"}
+              font="body"
+              foregroundStyle={shelfEmpty ? "secondaryLabel" : tint.tint}
+            />
+            <Text font="subheadline" foregroundStyle="secondaryLabel">
+              {shelfEmpty ? t("bookshelf.emptyFavoritesDetail") : t("home.miniHub.allUpToDate")}
+            </Text>
+          </HStack>
+        </Card>
+      ) : (
+        <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
+          <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
+            {items.map(item => (
               <NavigationLink
+                key={comicGroupKey(item.favorite)}
                 destination={
                   <ComicDetailScreen
                     sourceKey={item.favorite.sourceKey}
@@ -333,39 +383,53 @@ function UpdatesSection({ items, shelfEmpty }: { items: UpdateItem[]; shelfEmpty
                 }
                 buttonStyle="plain"
               >
-                <UpdateRow item={item} />
+                <VStack spacing={6} alignment="leading" frame={{ width: RAIL_COVER.width }}>
+                  <ZStack alignment="topTrailing">
+                    <CoverImage
+                      sourceKey={item.favorite.sourceKey}
+                      url={item.favorite.cover}
+                      width={RAIL_COVER.width}
+                      height={RAIL_COVER.height}
+                      title={item.favorite.title}
+                      lifted={true}
+                    />
+                    {/* 封面右上角未讀亮點 */}
+                    <HStack padding={5}>
+                      <Circle
+                        frame={{ width: 8, height: 8 }}
+                        fill={tint.tint}
+                        stroke={cardBackground}
+                      />
+                    </HStack>
+                  </ZStack>
+
+                  {/* 作品名稱（一行截斷） */}
+                  <Text
+                    font="caption"
+                    fontWeight="semibold"
+                    lineLimit={1}
+                    frame={{ width: RAIL_COVER.width, alignment: "leading" }}
+                  >
+                    {item.favorite.title}
+                  </Text>
+
+                  {/* 最新話數（一行截斷） */}
+                  {item.record.latestEpTitle ? (
+                    <Text
+                      font="caption2"
+                      foregroundStyle="secondaryLabel"
+                      lineLimit={1}
+                      frame={{ width: RAIL_COVER.width, alignment: "leading" }}
+                    >
+                      {item.record.latestEpTitle}
+                    </Text>
+                  ) : null}
+                </VStack>
               </NavigationLink>
-            </VStack>
-          ))}
-        </Card>
+            ))}
+          </HStack>
+        </ScrollView>
       )}
     </VStack>
-  )
-}
-
-function UpdateRow({ item }: { item: UpdateItem }) {
-  const { favorite, record, unreadCount } = item
-  return (
-    <HStack spacing={COVER_GAP} alignment="center" padding={rowPadding} frame={{ maxWidth: "infinity" }}>
-      <CoverImage
-        sourceKey={favorite.sourceKey}
-        url={favorite.cover}
-        width={ROW_COVER.width}
-        height={ROW_COVER.height}
-        title={favorite.title}
-      />
-      <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Text font="subheadline" fontWeight="medium" lineLimit={1}>
-          {favorite.title}
-        </Text>
-        {record.latestEpTitle ? (
-          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>
-            {record.latestEpTitle}
-          </Text>
-        ) : null}
-      </VStack>
-      <UnreadBadge count={unreadCount} accessibilityLabel={t("bookshelf.unreadBadge", { n: unreadCount })} />
-      <Chevron />
-    </HStack>
   )
 }
