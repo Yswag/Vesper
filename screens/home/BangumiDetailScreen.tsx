@@ -37,6 +37,7 @@ import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { CoverBadge } from "../../design/CoverBadge"
 import { CoverShadow } from "../../design/CoverShadow"
+import { scrollTopBar } from "../../design/glass"
 import { Tag } from "../../design/Tag"
 import { EmptyState } from "../../design/status"
 import { badgePadding, capsule, fill, pageInsets, pageSpacing, radius, rect } from "../../design/tokens"
@@ -183,6 +184,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
         <ScrollView
           scrollContentBackground="hidden"
           frame={{ maxWidth: "infinity" }}
+          {...scrollTopBar(null)}
           onScrollTargetVisibilityChange={{
             idType: "string",
             threshold: 0.1,

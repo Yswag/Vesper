@@ -12,6 +12,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { SectionGridScreen, type MoreSource } from "./SectionGridScreen"
 import { PageBackground } from "../../app/theme"
 import { Chip } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { EmptyState, NoticeBanner, type StatusKind } from "../../design/status"
 import { capsule, fill, pageInsets, pageSpacing } from "../../design/tokens"
 
@@ -62,7 +63,7 @@ export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
           <EmptyState variant="page" icon="square.grid.2x2" title={t("browse.noCategories")} />
         ) : null}
 
-        <ScrollView scrollContentBackground="hidden">
+        <ScrollView scrollContentBackground="hidden" {...scrollTopBar(null)}>
           <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
             {groups.map(part => (
               <VStack

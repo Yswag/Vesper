@@ -41,6 +41,7 @@ import {
 import { findSource } from "../../sources/registry"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { Chip } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
@@ -401,8 +402,8 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       <VStack
         spacing={0}
         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}
-        // 篩選那排釘在導覽列下：還在載入、0 筆或失敗時也要進得去（那正是要改篩選的時候）。
-        safeAreaInset={{ top: { content: filterBar() } }}
+        // 篩選那排釘在導覽列下、浮在內容上：還在載入、0 筆或失敗時也要進得去（那正是要改篩選的時候）。
+        {...scrollTopBar(filterBar())}
       >
         {body()}
       </VStack>

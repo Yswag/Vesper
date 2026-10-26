@@ -31,7 +31,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { PageBackground, useTint } from "../../app/theme"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { formatCommentTime } from "./commentTime"
-import { glass } from "../../design/glass"
+import { glass, scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { ActionRow } from "../../design/rows"
 import { EmptyState, ListFooter, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
@@ -373,6 +373,7 @@ export function CommentScreen({
               scrollContentBackground="hidden"
               scrollDismissesKeyboard="interactively"
               frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+              {...scrollTopBar(null)}
               safeAreaInset={{
                 bottom: {
                   content: (

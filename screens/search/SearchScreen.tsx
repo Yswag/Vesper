@@ -33,6 +33,7 @@ import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { PageBackground } from "../../app/theme"
+import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
@@ -262,6 +263,7 @@ export function SearchResults({
   return (
     <ScrollView
       scrollDismissesKeyboard="interactively"
+      {...scrollTopBar(null)}
       background={
         <GeometryReader>
           {geometry => <WidthReporter width={geometry.size.width} onWidth={w => setWidth(Math.round(w))} />}
@@ -489,7 +491,7 @@ function HistoryPanel({
     )
   }
   return (
-    <ScrollView scrollDismissesKeyboard="interactively">
+    <ScrollView scrollDismissesKeyboard="interactively" {...scrollTopBar(null)}>
       <VStack
         alignment="leading"
         spacing={12}

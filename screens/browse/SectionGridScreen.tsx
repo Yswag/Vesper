@@ -17,6 +17,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
+import { scrollTopBar } from "../../design/glass"
 import { EmptyState, ListFooter, NoticeBanner, PageLoading } from "../../design/status"
 import { Caption } from "../../design/text"
 import { pageInsets } from "../../design/tokens"
@@ -170,6 +171,31 @@ export function SectionGridScreen({
     return fresh.length
   }
 
+  const filterBar = rows.length > 0 ? (
+    <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
+      {rows.map((row, index) => (
+        <VStack key={`option:${index}`} alignment="leading" spacing={0} frame={{ maxWidth: "infinity" }}>
+          {row.label ? (
+            <HStack padding={{ horizontal: 16 }}>
+              <Caption>{row.label}</Caption>
+            </HStack>
+          ) : null}
+
+          <ChipRow>
+            {row.options.map(option => (
+              <Chip
+                key={`option:${index}:${option.value}:${option.label}`}
+                text={option.label}
+                selected={selected[index] === option.value}
+                onTap={() => choose(index, option.value)}
+              />
+            ))}
+          </ChipRow>
+        </VStack>
+      ))}
+    </VStack>
+  ) : null
+
   return (
     <ZStack>
       <PageBackground />
@@ -177,32 +203,9 @@ export function SectionGridScreen({
         spacing={0}
         navigationTitle={section.title || entry?.title || t("browse.all")}
         navigationBarTitleDisplayMode="inline"
+        // 篩選列浮在內容上：掛在外層，載入中／0 筆時也還在。
+        {...scrollTopBar(filterBar)}
       >
-      {rows.length > 0 ? (
-        <VStack spacing={0} frame={{ maxWidth: "infinity" }}>
-          {rows.map((row, index) => (
-            <VStack key={`option:${index}`} alignment="leading" spacing={0} frame={{ maxWidth: "infinity" }}>
-              {row.label ? (
-                <HStack padding={{ horizontal: 16 }}>
-                  <Caption>{row.label}</Caption>
-                </HStack>
-              ) : null}
-
-              <ChipRow>
-                {row.options.map(option => (
-                  <Chip
-                    key={`option:${index}:${option.value}:${option.label}`}
-                    text={option.label}
-                    selected={selected[index] === option.value}
-                    onTap={() => choose(index, option.value)}
-                  />
-                ))}
-              </ChipRow>
-            </VStack>
-          ))}
-        </VStack>
-      ) : null}
-
       {status ? (
         <VStack padding={{ horizontal: pageInsets.horizontal, top: 12 }} frame={{ maxWidth: "infinity" }}>
           <NoticeBanner tone="error" text={status} />
