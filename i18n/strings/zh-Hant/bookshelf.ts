@@ -4,7 +4,7 @@
 // 導覽列標題也不在這裡：它與書架分頁的標題同一個字，來源是 `common.tabs.bookshelf`。
 //
 // 相對時間（歷史卡片第二行那個時間）也不在字典裡：那是 `Intl` 組的，書架走
-// `screens/bookshelf/historyTime.ts` → `screens/shared/commentTime.ts` 的同一支。
+// `screens/home/historyTime.ts` → `screens/shared/commentTime.ts` 的同一支。
 
 export default {
   /** 書架頂部的兩個入口列，也是推入頁的標題。 */

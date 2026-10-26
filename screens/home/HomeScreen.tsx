@@ -21,6 +21,7 @@ import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { PageBackground, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
+import { HistoryScreen } from "./HistoryScreen"
 
 /**
  * 量測橫向輪播的 ScrollView 視窗寬度，供子卡片計算尺寸。
@@ -339,15 +340,18 @@ export function HomeScreen() {
             )}
             {heroItems.length === 0 && loadingFeed ? <HeroSkeleton /> : null}
 
-            {/* 1. 繼續閱讀區塊（若有進度才展示，保留一鍵接續） */}
+            {/* 1. 繼續閱讀區塊（若有進度才展示，保留一鍵接續）；標題推完整的閱讀歷史 */}
             {progress.length > 0 ? (
               <VStack spacing={4}>
-                <HStack padding={{ horizontal: 16 }}>
-                  <Text font="title3" fontWeight="bold">
-                    {t("home.resumeTitle")}
-                  </Text>
-                  <Spacer />
-                </HStack>
+                <NavigationLink destination={<HistoryScreen />} buttonStyle="plain">
+                  <HStack spacing={4} alignment="center" padding={{ horizontal: 16 }} contentShape="rect">
+                    <Text font="title3" fontWeight="bold" foregroundStyle="label">
+                      {t("home.resumeTitle")}
+                    </Text>
+                    <Image systemName="chevron.right" font="headline" fontWeight="bold" foregroundStyle="tertiaryLabel" />
+                    <Spacer />
+                  </HStack>
+                </NavigationLink>
 
                 <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setResumeCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>

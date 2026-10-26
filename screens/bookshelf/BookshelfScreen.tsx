@@ -1,11 +1,10 @@
-// 書架：上面兩列入口（閱讀歷史、離線內容，各推一頁）、顯示範圍的膠囊列，下面是收藏網格。
+// 書架：上面一列離線內容入口（閱讀歷史在首頁「繼續閱讀」標題）、顯示範圍的膠囊列，下面是收藏網格。
 // 整頁一個直向捲動區，導覽列才有柔和淡出、tab bar 才會跟著捲動縮放（見 design/LANGUAGE.md）。
 // 收藏格子接上閱讀紀錄：狀態行寫讀到哪一話，封面下的進度條是那一話讀到哪，
 // 右上的數字膠囊是還沒讀的章數（追更快取 × 已讀清單）。下拉則手動跑一輪追更檢查。
 
 import {
   Button,
-  Divider,
   Image,
   Menu,
   NavigationLink,
@@ -27,13 +26,12 @@ import { ComicGridLayout, type ComicGridEntry } from "../../components/ComicGrid
 import { LeadingToolbar } from "../../components/LeadingToolbar"
 import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
-import { IconRow, rowSeparatorInset } from "../../design/rows"
+import { IconRow } from "../../design/rows"
 import { EmptyState } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import { subscribe as subscribeLocale, t, type MessageKey } from "../../i18n"
-import { listFavorites, listProgress, removeFavorite } from "../../library/bookshelf"
-import { HistoryScreen } from "./HistoryScreen"
+import { listFavorites, removeFavorite } from "../../library/bookshelf"
 import { OfflineLibraryPage } from "./OfflineLibraryScreen"
 
 const SORTS: { value: ShelfSort; key: MessageKey }[] = [
@@ -81,7 +79,6 @@ export function BookshelfScreen() {
   const library = comicLibrary()
   const favoriteCount = listFavorites().length
   const items = shelfItems(sort, filter)
-  const historyCount = listProgress().length
   const offlineCount = library.offline.comicCount()
 
   /**
@@ -157,15 +154,6 @@ export function BookshelfScreen() {
         <VStack spacing={0}>
           <VStack padding={{ horizontal: pageInsets.horizontal, top: 8 }}>
             <Card>
-              <NavigationLink destination={<HistoryScreen />}>
-                <IconRow
-                  icon="clock.arrow.circlepath"
-                  title={t("bookshelf.historyTab")}
-                  detail={historyCount > 0 ? t("bookshelf.comicCount", { n: historyCount }) : undefined}
-                  chevron
-                />
-              </NavigationLink>
-              <Divider padding={{ leading: rowSeparatorInset }} />
               <NavigationLink destination={<OfflineLibraryPage />}>
                 <IconRow
                   icon="arrow.down.circle"
