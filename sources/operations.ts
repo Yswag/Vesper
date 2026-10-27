@@ -8,7 +8,7 @@ import { log } from "../engine/log"
 import { withSourceScope } from "../engine/scope"
 import { t } from "../i18n"
 
-import { collectItems, normalizeImages, normalizeListPage, normalizeListSections, normalizeTags, resolveChapters, type ComicListItem, type ComicListPage, type JumpTarget, type SectionPage } from "../engine/adapt"
+import { collectItems, findUpdateTime, normalizeImages, normalizeListPage, normalizeListSections, normalizeTags, resolveChapters, type ComicListItem, type ComicListPage, type JumpTarget, type SectionPage } from "../engine/adapt"
 import type { SourceCallRetry } from "../engine/images"
 import { readChapterImageKeys } from "../engine/offline"
 import type { SourceViewer } from "../library/readerSettings"
@@ -441,6 +441,7 @@ export async function loadDetail(source: InstalledSource, comicId: string, scope
 
   const started = Date.now()
   const raw = await callSource(source, scope, () => instance.comic.loadInfo(comicId))
+  const tags = normalizeTags(raw?.tags)
   const detail: ComicDetail = {
     id: comicId,
     title: String(raw?.title ?? t("sources.untitled")),
@@ -449,10 +450,11 @@ export async function loadDetail(source: InstalledSource, comicId: string, scope
     // 星等與 subId 原樣導出
     stars: normalizeStars(raw?.stars),
     subId: raw?.subId != null ? String(raw.subId) : undefined,
-    tags: normalizeTags(raw?.tags),
+    tags,
     // 單章漫畫（無 chapters）自動合成單一章節（epId = comicId）
     chapters: resolveChapters(raw?.chapters, comicId),
-    updateTime: raw?.updateTime ?? undefined,
+    // `updateTime` 沒給就取「更新」這類 tag（部分源只在標籤裡放日期）
+    updateTime: findUpdateTime(raw?.updateTime, tags),
     uploadTime: raw?.uploadTime ?? undefined,
     uploader: raw?.uploader ?? undefined,
     url: raw?.url ?? undefined,

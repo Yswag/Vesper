@@ -106,6 +106,52 @@ export function normalizeTags(tags: unknown): Array<{ namespace: string; values:
     .filter(group => group.values.length > 0)
 }
 
+/** 追更日期的 tag 命名空間（照上游 `models.dart:298` 的 acceptedNamespaces）。 */
+const UPDATE_NAMESPACES = ["更新", "最後更新", "最后更新", "update", "last update"]
+
+function pad2(value: number): string {
+  return value < 10 ? `0${value}` : String(value)
+}
+
+/**
+ * 日期字串 → 補零的 `YYYY-MM-DD`。後面的時間會被丟掉。
+ * 上游只吃 `-`；這裡多接受 `/`、`.`（既有 `parseUpdateTime` 就吃）。不合格回 undefined——
+ * 寧可沒有日期退回短 TTL，也不要拿亂猜的日期把追更冷卻拉長。
+ */
+export function normalizeUpdateTime(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  const head = value.trim().split(/\s+/)[0] ?? ""
+  const match = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(head)
+  if (!match) return undefined
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 2000 || year > 3000) return undefined
+  if (month < 1 || month > 12) return undefined
+  if (day < 1 || day > 31) return undefined
+  return `${year}-${pad2(month)}-${pad2(day)}`
+}
+
+/**
+ * 詳情的更新日期：`updateTime` 優先，**有值就不退 tags**（照上游 `findUpdateTime`）；
+ * 沒有才取「更新／最後更新／update…」命名空間的第一個標籤。
+ */
+export function findUpdateTime(
+  rawUpdateTime: unknown,
+  tags: Array<{ namespace: string; values: string[] }>
+): string | undefined {
+  if (typeof rawUpdateTime === "string" && rawUpdateTime.trim() !== "") {
+    return normalizeUpdateTime(rawUpdateTime)
+  }
+  for (const group of tags) {
+    if (group.values.length === 0) continue
+    if (UPDATE_NAMESPACES.includes(group.namespace.trim().toLowerCase())) {
+      return normalizeUpdateTime(group.values[0])
+    }
+  }
+  return undefined
+}
+
 /** `Comic` 物件可能少了 id 或 cover，這裡統一補齊成 UI 好用的形狀。 */
 export function toListItem(raw: any): ComicListItem | null {
   if (!raw || typeof raw !== "object") return null
