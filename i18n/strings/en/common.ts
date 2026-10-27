@@ -47,6 +47,7 @@ export default {
   copied: "Copied",
   remove: "Remove",
   clear: "Clear",
+  close: "Close",
   inProgress: "{label}…",
   failed: "Failed: {message}",
 

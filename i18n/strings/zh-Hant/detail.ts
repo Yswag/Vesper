@@ -9,8 +9,6 @@ export default {
   singleChapter: "單章",
   author: "作者：{name}",
   artist: "作畫：{name}",
-  /** `{n}` 是章節數。中文沒有單複數，兩形同字——留著是為了跟英文同形。 */
-  chapterCount: { one: "{n} 個章節", other: "{n} 個章節" },
   /** `{time}` 是源給的更新時間字串（不翻）。 */
   updatedAt: "更新於 {time}",
   uploadedAt: "發布於 {time}",
@@ -88,4 +86,10 @@ export default {
   /** 更多操作與相關推薦。 */
   openInBrowser: "在瀏覽器中開啟",
   recommendTitle: "相關推薦",
+
+  /** 換源：在目前來源以外找同一部作品。 */
+  switchSource: "切換來源",
+  switchSourceSearching: "正在搜尋其他來源",
+  switchSourceEmpty: "其他來源找不到這部作品",
+  switchSourceNoOthers: "沒有其他已啟用的來源",
 }

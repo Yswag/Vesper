@@ -71,6 +71,7 @@ export default {
   copied: "已複製",
   remove: "移除",
   clear: "清除",
+  close: "關閉",
   /** 進行中：`{label}` 是動作本身（「登入…」／「加入…」）。 */
   inProgress: "{label}…",
   /** 失敗：`{message}` 是原因（可能是源或網路給的字）。 */

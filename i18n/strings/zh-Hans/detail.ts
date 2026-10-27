@@ -4,7 +4,6 @@ export default {
   singleChapter: "单章",
   author: "作者：{name}",
   artist: "作画：{name}",
-  chapterCount: { one: "{n} 个章节", other: "{n} 个章节" },
   updatedAt: "更新于 {time}",
   uploadedAt: "发布于 {time}",
   likesCount: { one: "{n} 人喜爱", other: "{n} 人喜爱" },
@@ -66,4 +65,10 @@ export default {
   /** 更多操作与相关推荐。 */
   openInBrowser: "在浏览器中打开",
   recommendTitle: "相关推荐",
+
+  /** 换源：在当前来源之外找同一部作品。 */
+  switchSource: "切换来源",
+  switchSourceSearching: "正在搜索其他来源",
+  switchSourceEmpty: "其他来源找不到这部作品",
+  switchSourceNoOthers: "没有其他已启用的来源",
 }

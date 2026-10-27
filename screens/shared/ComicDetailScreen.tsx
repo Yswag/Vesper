@@ -9,7 +9,9 @@ import {
   LazyVStack,
   LazyHStack,
   NamespaceReader,
+  Navigation,
   NavigationLink,
+  NavigationStack,
   ScrollView,
   Spacer,
   Text,
@@ -26,6 +28,7 @@ import {
   type VirtualNode,
 } from "scripting"
 
+import { CoverBadge } from "../../design/CoverBadge"
 import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { CoverViewerScreen } from "./CoverViewerScreen"
@@ -44,6 +47,7 @@ import {
 } from "../../library/bookshelf"
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
+import { SourceSwitchSheet } from "./SourceSwitchSheet"
 import { ChapterListHeader, ChapterSelectionBar, selectionAnimation, selectionBarClearance } from "./ChapterSelection"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { presentReader } from "./ResumeReaderScreen"
@@ -104,9 +108,122 @@ function ratingText(rating: NonNullable<ComicPage["contentRating"]>): string {
   return rating === "nsfw" ? t("detail.ratingNsfw") : t("detail.ratingSuggestive")
 }
 
+/** hero 右欄顯示的資訊；抽出來是為了讓 `dev/preview-hero.tsx` 用假資料預覽同一份版面。 */
+export type ComicHeroData = Pick<
+  ComicPage,
+  | "title"
+  | "sourceName"
+  | "uploader"
+  | "artists"
+  | "status"
+  | "contentRating"
+  | "stars"
+  | "likesCount"
+  | "updateTime"
+  | "uploadTime"
+>
+
+/** 分級角標（R18 紅字、建議級白字）貼在封面右上角；safe 不畫。 */
+export function ComicRatingBadge({ rating }: { rating?: ComicPage["contentRating"] }) {
+  if (!rating || rating === "safe") return null
+  return (
+    <HStack offset={{ x: -6, y: 6 }}>
+      <CoverBadge
+        text={ratingText(rating)}
+        icon={rating === "nsfw" ? "exclamationmark.triangle.fill" : "info.circle"}
+        tone={rating === "nsfw" ? "danger" : "default"}
+      />
+    </HStack>
+  )
+}
+
+export function ComicHeroMeta({
+  meta,
+  onSwitchSource,
+}: {
+  meta: ComicHeroData
+  /** 點來源 chip：開換源 sheet。 */
+  onSwitchSource: () => void
+}) {
+  const rating = formatStars(meta.stars)
+
+  return (
+    <VStack
+      alignment="leading"
+      spacing={8}
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      fixedSize={{ horizontal: false, vertical: true }}
+    >
+      <Text
+        font="title3"
+        fontWeight="bold"
+        lineLimit={3}
+        multilineTextAlignment="leading"
+        fixedSize={{ horizontal: false, vertical: true }}
+      >
+        {meta.title}
+      </Text>
+
+      {/* 來源是可點的 chip（玻璃＝可操作）。 */}
+      <Chip
+        compact
+        text={meta.sourceName}
+        chevron
+        onTap={onSwitchSource}
+        accessibilityLabel={t("detail.switchSource")}
+      />
+
+      {/* 唯讀星等與喜愛數：源有給才出現。分級不在這裡，它是封面的角標。 */}
+      {rating || (meta.likesCount != null && meta.likesCount > 0) ? (
+        <HStack spacing={8} alignment="center">
+          {rating ? <Tag text={`${rating.glyphs} ${rating.score}`} tone="warning" /> : null}
+
+          {meta.likesCount != null && meta.likesCount > 0 ? (
+            <Tag
+              icon="heart.fill"
+              tone="love"
+              accessibilityLabel={t("detail.likesCount", { n: meta.likesCount })}
+              text={
+                meta.likesCount >= 10000
+                  ? `${(meta.likesCount / 10000).toFixed(1)}w`
+                  : meta.likesCount >= 1000
+                  ? `${(meta.likesCount / 1000).toFixed(1)}k`
+                  : String(meta.likesCount)
+              }
+            />
+          ) : null}
+        </HStack>
+      ) : null}
+
+      {/* 連載狀態、作者作畫、時間：共三層，各自一行。 */}
+      {meta.status ? <Tag text={statusText(meta.status)} /> : null}
+
+      {meta.uploader ? (
+        <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={2}>
+          {t("detail.author", { name: meta.uploader })}
+        </Text>
+      ) : null}
+
+      {meta.artists ? (
+        <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={2}>
+          {t("detail.artist", { name: meta.artists })}
+        </Text>
+      ) : null}
+
+      {meta.updateTime || meta.uploadTime ? (
+        <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
+          {meta.updateTime
+            ? t("detail.updatedAt", { time: meta.updateTime })
+            : t("detail.uploadedAt", { time: meta.uploadTime! })}
+        </Text>
+      ) : null}
+    </VStack>
+  )
+}
+
 export function ComicDetailScreen({
-  sourceKey,
-  comicId,
+  sourceKey: initialSourceKey,
+  comicId: initialComicId,
   title: initialTitle,
   zoomTransition,
 }: {
@@ -119,6 +236,12 @@ export function ComicDetailScreen({
   }
 }) {
   const library = comicLibrary()
+  // 換源＝就地換掉這一頁看的作品：以下全部讀這兩個名字，不必再推一層詳情頁。
+  const [active, setActive] = useState<ComicRef>({ sourceKey: initialSourceKey, comicId: initialComicId })
+  const sourceKey = active.sourceKey
+  const comicId = active.comicId
+  // 換源後、新詳情回來前先顯示新書名（不然會停在舊的那本）。
+  const [pendingTitle, setPendingTitle] = useState(initialTitle)
   // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
   const tintColor = String(tint.tint[useColorScheme()]) as Color
@@ -151,6 +274,8 @@ export function ComicDetailScreen({
 
   useEffect(() => {
     let alive = true
+    // 換源時先把舊作品收掉：留著會短暫顯示上一個來源的封面與章節。
+    setDetail(null)
     setStatus(null)
     // 詳情走 ComicLibrary：這一頁不再自己 loadDetail，也不必知道源回傳的原始形狀。
     // 找不到源／沒載入成功都在庫的邊界變成可讀的錯誤訊息。
@@ -178,7 +303,7 @@ export function ComicDetailScreen({
 
   // 續讀點：ComicLibrary 會把越界的頁碼 clamp 到合法範圍；沒讀過就是 null。
   const resumed = library.resume({ sourceKey, comicId })
-  const comicTitle = detail?.title ?? initialTitle
+  const comicTitle = detail?.title ?? pendingTitle
   const comicCover = detail?.cover
 
   // 章節分組（當源有多個不同 group 時支援分組分頁切換）
@@ -204,7 +329,11 @@ export function ComicDetailScreen({
   const readIds = readChapterIds(sourceKey, comicId)
 
   useEffect(() => {
-    if (!comicCover) return
+    if (!comicCover) {
+      // 換源後新作品還沒回來：舊作品的氛圍光暈要一起收掉。
+      setAmbientImage(null)
+      return
+    }
     let alive = true
     void comicLibrary()
       .thumbnailPath(sourceKey, comicCover)
@@ -241,9 +370,6 @@ export function ComicDetailScreen({
 
   // 整理所有標籤
   const allTags = (detail?.tags ?? []).flatMap(g => g.values)
-
-  // 源給的星等（唯讀）；源沒給或無法辨識就沒有這一項。
-  const rating = formatStars(detail?.stars)
 
   // 簡介文字清洗
   const cleanDescription = (detail?.description ?? "")
@@ -289,6 +415,27 @@ export function ComicDetailScreen({
 
   /** 這一組章的漫畫資訊（下載頁要顯示的名稱與封面）；詳情還沒到就沒有。 */
   const downloadMeta = detail ? { comicTitle: detail.title, cover: detail.cover } : undefined
+
+  /** 換源 sheet：選了就把這一頁換成該來源的作品（同一個導覽位置，不推新頁）。 */
+  async function openSwitch() {
+    await Navigation.present({
+      element: (
+        <NavigationStack>
+          <SourceSwitchSheet
+            sourceKey={sourceKey}
+            title={comicTitle}
+            onPick={(ref, nextTitle) => {
+              setPendingTitle(nextTitle)
+              setSelecting(false)
+              setSelectedIds([])
+              setActive(ref)
+            }}
+          />
+        </NavigationStack>
+      ),
+      modalPresentationStyle: "pageSheet",
+    })
+  }
 
   /** 選取模式：點列＝切換勾選（不是進閱讀器）；鎖定的章節不能選。 */
   function toggleSelected(epId: string) {
@@ -529,7 +676,7 @@ export function ComicDetailScreen({
                   buttonStyle="plain"
                 >
                   <ZStack
-                    alignment="center"
+                    alignment="topTrailing"
                     matchedTransitionSource={{ id: `detail-hero:${sourceKey}:${comicId}`, namespace: heroNs }}
                   >
                     <CoverImage
@@ -541,85 +688,13 @@ export function ComicDetailScreen({
                       title={comicTitle}
                       lifted={true}
                     />
+                    <ComicRatingBadge rating={detail.contentRating} />
                   </ZStack>
                 </NavigationLink>
               )}
             </NamespaceReader>
 
-              <VStack
-                alignment="leading"
-                spacing={8}
-                frame={{ maxWidth: "infinity", alignment: "leading" }}
-                fixedSize={{ horizontal: false, vertical: true }}
-              >
-                <Text
-                  font="title3"
-                  fontWeight="bold"
-                  lineLimit={3}
-                  multilineTextAlignment="leading"
-                  fixedSize={{ horizontal: false, vertical: true }}
-                >
-                  {comicTitle}
-                </Text>
-
-                {detail.uploader ? (
-                  <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={2}>
-                    {t("detail.author", { name: detail.uploader })}
-                  </Text>
-                ) : null}
-
-                {detail.artists ? (
-                  <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={2}>
-                    {t("detail.artist", { name: detail.artists })}
-                  </Text>
-                ) : null}
-
-                {/* 狀態標籤：章數／來源／連載狀態都是中性（不搶注意力）。 */}
-                <HStack spacing={6}>
-                  <Tag text={t("detail.chapterCount", { n: chapters.length })} />
-                  <Tag text={detail.sourceName} />
-                  {detail.status ? <Tag text={statusText(detail.status)} /> : null}
-                </HStack>
-
-                {/* 唯讀星等、分級與喜愛數：源有給才出現。 */}
-                {rating || (detail.contentRating && detail.contentRating !== "safe") || (detail.likesCount != null && detail.likesCount > 0) ? (
-                  <HStack spacing={8} alignment="center">
-                    {detail.contentRating && detail.contentRating !== "safe" ? (
-                      <Tag
-                        icon={detail.contentRating === "nsfw" ? "exclamationmark.triangle.fill" : "info.circle"}
-                        text={ratingText(detail.contentRating)}
-                        tone={detail.contentRating === "nsfw" ? "danger" : "warning"}
-                      />
-                    ) : null}
-
-                    {rating ? <Tag text={`${rating.glyphs} ${rating.score}`} tone="warning" /> : null}
-
-                    {detail.likesCount != null && detail.likesCount > 0 ? (
-                      <Tag
-                        icon="heart.fill"
-                        tone="love"
-                        accessibilityLabel={t("detail.likesCount", { n: detail.likesCount })}
-                        text={
-                          detail.likesCount >= 10000
-                            ? `${(detail.likesCount / 10000).toFixed(1)}w`
-                            : detail.likesCount >= 1000
-                            ? `${(detail.likesCount / 1000).toFixed(1)}k`
-                            : String(detail.likesCount)
-                        }
-                      />
-                    ) : null}
-                  </HStack>
-                ) : null}
-
-                {/* 時間：優先顯示更新時間，若無則顯示發布時間 */}
-                {detail.updateTime || detail.uploadTime ? (
-                  <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
-                    {detail.updateTime
-                      ? t("detail.updatedAt", { time: detail.updateTime })
-                      : t("detail.uploadedAt", { time: detail.uploadTime! })}
-                  </Text>
-                ) : null}
-              </VStack>
+              <ComicHeroMeta meta={detail} onSwitchSource={() => void openSwitch()} />
             </HStack>
 
             {/* 閱讀入口與動作列（開始閱讀 + 收藏 + 評論留言） */}

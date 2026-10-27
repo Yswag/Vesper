@@ -46,6 +46,7 @@ export default {
   copied: "已复制",
   remove: "移除",
   clear: "清除",
+  close: "关闭",
   inProgress: "{label}…",
   failed: "失败：{message}",
 

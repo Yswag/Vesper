@@ -4,7 +4,6 @@ export default {
   singleChapter: "Single chapter",
   author: "Author: {name}",
   artist: "Artist: {name}",
-  chapterCount: { one: "{n} chapter", other: "{n} chapters" },
   updatedAt: "Updated {time}",
   uploadedAt: "Uploaded {time}",
   likesCount: { one: "{n} like", other: "{n} likes" },
@@ -66,4 +65,10 @@ export default {
   /** More actions and recommendations. */
   openInBrowser: "Open in Browser",
   recommendTitle: "Recommended",
+
+  /** Switching source: find the same title on another source. */
+  switchSource: "Switch source",
+  switchSourceSearching: "Searching other sources",
+  switchSourceEmpty: "No other source has this title",
+  switchSourceNoOthers: "No other sources are enabled",
 }
