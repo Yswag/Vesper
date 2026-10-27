@@ -677,6 +677,8 @@ function ReaderContent({
                   key={`${id}:${renderGeneration}`}
                   session={session}
                   index={i}
+                  // 條漫以寬為準：高度由比例算出來，所以載入前後佔位一樣高。
+                  size={{ width: pageSize.width }}
                 />
               </VStack>
             )

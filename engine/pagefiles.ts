@@ -12,6 +12,22 @@ export interface PageRender {
   aspect: number
 }
 
+/** 每頁的寬高比（key＝頁索引）。長在 session 上：解碼過的頁重掛不必再等一次才知道要多高。 */
+export interface PageAspects {
+  get(index: number): number | null
+  set(index: number, aspect: number): void
+}
+
+export function createPageAspects(): PageAspects {
+  const aspects = new Map<number, number>()
+  return {
+    get: index => aspects.get(index) ?? null,
+    set: (index, aspect) => {
+      aspects.set(index, aspect)
+    },
+  }
+}
+
 /** 認得的圖檔格式；`bin`＝認不出來（照寫，但記一筆 warning）。 */
 type ImageExtension = "jpg" | "png" | "webp" | "gif" | "bin"
 

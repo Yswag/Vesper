@@ -5,7 +5,7 @@
 import type { ChapterSession, PageRender } from "./comic"
 import { readBytes } from "../engine/fs"
 import { chapterOf, offlinePagePath, statusOf, type OfflineKey } from "../engine/offline"
-import { closeRenderDir, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../engine/pagefiles"
+import { closeRenderDir, createPageAspects, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../engine/pagefiles"
 import { isSafeForUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings } from "../library/readerSettings"
 import { log } from "../engine/log"
@@ -44,6 +44,8 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
 
   // 原圖直接採用本地磁碟檔案路徑；超分圖產生後寫入 session 暫存目錄供 Canvas 渲染
   const renderDir = openRenderDir(key.epId)
+  // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
+  const aspects = createPageAspects()
   let disposed = false
 
   const loadPageBytes = async (index: number): Promise<Uint8Array> => {
@@ -66,6 +68,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     offline: statusOf(key),
     local: true,
     imageKey: imageKeyOf,
+    aspectOf: index => aspects.get(index),
     pageImage: loadPageBytes,
     loadPage: async (
       index: number,
@@ -80,6 +83,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       const decoded = UIImage.fromData(Data.fromUint8Array(bytes)!)
       if (!decoded) return null
       const aspect = decoded.width / decoded.height
+      aspects.set(index, aspect)
       const name = `p${index}`
 
       // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。

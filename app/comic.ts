@@ -28,6 +28,7 @@ import { log } from "../engine/log"
 import { hasPro } from "../engine/pro"
 import {
   closeRenderDir,
+  createPageAspects,
   findSharpenedPage,
   openRenderDir,
   writePage,
@@ -183,6 +184,11 @@ export interface ChapterSession {
    * 圖片鍵清單中索引對應的鍵值（0 起算）。離線 manifest 與下載共用此鍵。
    */
   imageKey(index: number): string
+  /**
+   * 這一頁的寬高比（寬 / 高）；還沒解碼過就是 null。
+   * 同步查詢——畫面在 render 期間就要拿它定尺寸，不能等 `loadPage`。
+   */
+  aspectOf(index: number): number | null
   /**
    * 取得指定索引的圖片原始位元組（離線 ➔ 記憶體 LRU ➔ 網路）。
    */
@@ -785,6 +791,8 @@ export function createComicLibrary(): ComicLibrary {
       // 這一話的暫存檔目錄（每頁的原圖與超分圖），生命週期＝這個 session。
       // 開場順手清掉上一輪被系統殺掉時留下的孤兒。
       const renderDir = openRenderDir(ref.epId)
+      // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
+      const aspects = createPageAspects()
       let disposed = false
 
       const loadPage = async (
@@ -801,6 +809,7 @@ export function createComicLibrary(): ComicLibrary {
         const decoded = UIImage.fromData(data)
         if (!decoded) return null
         const aspect = decoded.width / decoded.height
+        aspects.set(index, aspect)
 
         const name = `p${index}`
         // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
@@ -850,6 +859,7 @@ export function createComicLibrary(): ComicLibrary {
         offline: statusOf(key),
         local: false,
         imageKey: index => imageKeyOf(index),
+        aspectOf: index => aspects.get(index),
         pageImage: loadPageBytes,
         loadPage,
         setHardwareSharpen: enabled => {
