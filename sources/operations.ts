@@ -16,6 +16,7 @@ import * as aidoku from "./aidoku"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
 import { ensureSourceReady, reloginSource, type ReloginOutcome } from "./registry"
+import { sourceText } from "./translation"
 
 export interface ExploreEntry {
   index: number
@@ -153,7 +154,10 @@ export function exploreEntries(source: InstalledSource): ExploreEntry[] {
   if (!Array.isArray(explore)) return []
   return explore.map((entry: any, index: number) => ({
     index,
-    title: String(entry?.title ?? t("sources.exploreFallback", { n: index + 1 })),
+    // 分頁名也是源寫的字串，照源自己的字典翻（沒有字典就是原文）。
+    title: entry?.title != null
+      ? sourceText(source.instance, String(entry.title))
+      : t("sources.exploreFallback", { n: index + 1 }),
     type: String(entry?.type ?? "multiPageComicList"),
     supportsNext: typeof entry?.loadNext === "function",
   }))

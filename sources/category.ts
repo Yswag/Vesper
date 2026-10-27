@@ -6,6 +6,7 @@ import { t } from "../i18n"
 import { logFailure } from "./operations"
 import { optionRows, type OptionItem, type OptionRow } from "./options"
 import { ensureSourceReady, type InstalledSource } from "./registry"
+import { sourceText, translatedOptionRows } from "./translation"
 
 export interface CategoryChip {
   /** 顯示文字；也是 `categoryComics.load` 的第一個參數。 */
@@ -38,19 +39,20 @@ function text(value: unknown): string {
 }
 
 /** 固定項 → chip。`categoryParams` 缺項時退回 `groupParam`（nhentai 的語言 part 就是這樣）。 */
-function fixedChip(part: any, item: unknown, index: number): CategoryChip | null {
+function fixedChip(part: any, item: unknown, index: number, translate: (text: string) => string): CategoryChip | null {
   // `{label, target}`：源自己把目標寫好了，直接照用。
   if (item && typeof item === "object") {
     const label = text((item as any).label ?? (item as any).title)
     const target = normalizeJumpTarget((item as any).target)
-    return label && target ? { label, target } : null
+    return label && target ? { label: translate(label), target } : null
   }
   const label = text(item)
   if (!label) return null
   const param = asArray(part?.categoryParams)[index] ?? part?.groupParam
   return {
-    label,
+    label: translate(label),
     target: {
+      // 送給源的是原文，只有顯示名換成譯文。
       page: part?.itemType === "search" ? "search" : "category",
       attributes: {
         category: label,
@@ -60,13 +62,13 @@ function fixedChip(part: any, item: unknown, index: number): CategoryChip | null
   }
 }
 
-function dynamicChips(items: any[]): CategoryChip[] {
+function dynamicChips(items: any[], translate: (text: string) => string): CategoryChip[] {
   const chips: CategoryChip[] = []
   for (const item of items) {
     if (!item || typeof item !== "object") continue
     const label = text(item.label ?? item.title)
     const target = normalizeJumpTarget(item.target)
-    if (label && target) chips.push({ label, target })
+    if (label && target) chips.push({ label: translate(label), target })
   }
   return chips
 }
@@ -116,11 +118,12 @@ export async function loadCategoryOptionRows(
 
   try {
     if (Array.isArray(module.optionList) && module.optionList.length > 0) {
-      return optionRows(module.optionList, row => optionRowVisible(row, category))
+      return translatedOptionRows(source.instance, optionRows(module.optionList, row => optionRowVisible(row, category)))
     }
     if (typeof module.optionLoader === "function") {
       await ensureSourceReady(source.stored.key)
-      return optionRows(await module.optionLoader.call(source.instance, category, param))
+      const loaded = await module.optionLoader.call(source.instance, category, param)
+      return translatedOptionRows(source.instance, optionRows(loaded))
     }
   } catch (error) {
     logFailure("category", `${source.stored.key}／${category} 讀不到篩選列`, error)
@@ -139,20 +142,21 @@ export async function loadCategoryParts(source: InstalledSource): Promise<Catego
   // dynamic 的 loader 常用到 init() 準備好的資料（komga 的書庫清單就是）。
   await ensureSourceReady(source.stored.key)
 
+  const translate = (text: string) => sourceText(source.instance, text)
   const result: CategoryPart[] = []
   for (let index = 0; index < parts.length; index++) {
     const part = parts[index]
-    const name = text(part?.name) || t("sources.categoryFallback", { n: index + 1 })
+    const name = translate(text(part?.name)) || t("sources.categoryFallback", { n: index + 1 })
     const kind = part?.type === "dynamic" ? "dynamic" : part?.type === "random" ? "random" : "fixed"
     try {
       let chips: CategoryChip[]
       if (kind === "dynamic") {
         if (typeof part?.loader !== "function") throw new Error("dynamic 分類沒有 loader")
-        chips = dynamicChips(asArray(await part.loader.call(source.instance)))
+        chips = dynamicChips(asArray(await part.loader.call(source.instance)), translate)
       } else {
         const items = asArray(part?.categories)
         const used = kind === "random" ? randomIndexes(items.length, Number(part?.randomNumber) || 1) : items.map((_, i) => i)
-        chips = used.map(i => fixedChip(part, items[i], i)).filter((chip): chip is CategoryChip => chip != null)
+        chips = used.map(i => fixedChip(part, items[i], i, translate)).filter((chip): chip is CategoryChip => chip != null)
       }
       result.push({ index, name, kind, chips })
     } catch (error) {

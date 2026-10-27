@@ -19,6 +19,7 @@ import { aidokuIndexSchema, parseAidokuIndex } from "./aidokuIndex"
 import * as repositoryStore from "./repository"
 import type { RepositoryKind, StoredRepository } from "./repository"
 import * as store from "./store"
+import { sourceLocale, sourceText } from "./translation"
 import { runWebLogin } from "./webLogin"
 
 export type SourceKind = "venera" | "aidoku"
@@ -139,11 +140,13 @@ function loadVenera(rawEntry: store.StoredSource): InstalledSource {
       code,
       createHostContext(entry.key, {
         settings: entry.settings ?? {},
+        // 源的 `APP.locale`、`this.translate()` 與我們翻設定標題都用同一個語言鍵。
+        locale: sourceLocale(),
         loggedIn: entry.loggedIn === true,
         ui: hostUI,
       })
     )
-    const { defaults, specs } = extractSettings(loaded.instance)
+    const { defaults, specs } = extractSettings(loaded.instance, text => sourceText(loaded.instance, text))
     // 回填：自動補齊宣告的預設設定值
     const merged = mergeSettings(defaults, entry.settings)
     if (JSON.stringify(merged) !== JSON.stringify(entry.settings ?? {})) {

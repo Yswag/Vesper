@@ -10,6 +10,7 @@ import { installComicLibrary } from "./app/services"
 import { composeImage } from "./components/ModifyImageRenderer"
 import { ensureFileAccess } from "./engine/fs"
 import { autoCleanImageCache, purgeLegacyImageCacheOnce, setImageCompositor } from "./engine/imagecache"
+import { onLocaleChange } from "./i18n"
 import { flushLibrary, reloadLibraryFromDisk } from "./library/bookshelf"
 import { reloadRegistry } from "./sources/registry"
 
@@ -44,6 +45,10 @@ async function run() {
   // 只把源載進記憶體（純本地、很快）。**不在這裡跑源的 init()**：
   // 那是按需的 —— 用到哪個源才初始化哪個，開場不該被最慢的源（或壞掉的源）綁住。
   reloadRegistry()
+
+  // 源的 `APP.locale`、`this.translate()` 與設定標題的翻譯都在載入時定案，切語言就重建一次。
+  // 放在這裡（而不是設定頁）是因為只有這裡確定「整個 App 只有一份源實例」。
+  onLocaleChange(() => reloadRegistry())
 
   // ComicLibrary 的 production instance（Phase 0：先建好放著，UI 仍走舊入口）。
   installComicLibrary(createComicLibrary())

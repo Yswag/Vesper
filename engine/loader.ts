@@ -41,8 +41,12 @@ export interface SettingSpec {
 
 /**
  * 提取來源宣告的 settings 結構（包含預設值與 UI 設定項規格）。
+ * `translate` 讓呼叫端用源自己的 `translation` 字典翻標題與選項（engine 不認識 sources）。
  */
-export function extractSettings(instance: any): { defaults: Record<string, unknown>; specs: SettingSpec[] } {
+export function extractSettings(
+  instance: any,
+  translate: (text: string) => string = text => text
+): { defaults: Record<string, unknown>; specs: SettingSpec[] } {
   const raw = instance?.settings
   const defaults: Record<string, unknown> = {}
   const specs: SettingSpec[] = []
@@ -52,11 +56,11 @@ export function extractSettings(instance: any): { defaults: Record<string, unkno
     if (!value || typeof value !== "object") continue
     const spec: SettingSpec = {
       id,
-      title: String(value.title ?? id),
+      title: translate(String(value.title ?? id)),
       type: String(value.type ?? "input"),
-      options: normalizeOptions(value.options),
+      options: normalizeOptions(value.options, translate),
       default: "default" in value ? value.default : undefined,
-      buttonText: typeof value.buttonText === "string" ? value.buttonText : undefined,
+      buttonText: typeof value.buttonText === "string" ? translate(value.buttonText) : undefined,
       validator: typeof value.validator === "string" ? value.validator : undefined,
     }
     specs.push(spec)
@@ -67,7 +71,7 @@ export function extractSettings(instance: any): { defaults: Record<string, unkno
 }
 
 /** 解析選項格式（支援 "值-名" 字串或 {value, text} 物件）。 */
-function normalizeOptions(raw: unknown): SettingOption[] {
+function normalizeOptions(raw: unknown, translate: (text: string) => string): SettingOption[] {
   if (!Array.isArray(raw)) return []
   const out: SettingOption[] = []
   for (const entry of raw) {
@@ -75,8 +79,8 @@ function normalizeOptions(raw: unknown): SettingOption[] {
       const dash = entry.indexOf("-")
       out.push(
         dash > 0
-          ? { value: entry.slice(0, dash), text: entry.slice(dash + 1) }
-          : { value: entry, text: entry }
+          ? { value: entry.slice(0, dash), text: translate(entry.slice(dash + 1)) }
+          : { value: entry, text: translate(entry) }
       )
       continue
     }
@@ -84,7 +88,7 @@ function normalizeOptions(raw: unknown): SettingOption[] {
     const obj = entry as Record<string, unknown>
     const value = String(obj.value ?? "")
     if (!value) continue
-    out.push({ value, text: String(obj.text ?? obj.label ?? value) })
+    out.push({ value, text: translate(String(obj.text ?? obj.label ?? value)) })
   }
   return out
 }

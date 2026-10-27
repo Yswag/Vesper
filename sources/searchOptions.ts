@@ -6,6 +6,7 @@
 
 import { optionItems, type OptionItem } from "./options"
 import type { InstalledSource } from "./registry"
+import { translatedOptionRows } from "./translation"
 
 export type SearchOptionType = "select" | "multi-select" | "dropdown"
 
@@ -53,7 +54,7 @@ export function searchOptionRows(source: InstalledSource): SearchOptionRow[] {
   const list = source.instance?.search?.optionList
   if (!Array.isArray(list)) return []
   const rows: Array<SearchOptionRow | null> = list.map((raw: unknown) => searchOptionRow(raw))
-  return rows.filter((row): row is SearchOptionRow => row != null)
+  return translatedOptionRows(source.instance, rows.filter((row): row is SearchOptionRow => row != null))
 }
 
 export function defaultSearchValues(rows: SearchOptionRow[]): SearchOptionValue[] {
