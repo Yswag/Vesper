@@ -13,6 +13,7 @@ import {
   ToolbarItem,
   VStack,
   useEffect,
+  useObservable,
   useState,
 } from "scripting"
 
@@ -33,8 +34,13 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（送出才更新，空字串＝源的預設列表）。
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState<string | null>(null)
-  /** 系統搜尋框展開與否。Aidoku 源一展開就顯示空查詢的預設結果。 */
-  const [searchOpen, setSearchOpen] = useState(false)
+  /**
+   * 系統搜尋框展開與否。存成 Observable 而不是 state：下拉展開的過程中系統會連續回報，
+   * 用 state 每次都會重繪整棵子樹（chip 列所在的頂部 bar 也重建），手勢就被打斷、一直彈回去。
+   */
+  const searchOpen = useObservable(false)
+  /** Aidoku 源一展開就顯示空查詢的預設結果。只在開關時更新，手勢過程不碰版面。 */
+  const [searchActive, setSearchActive] = useState(false)
   // 選單標籤與導覽列替代標題都在 render 時取自 `t()`：換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
@@ -43,6 +49,12 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
     setKeyword("")
     setSubmitted(null)
   }, [sourceKey])
+
+  useEffect(() => {
+    const listener = (open: boolean) => setSearchActive(open)
+    searchOpen.subscribe(listener)
+    return () => searchOpen.unsubscribe(listener)
+  }, [searchOpen])
 
   // 源沒宣告的頁面就不列進選單（33 個源裡有 2 個沒有分類、24 個沒有排行榜）。
   const hasCategory = info?.hasCategory ?? false
@@ -59,7 +71,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   /** 空查詢也是有效搜尋（源會回自己的預設列表），但只對 Aidoku 源成立。 */
   const allowsEmptySearch = info?.kind === "aidoku"
   /** 什麼時候該顯示搜尋結果：Aidoku 源一展開搜尋框就算，其他源要送出過才算。 */
-  const searchMode = submitted !== null || (allowsEmptySearch && searchOpen)
+  const searchMode = submitted !== null || (allowsEmptySearch && searchActive)
 
   /** 搜尋框的每一次變動：**不搜**，只記在原字。清成空的就復原（回原本的檢視）。 */
   function handleKeywordChange(text: string) {
@@ -86,7 +98,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
         prompt: t("browse.searchInSource", { name: title }),
         value: keyword,
         onChanged: handleKeywordChange,
-        presented: { value: searchOpen, onChanged: setSearchOpen },
+        presented: searchOpen,
       }}
       //searchToolbarBehavior="minimize"
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}

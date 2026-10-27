@@ -288,11 +288,8 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         key={`tab:${selection}`}
         scrollContentBackground="hidden"
         scrollDismissesKeyboard="interactively"
-        // 下拉重整：首頁重抓（原版 reload 也會重讀 listings），listing 分頁重讀第一頁。
-        refreshable={async () => {
-          if (showHome) await loadHome(true)
-          else await loadFirst(entries[listingIndex])
-        }}
+        // 不加 refreshable：它與導覽列搜尋框的「下拉展開」是同一個手勢，會互相搶、拉不出來。
+        // 首頁內容靠源層的 10 分鐘 TTL 自動更新。
         // 頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。
         {...scrollTopBar(chipRow)}
       >

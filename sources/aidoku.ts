@@ -1316,7 +1316,10 @@ export function listing(source: InstalledSource, ref: number | HomeListing, page
 // ---------------------------------------------------------------- 首頁
 
 /** `getHome()` 的結果（記憶體快取）；源設定或檔案變更時跟 listings 一起丟。 */
-const homes = new Map<string, SourceHome>()
+/** 首頁快取存活時間：首頁常是「最新更新」這種會變的內容，過期就重抓。 */
+const HOME_TTL_MS = 10 * 60_000
+/** 首頁快取（記下抓的時間算 TTL）。 */
+const homes = new Map<string, { layout: SourceHome; at: number }>()
 
 /** 源有沒有 `get_home`：載入後才知道，結果改變才通知畫面。 */
 const homeProviders = new Map<string, boolean>()
@@ -1465,12 +1468,12 @@ function toHomeLayout(raw: any, key: string): SourceHome {
 
 /**
  * 一首頁（`getHome`）。跟 listings 同一條路：載入源、worker 隊列、自癒、CF 過盾與人話化錯誤。
- * `reload` 是下拉刷新（丟掉快取重讀）。
+ * 快取 10 分鐘；`reload` 是強制重讀（錯誤後重試用）。
  */
 export async function home(source: InstalledSource, reload = false): Promise<SourceHome> {
   const key = source.stored.key
   const cached = homes.get(key)
-  if (cached && !reload) return cached
+  if (cached && !reload && Date.now() - cached.at < HOME_TTL_MS) return cached.layout
   // 只要「源載好了」就好：不碰 listings，才不會因為 listings 讀不到而連首頁都拿不到。
   await load(source)
   if (!hasHome(key)) throw new Error(t("sources.unsupported.home"))
@@ -1479,7 +1482,7 @@ export async function home(source: InstalledSource, reload = false): Promise<Sou
   const layout = await ask("home", async () =>
     toHomeLayout(await call(source, "getHome", [], SLOW_CALL_TIMEOUT_MS), key)
   )
-  homes.set(key, layout)
+  homes.set(key, { layout, at: Date.now() })
   log("debug", "home", `${key} → ${layout.components.length} 個元件 (${Date.now() - started}ms)`)
   return layout
 }

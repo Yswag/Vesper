@@ -352,8 +352,8 @@ export function HomeScreen() {
                     <Text font="title3" fontWeight="bold" foregroundStyle="label">
                       {t("home.resumeTitle")}
                     </Text>
-                    <Image systemName="chevron.right" font="headline" fontWeight="bold" foregroundStyle="tertiaryLabel" />
                     <Spacer />
+                    <Image systemName="chevron.right" font="headline" fontWeight="bold" foregroundStyle="tertiaryLabel" />
                   </HStack>
                 </NavigationLink>
 
