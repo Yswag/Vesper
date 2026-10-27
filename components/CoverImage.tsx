@@ -138,7 +138,8 @@ export function CoverImage({
   lifted = false,
 }: CoverImageProps) {
   const [image, setImage] = useState<UIImage | null>(null)
-  const [failed, setFailed] = useState(false)
+  // 沒給網址就是「沒有圖」：第一帧直接畫佔位，不要先轉一圈才變成佔位。
+  const [failed, setFailed] = useState(!url)
 
   useEffect(() => {
     let alive = true

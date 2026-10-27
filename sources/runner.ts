@@ -30,8 +30,10 @@ import {
   type CommentPage,
   type ComicDetail,
   type ExploreEntry,
+  type HomeListing,
   type RankingOption,
   type Relogin,
+  type SourceHome,
   type SourceScope,
 } from "./operations"
 import { ensureSourceReady, findSource, isReady, reloginSource, type InstalledSource, type ReloginOutcome } from "./registry"
@@ -41,6 +43,7 @@ export type {
   ComicDetail,
   ComicListPage,
   ExploreEntry,
+  HomeListing,
   LoadedSource,
   RankingOption,
   Relogin,
@@ -48,6 +51,7 @@ export type {
   SectionPage,
   SettingSpec,
   SourceCapabilities,
+  SourceHome,
   SourceMeta,
   SourceScope,
 }
@@ -66,9 +70,10 @@ export interface RunnerDeps {
   auth?: Relogin
 }
 
-/** 清單目標：探索的某個區塊，或 viewMore 跳過去的分類／搜尋頁。 */
+/** 清單目標：探索的某個區塊、首頁帶回來的 listing，或 viewMore 跳過去的分類／搜尋頁。 */
 export type ListTarget =
   | { kind: "explore"; index: number }
+  | { kind: "listing"; listing: HomeListing }
   | { kind: "category"; target: JumpTarget }
 
 export type Cursor = { page: number } | { next: string }
@@ -88,6 +93,10 @@ export interface SourceHandle {
   /** 執行來源非同步 init() 初始化（按需觸發，共用 Promise 不重複發起）。 */
   ready(): Promise<void>
   explore(): ExploreEntry[]
+  /** 源有沒有首頁（Aidoku 的 `get_home`）；Venera 一律沒有。載入後才會變 true。 */
+  hasHome(): boolean
+  /** 首頁；`reload` 強制重讀（下拉刷新）。 */
+  home(opts?: { reload?: boolean }): Promise<SourceHome>
   /** 排行榜（平舖清單，形狀與 SectionPage 不同，所以不塞進 list）。 */
   ranking(option: string, page: number, scope?: SourceScope): Promise<ComicListPage>
   rankingOptions(): RankingOption[]
@@ -144,6 +153,9 @@ async function loadList(
   switch (target.kind) {
     case "explore":
       return loadExploreSections(source, target.index, cursor, scope)
+    case "listing":
+      // Venera 沒有首頁，這種目標只會從 Aidoku 首頁的 listing 來。
+      throw new Error(t("sources.unsupported.explore", { title: target.listing.name }))
     case "category":
       return loadCategorySections(source, target.target, "page" in cursor ? cursor : { page: 1 }, scope)
   }
@@ -162,6 +174,8 @@ export function openSource(source: InstalledSource, deps: RunnerDeps = {}): Sour
     error: source.error,
     ready: () => ensureSourceReady(source.stored.key),
     explore: () => exploreEntries(source),
+    hasHome: () => false,
+    home: () => Promise.reject(new Error(t("sources.unsupported.home"))),
     ranking: (option, page, scope) => loadRankingPage(source, option, page, scope),
     rankingOptions: () => rankingOptions(source),
     hasRanking: () => hasRanking(source),
@@ -192,6 +206,8 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     error: source.error,
     ready: () => aidoku.ready(source),
     explore: () => aidoku.explore(source),
+    hasHome: () => aidoku.hasHome(source.stored.key),
+    home: opts => aidoku.home(source, opts?.reload === true),
     ranking: () => Promise.reject(new Error(t("sources.unsupported.ranking"))),
     rankingOptions: () => [],
     hasRanking: () => false,
@@ -214,7 +230,8 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
 function aidokuList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
   if (target.kind === "category") return Promise.reject(new Error(t("sources.unsupported.category")))
   const page = "page" in cursor ? cursor.page : 1
-  return aidoku.listing(source, target.index, page).then(result => ({
+  const ref = target.kind === "listing" ? target.listing : target.index
+  return aidoku.listing(source, ref, page).then(result => ({
     sections: [{ title: "", comics: result.comics }],
     maxPage: result.maxPage,
   }))

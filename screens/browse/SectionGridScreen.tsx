@@ -11,7 +11,7 @@
 import { HStack, ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
 
 import type { ComicListItem, ComicSection, JumpTarget, SectionPage } from "../../engine/adapt"
-import { type CategoryOptionRow, type ExploreEntry } from "../../app/comic"
+import { type CategoryOptionRow, type ExploreEntry, type HomeListing } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
@@ -29,6 +29,7 @@ type Cursor = { page: number } | { next: string }
 export type MoreSource =
   | { kind: "entry"; cursor: Cursor }
   | { kind: "target"; target: JumpTarget; page: number }
+  | { kind: "listing"; listing: HomeListing; page: number }
   | { kind: "none" }
 
 const NO_MORE: MoreSource = { kind: "none" }
@@ -50,6 +51,10 @@ export interface SectionGridScreenProps {
   /** 初始區塊；分類頁進來時是空的，掛載後自動載第一頁。 */
   section?: ComicSection
   initialMore?: MoreSource
+  /** 首頁元件帶回來的 listing：整頁就是那條 listing 的網格（掛載後自動載第一頁）。 */
+  listing?: HomeListing
+  /** 導覽列標題；listing 進來時由呼叫端給名稱（同一個 listing 的元件可能標題不同）。 */
+  title?: string
 }
 
 export function SectionGridScreen({
@@ -57,6 +62,8 @@ export function SectionGridScreen({
   entry,
   section: initialSection = EMPTY_SECTION,
   initialMore = NO_MORE,
+  listing,
+  title,
 }: SectionGridScreenProps) {
   const library = comicLibrary()
   // 畫面自己訂閱語言：導覽列標題與下面的字在 render 時取自 `t()`，換語言要重繪才算數。
@@ -68,6 +75,7 @@ export function SectionGridScreen({
   const [rows, setRows] = useState<CategoryOptionRow[]>([])
   const [selected, setSelected] = useState<string[]>([])
   const [targetPage, setTargetPage] = useState<number>(initialMore.kind === "target" ? initialMore.page : 1)
+  const [listingPage, setListingPage] = useState(1)
   const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState("")
 
@@ -78,6 +86,7 @@ export function SectionGridScreen({
   }
 
   function currentMore(): MoreSource {
+    if (listing) return listingPage < 0 ? NO_MORE : { kind: "listing", listing, page: listingPage }
     if (entryPaging.kind === "entry") return entry ? entryPaging : NO_MORE
     const base = entryPaging.kind === "target" ? target : section.more
     if (!base) return NO_MORE
@@ -89,6 +98,10 @@ export function SectionGridScreen({
   const hasMore = more.kind !== "none"
 
   useEffect(() => {
+    if (listing) {
+      void loadMore()
+      return
+    }
     if (categoryTarget) {
       // 探索區塊的「查看全部」進來時手上已經有第一頁了，先留著（有篩選列才重載）。
       void openCategory(categoryTarget, section.comics.length > 0)
@@ -147,6 +160,13 @@ export function SectionGridScreen({
         const page = await library.browse(sourceKey, { kind: "explore", index: entry.index }, more.cursor)
         appendComics(page.sections.flatMap(item => item.comics))
         setEntryPaging(entryMore(page, more.cursor))
+      } else if (more.kind === "listing") {
+        const result = await library.browse(sourceKey, { kind: "listing", listing: more.listing }, { page: more.page })
+        const incoming = result.sections.flatMap(item => item.comics)
+        const added = appendComics(incoming)
+        const nextPage = more.page + 1
+        const alive = result.maxPage != null ? nextPage <= result.maxPage : incoming.length > 0 && added > 0
+        setListingPage(alive ? nextPage : -1)
       } else {
         const result = await library.browse(sourceKey, { kind: "category", target: more.target }, { page: more.page })
         const incoming = result.sections.flatMap(item => item.comics)
@@ -158,6 +178,8 @@ export function SectionGridScreen({
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
       setTargetPage(-1)
+      // listings 失敗就不自動重試（不然捲到底會一直重打）。
+      if (listing) setListingPage(-1)
     } finally {
       setLoadingMore(false)
     }
@@ -201,7 +223,7 @@ export function SectionGridScreen({
       <PageBackground />
       <VStack
         spacing={0}
-        navigationTitle={section.title || entry?.title || t("browse.all")}
+        navigationTitle={section.title || entry?.title || listing?.name || title || t("browse.all")}
         navigationBarTitleDisplayMode="inline"
         // 篩選列浮在內容上：掛在外層，載入中／0 筆時也還在。
         {...scrollTopBar(filterBar)}

@@ -1,4 +1,5 @@
-// 單一來源探索頁：支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
+// 單一來源探索頁：Aidoku 源有首頁時膠囊列第 0 個是「首頁」並預設選中（原版 SourceHomeContentView）；
+// 其餘分頁支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
 
 import {
   GeometryReader,
@@ -18,7 +19,7 @@ import {
 } from "scripting"
 
 import type { ComicListItem, ComicSection, JumpTarget, SectionPage } from "../../engine/adapt"
-import { type ExploreEntry } from "../../app/comic"
+import { type ExploreEntry, type SourceHome } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
@@ -27,6 +28,7 @@ import { exploreCardSize } from "../shared/comicMetrics"
 import { ComicGridLayout } from "../../components/ComicGrid"
 import { WidthReporter } from "../../components/WidthReporter"
 import { CoverImage } from "../../components/CoverImage"
+import { HomeSections, HomeSkeleton, visibleHomeComponents } from "./HomeSections"
 import { SectionGridScreen } from "./SectionGridScreen"
 import { PageBackground } from "../../app/theme"
 import { CoverBadge } from "../../design/CoverBadge"
@@ -59,7 +61,13 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   useSubscription(subscribeLocale)
   const [entries, setEntries] = useState<ExploreEntry[]>([])
   const [entriesLoading, setEntriesLoading] = useState(true)
-  const [active, setActive] = useState(0)
+  /** 源有沒有首頁；跟 `entries` 一起定下來，膠囊列第一次出現就不會先畫 listing。 */
+  const [homeAvailable, setHomeAvailable] = useState(false)
+  /** 選中的膠囊：有首頁時 0＝首頁、其餘＝listing 序號 +1；沒有首頁時直接是 listing 序號。 */
+  const [selection, setSelection] = useState(0)
+  const [home, setHome] = useState<SourceHome | null>(null)
+  const [homeLoading, setHomeLoading] = useState(false)
+  const [homeError, setHomeError] = useState("")
   const [sections, setSections] = useState<ComicSection[]>([])
   const [activeSection, setActiveSection] = useState(0)
   const [entryPaging, setEntryPaging] = useState<MoreSource>(NO_MORE)
@@ -70,6 +78,11 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const [errorText, setErrorText] = useState("")
   /** 這一輪 listings 的 epoch：換源或重試時舊的一輪作廢。 */
   const entryRun = useRef(0)
+  /** 首頁載入的 epoch：換源或下拉重整時舊的一輪作廢。 */
+  const homeRun = useRef(0)
+
+  const showHome = homeAvailable && selection === 0
+  const listingIndex = homeAvailable ? selection - 1 : selection
 
   /** 讀這一源的探索分類。Aidoku 要先讓源把 listings 載進來，所以整段是非同步的。 */
   async function loadEntries() {
@@ -79,19 +92,54 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     setErrorText("")
     try {
       const list = await library.explore(sourceKey)
-      if (current()) setEntries(list)
+      // `explore()` 已經讓源載好了，所以這裡問得到「有沒有首頁」。
+      const available = library.hasHome(sourceKey)
+      if (!current()) return
+      // 先定能力再定清單：就算兩次 state 更新被拆成兩輪，也只會先看到「首頁」那顆，不會先閃 listing。
+      setHomeAvailable(available)
+      setSelection(0)
+      setEntries(list)
     } catch (error) {
       if (!current()) return
+      // listings 若在源載好之後才失敗，有首頁的源還是要看得到首頁（原版不因 listings 失敗而失去 home）。
+      const available = library.hasHome(sourceKey)
+      setHomeAvailable(available)
+      setSelection(0)
       setEntries([])
-      setErrorText(error instanceof Error ? error.message : String(error))
-      setStatus("error")
+      setErrorText("")
+      if (!available) {
+        setErrorText(error instanceof Error ? error.message : String(error))
+        setStatus("error")
+      }
     } finally {
       if (current()) setEntriesLoading(false)
     }
   }
 
+  /** 首頁；`reload` 是下拉重整（丟掉記憶體快取重讀）。 */
+  async function loadHome(reload = false) {
+    const id = ++homeRun.current
+    const current = () => homeRun.current === id
+    setHomeLoading(true)
+    setHomeError("")
+    try {
+      const layout = await library.home(sourceKey, { reload })
+      if (current()) setHome(layout)
+    } catch (error) {
+      if (!current()) return
+      setHomeError(error instanceof Error ? error.message : String(error))
+    } finally {
+      if (current()) setHomeLoading(false)
+    }
+  }
+
   useEffect(() => {
     setEntries([])
+    setHomeAvailable(false)
+    setHome(null)
+    setHomeError("")
+    setSelection(0)
+    setSections([])
     void loadEntries()
     return () => {
       entryRun.current++
@@ -99,9 +147,14 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   }, [sourceKey])
 
   useEffect(() => {
+    if (showHome) {
+      // 換回首頁時沿用上次的內容（原版也只在家裡沒有 home 時才重抓）。
+      if (home === null && !homeLoading) void loadHome()
+      return
+    }
     if (entries.length === 0) return
-    void loadFirst(entries[active])
-  }, [sourceKey, active, entries.length])
+    void loadFirst(entries[listingIndex])
+  }, [sourceKey, selection, entries.length, homeAvailable])
 
   function moreOfSection(index: number): MoreSource {
     if (entryPaging.kind !== "none") return entryPaging
@@ -140,7 +193,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     setLoadingMore(true)
     try {
       if (current.kind === "entry") {
-        const page = await library.browse(sourceKey, { kind: "explore", index: entries[active].index }, current.cursor)
+        const page = await library.browse(sourceKey, { kind: "explore", index: entries[listingIndex].index }, current.cursor)
         appendComics(index, page.sections.flatMap(item => item.comics))
         setEntryPaging(entryMore(page, current.cursor))
       } else {
@@ -176,26 +229,48 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const isMultiSection = sections.length > 1
   const singleSection = sections[0]
   const singleHasMore = singleSection ? moreOfSection(0).kind !== "none" : false
+  const homeComponents = home ? visibleHomeComponents(home.components) : []
 
   // 導覽列標題使用源的名稱，更具歸屬感與清晰感
   const navTitle = library.source(sourceKey)?.name ?? t("browse.explore")
 
+  /** 膠囊列：有首頁時第 0 個是「首頁」（原版 ListingsHeaderView 同一個排法）。 */
+  const chipItems = [
+    ...(homeAvailable ? [{ key: "home", title: t("browse.home"), index: 0 }] : []),
+    ...entries.map(entry => ({
+      key: `listing:${entry.index}`,
+      title: entry.title,
+      index: homeAvailable ? entry.index + 1 : entry.index,
+    })),
+  ]
+
   /**
-   * 分類 chip 列（源有多個 explore 分類才有）：當捲動區頂部的 bar，貼在導覽列下面，內容從它後面捲過去。
+   * 分頁 chip 列（有首頁或兩個以上的 listing 才有）：當捲動區頂部的 bar，貼在導覽列下面，
+   * 內容從它後面捲過去。
    */
   const chipRow =
-    entries.length > 1 ? (
+    homeAvailable || chipItems.length > 1 ? (
       <ChipRow>
-        {entries.map(entry => (
+        {chipItems.map(item => (
           <Chip
-            key={`chip:${entry.index}`}
-            text={entry.title}
-            selected={entry.index === active}
-            onTap={() => setActive(entry.index)}
+            key={`chip:${item.key}`}
+            text={item.title}
+            selected={item.index === selection}
+            onTap={() => setSelection(item.index)}
           />
         ))}
       </ChipRow>
     ) : null
+
+  function homeContent() {
+    if (homeLoading && home === null) return <HomeSkeleton />
+    if (homeError) return <RetryBlock text={homeError} onRetry={() => void loadHome(true)} />
+    if (home === null) return null
+    if (homeComponents.length === 0) {
+      return <EmptyState variant="page" icon="house" title={t("browse.homeEmpty")} />
+    }
+    return <HomeSections sourceKey={sourceKey} components={home.components} />
+  }
 
   return (
     <ZStack>
@@ -207,68 +282,77 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         // 靠頂對齊避免內容不足時被 ZStack 垂直置中
         frame={{ maxHeight: "infinity", alignment: "top" }}
       >
-      {/* 內容區 */}
+      {/* 內容區：換分頁就重掛，捲動位置回到頂端（原版切分頁也會 scrollTo(0)）。 */}
       <ScrollView
+        key={`tab:${selection}`}
         scrollContentBackground="hidden"
         scrollDismissesKeyboard="interactively"
+        // 下拉重整：首頁重抓（原版 reload 也會重讀 listings），listing 分頁重讀第一頁。
+        refreshable={async () => {
+          if (showHome) await loadHome(true)
+          else await loadFirst(entries[listingIndex])
+        }}
         // 頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。
         {...scrollTopBar(chipRow)}
       >
 
-          {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
-          {entries.length === 0 ? (
-            entriesLoading ? (
-              <PageLoading />
-            ) : errorText ? (
-              <RetryBlock text={errorText} onRetry={() => void loadEntries()} />
-            ) : (
-              <EmptyState variant="page" icon="magnifyingglass" title={t("browse.searchOnly")} />
-            )
-          ) : null}
+        {/* 首頁分頁 */}
+        {showHome ? homeContent() : null}
 
-          {/* 讀失敗（可重試）或這個分類真的沒東西 */}
-          {entries.length > 0 && sections.length === 0 && !busy ? (
-            status === "error" ? (
-              <RetryBlock text={errorText} onRetry={() => void loadFirst(entries[active])} />
-            ) : status === "empty" ? (
-              <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
-            ) : null
-          ) : null}
+        {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
+        {!showHome && entries.length === 0 ? (
+          entriesLoading ? (
+            <PageLoading />
+          ) : errorText ? (
+            <RetryBlock text={errorText} onRetry={() => void loadEntries()} />
+          ) : homeAvailable ? null : (
+            <EmptyState variant="page" icon="magnifyingglass" title={t("browse.searchOnly")} />
+          )
+        ) : null}
 
-          {/* 載入初態 */}
-          {busy && entries.length > 0 && sections.length === 0 ? <PageLoading /> : null}
+        {/* 讀失敗（可重試）或這個分類真的沒東西 */}
+        {!showHome && entries.length > 0 && sections.length === 0 && !busy ? (
+          status === "error" ? (
+            <RetryBlock text={errorText} onRetry={() => void loadFirst(entries[listingIndex])} />
+          ) : status === "empty" ? (
+            <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
+          ) : null
+        ) : null}
 
-          {isMultiSection ? (
-            /* 多區塊模式：垂直列表 + 橫向輪播 */
-            <LazyVStack spacing={14} padding={{ top: 10, bottom: 44 }}>
-              {sections.map((section, idx) => (
-                <MagazineSectionRow
-                  key={`mag:${idx}:${section.title}`}
-                  sourceKey={sourceKey}
-                  entry={entries[active] ?? { index: 0, title: "", type: "", supportsNext: false }}
-                  section={section}
-                  initialMore={moreOfSection(idx)}
-                />
-              ))}
-            </LazyVStack>
-          ) : singleSection ? (
-            /* 單一區塊模式：3 欄網格與滾動分頁 */
-            <VStack spacing={0}>
-              {singleSection.title ? (
-                <HStack padding={{ horizontal: pageInsets.horizontal, top: 12, bottom: 4 }}>
-                  <Text font="headline" fontWeight="bold">
-                    {singleSection.title}
-                  </Text>
-                  <Spacer />
-                </HStack>
-              ) : null}
-              <ComicGridLayout
-                entries={singleSection.comics.map(comic => ({ sourceKey, comic }))}
-                onLastAppear={singleHasMore ? () => void loadMoreSingleSection() : undefined}
+        {/* 載入初態 */}
+        {!showHome && busy && entries.length > 0 && sections.length === 0 ? <PageLoading /> : null}
+
+        {!showHome && isMultiSection ? (
+          /* 多區塊模式：垂直列表 + 橫向輪播 */
+          <LazyVStack spacing={14} padding={{ top: 10, bottom: 44 }}>
+            {sections.map((section, idx) => (
+              <MagazineSectionRow
+                key={`mag:${idx}:${section.title}`}
+                sourceKey={sourceKey}
+                entry={entries[listingIndex] ?? { index: 0, title: "", type: "", supportsNext: false }}
+                section={section}
+                initialMore={moreOfSection(idx)}
               />
-              <ListFooter loading={singleHasMore} />
-            </VStack>
-          ) : null}
+            ))}
+          </LazyVStack>
+        ) : !showHome && singleSection ? (
+          /* 單一區塊模式：3 欄網格與滾動分頁 */
+          <VStack spacing={0}>
+            {singleSection.title ? (
+              <HStack padding={{ horizontal: pageInsets.horizontal, top: 12, bottom: 4 }}>
+                <Text font="headline" fontWeight="bold">
+                  {singleSection.title}
+                </Text>
+                <Spacer />
+              </HStack>
+            ) : null}
+            <ComicGridLayout
+              entries={singleSection.comics.map(comic => ({ sourceKey, comic }))}
+              onLastAppear={singleHasMore ? () => void loadMoreSingleSection() : undefined}
+            />
+            <ListFooter loading={singleHasMore} />
+          </VStack>
+        ) : null}
       </ScrollView>
     </VStack>
   </ZStack>
@@ -425,4 +509,3 @@ function RetryBlock({ text, onRetry }: { text: string; onRetry: () => void }) {
     </VStack>
   )
 }
-

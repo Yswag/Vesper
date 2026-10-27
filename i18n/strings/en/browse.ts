@@ -25,6 +25,8 @@ export default {
   searching: "Searching…",
 
   hotPicks: "Popular picks",
+  home: "Home",
+  homeEmpty: "This source's home page is empty",
   all: "All",
 
   searchOnly: "This source only supports search",

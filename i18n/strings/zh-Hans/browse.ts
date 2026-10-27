@@ -25,6 +25,8 @@ export default {
   searching: "搜索中…",
 
   hotPicks: "热门推荐",
+  home: "首页",
+  homeEmpty: "这个源的首页没有内容",
   all: "全部",
 
   searchOnly: "这个源只能搜索",

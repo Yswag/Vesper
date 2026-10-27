@@ -15,6 +15,7 @@ export default {
     browser: "这个源不支持浏览器登录",
     explore: "「{title}」目前无法加载（这个源没有提供加载函数）",
     exploreIndex: "这个源没有第 {n} 个探索分类",
+    home: "这个源没有首页",
   },
 
   notLoaded: "{name} 没有加载成功",

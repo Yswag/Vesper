@@ -269,6 +269,78 @@ export async function loadCategorySections(
   }
 }
 
+// ---------------------------------------------------------------- 首頁（Aidoku 的 home layout）
+
+/**
+ * 首頁元件裡的清單參照：原樣餵給源的 `getMangaListForListing`，也就是現有的 listing 分頁。
+ * 它不一定是探索頁列出來的那幾條，所以不能只記索引。
+ */
+export interface HomeListing {
+  id: string
+  name: string
+  /** Aidoku 的 ListingKind（一般／排行榜…）；源沒給就沒有。 */
+  kind?: number
+}
+
+/** 首頁漫畫列的章節（`mangaChapterList` 第二行；只用來顯示，不拿它開閱讀器）。 */
+export interface HomeChapter {
+  id: string
+  title: string
+  group?: string
+  lang?: string
+  /** 上架時間（epoch 毫秒）。 */
+  uploadedAt?: number
+}
+
+/** 首頁的一條連結：點下去是外部網址、一條 listing，或某部漫畫。 */
+export interface HomeLink {
+  title: string
+  subtitle?: string
+  /** 橫幅圖（`imageScroller` 用的就是它）。 */
+  imageUrl?: string
+  /** 源沒有給目標時沒有（純圖片，不可點）。 */
+  target?: HomeLinkTarget
+}
+
+export type HomeLinkTarget =
+  | { type: "url"; url: string }
+  | { type: "listing"; listing: HomeListing }
+  | { type: "manga"; manga: ComicListItem }
+
+interface HomeComponentHead {
+  title?: string
+  subtitle?: string
+}
+
+/** 首頁的一個元件；`type` 就是 Aidoku 的元件種類。 */
+export type HomeComponent = HomeComponentHead &
+  (
+    | { type: "imageScroller"; links: HomeLink[]; autoScrollInterval?: number; width?: number; height?: number }
+    | { type: "bigScroller"; entries: ComicListItem[]; autoScrollInterval?: number }
+    | { type: "scroller"; entries: HomeLink[]; listing?: HomeListing }
+    | { type: "mangaList"; ranking: boolean; pageSize?: number; entries: HomeLink[]; listing?: HomeListing }
+    | { type: "mangaChapterList"; pageSize?: number; entries: HomeChapterEntry[]; listing?: HomeListing }
+    | { type: "filters"; items: HomeFilterItem[] }
+    | { type: "links"; links: HomeLink[] }
+  )
+
+export interface HomeChapterEntry {
+  /** 漫畫本身（與列表項同一個型別，點擊開詳情）。 */
+  manga: ComicListItem
+  chapter?: HomeChapter
+}
+
+/** 首頁的篩選捷徑：`values` 是源給的 FilterValue 原文（搜尋篩選直接吃這個）。 */
+export interface HomeFilterItem {
+  title: string
+  values?: unknown[]
+}
+
+/** 一份首頁。源沒回首頁或回了空版面時 `components` 是空陣列。 */
+export interface SourceHome {
+  components: HomeComponent[]
+}
+
 // ---------------------------------------------------------------- 排行榜
 
 export interface RankingOption {

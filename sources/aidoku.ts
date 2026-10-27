@@ -36,7 +36,20 @@ import { solveCloudflare } from "../engine/cloudflare"
 import { unzip } from "../engine/zip"
 import { t } from "../i18n"
 import type { StoredSource } from "./store"
-import type { ComicDetail, ComicStatus, ContentRating, ExploreEntry } from "./operations"
+import type {
+  ComicDetail,
+  ComicStatus,
+  ContentRating,
+  ExploreEntry,
+  HomeChapter,
+  HomeChapterEntry,
+  HomeComponent,
+  HomeFilterItem,
+  HomeLink,
+  HomeLinkTarget,
+  HomeListing,
+  SourceHome,
+} from "./operations"
 import type { InstalledSource } from "./registry"
 
 const PREFIX = "aidoku:"
@@ -814,6 +827,8 @@ const initialized = new Set<string>()
 /** 檔案被換掉／删掉了：只丟這個源的 worker，下次用到時重載新檔。 */
 function forgetLoaded(key: string): void {
   listings.delete(key)
+  homes.delete(key)
+  homeProviders.delete(key)
   imageProcessors.delete(key)
   initialized.delete(key)
   forgetAidokuSource(key)
@@ -839,13 +854,15 @@ async function ensureLoaded(source: InstalledSource): Promise<void> {
   // 檔案不在／壞掉是源自己的問題，重建宿主也沒用。
   const payload = readPayload(key)
   const started = Date.now()
+  let loaded: any
   try {
-    await loadAidokuPackage(payload, key)
+    loaded = await loadAidokuPackage(payload, key)
   } catch (failure) {
     throw new SourceLoadError(messageOf(failure))
   }
   await initializeGuarded(key)
   initialized.add(key)
+  rememberHomeProvider(key, loaded?.hasHome === true)
   await rememberImageProcessor(key)
   log("info", "aidoku", `${key} 已載入（${Date.now() - started}ms）`)
 }
@@ -1245,6 +1262,11 @@ export function mergeListings(staticListings: any[], dynamicListings: any[]): an
   return merged
 }
 
+/** 載入源（不碰 listings）：首頁這種「源有沒有」的判斷用它。 */
+export function load(source: InstalledSource): Promise<void> {
+  return ask("load", () => withHealing(source, "load", () => ensureLoaded(source)))
+}
+
 /** 載入源並收下 listings（第一次用到時）。 */
 export function ready(source: InstalledSource): Promise<void> {
   const key = source.stored.key
@@ -1276,11 +1298,188 @@ export function explore(source: InstalledSource): ExploreEntry[] {
   }))
 }
 
-/** 一個 listing 的一頁（`getMangaListForListing`）。 */
-export function listing(source: InstalledSource, index: number, page: number): Promise<ComicListPage> {
+/**
+ * 一個 listing 的一頁（`getMangaListForListing`）。
+ * `ref` 是探索頁的序號，或首頁元件帶回來的清單參照（不一定是探索頁列出來的那幾條）。
+ */
+export function listing(source: InstalledSource, ref: number | HomeListing, page: number): Promise<ComicListPage> {
   return ask("listing", async () => {
-    const item = listings.get(source.stored.key)?.[index]
-    if (!item) throw new Error(t("sources.unsupported.exploreIndex", { n: index + 1 }))
-    return toListPage(await call(source, "getMangaListForListing", [item, page]), page)
+    if (typeof ref === "number") {
+      const item = listings.get(source.stored.key)?.[ref]
+      if (!item) throw new Error(t("sources.unsupported.exploreIndex", { n: ref + 1 }))
+      return toListPage(await call(source, "getMangaListForListing", [item, page]), page)
+    }
+    return toListPage(await call(source, "getMangaListForListing", [ref, page]), page)
   })
+}
+
+// ---------------------------------------------------------------- 首頁
+
+/** `getHome()` 的結果（記憶體快取）；源設定或檔案變更時跟 listings 一起丟。 */
+const homes = new Map<string, SourceHome>()
+
+/** 源有沒有 `get_home`：載入後才知道，結果改變才通知畫面。 */
+const homeProviders = new Map<string, boolean>()
+
+/** 這個源有沒有首頁；還沒載入過就是 false。 */
+export function hasHome(key: string): boolean {
+  return homeProviders.get(key) === true
+}
+
+function rememberHomeProvider(key: string, value: boolean): void {
+  if ((homeProviders.get(key) ?? false) === value) return
+  homeProviders.set(key, value)
+  stateListener?.()
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value ? value : undefined
+}
+
+function toHomeListing(raw: any): HomeListing | undefined {
+  const id = raw?.id != null ? String(raw.id) : ""
+  if (!id) return undefined
+  return { id, name: String(raw.name ?? id), kind: optionalNumber(raw.kind) }
+}
+
+/** 一條連結。源沒給目標（純圖片）也留著，只是不可點。 */
+function toHomeLink(raw: any): HomeLink | null {
+  if (!raw || typeof raw !== "object") return null
+  const value = raw.value
+  let target: HomeLinkTarget | undefined
+  if (value?.type === "url" && typeof value.url === "string" && value.url) {
+    target = { type: "url", url: value.url }
+  } else if (value?.type === "listing") {
+    const item = toHomeListing(value.listing)
+    if (item) target = { type: "listing", listing: item }
+  } else if (value?.type === "manga") {
+    const manga = toComicItem(value.manga)
+    if (manga) target = { type: "manga", manga }
+  } else if (value) {
+    log("warning", "aidoku home", `略過不認得的首頁連結種類「${String(value.type)}」`)
+  }
+  const title = typeof raw.title === "string" ? raw.title : ""
+  return {
+    title: title || (target?.type === "manga" ? target.manga.title : ""),
+    subtitle: optionalText(raw.subtitle),
+    imageUrl: optionalText(raw.imageUrl),
+    target,
+  }
+}
+
+function toHomeLinks(raw: unknown): HomeLink[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(toHomeLink).filter((link): link is HomeLink => link !== null)
+}
+
+function toHomeComics(raw: unknown): ComicListItem[] {
+  if (!Array.isArray(raw)) return []
+  return raw.map(toComicItem).filter((item): item is ComicListItem => item !== null)
+}
+
+function toHomeChapter(raw: any): HomeChapter | undefined {
+  const chapter = raw?.chapter
+  if (!chapter) return undefined
+  const id = chapter.key != null ? String(chapter.key) : ""
+  return {
+    id,
+    title: chapterTitleOf(chapter, id),
+    group: optionalText(chapter.scanlator),
+    lang: optionalText(chapter.lang)?.toLowerCase(),
+    uploadedAt: optionalNumber(chapter.dateUploaded),
+  }
+}
+
+/** 一個元件；不認得的種類回 null（記一則 warning，不讓整頁失敗）。 */
+function toHomeComponent(raw: any, key: string): HomeComponent | null {
+  const value = raw?.value ?? {}
+  const type = typeof value.type === "string" ? value.type : ""
+  const head = { title: optionalText(raw?.title), subtitle: optionalText(raw?.subtitle) }
+  switch (type) {
+    case "imageScroller":
+      return {
+        ...head,
+        type,
+        links: toHomeLinks(value.links),
+        autoScrollInterval: optionalNumber(value.autoScrollInterval),
+        width: optionalNumber(value.width),
+        height: optionalNumber(value.height),
+      }
+    case "bigScroller":
+      return { ...head, type, entries: toHomeComics(value.entries), autoScrollInterval: optionalNumber(value.autoScrollInterval) }
+    case "scroller":
+      return { ...head, type, entries: toHomeLinks(value.entries), listing: toHomeListing(value.listing) }
+    case "mangaList":
+      return {
+        ...head,
+        type,
+        ranking: value.ranking === true,
+        pageSize: optionalNumber(value.pageSize),
+        entries: toHomeLinks(value.entries),
+        listing: toHomeListing(value.listing),
+      }
+    case "mangaChapterList":
+      return {
+        ...head,
+        type,
+        pageSize: optionalNumber(value.pageSize),
+        entries: (Array.isArray(value.entries) ? value.entries : [])
+          .map((entry: any): HomeChapterEntry | null => {
+            const manga = toComicItem(entry?.manga)
+            return manga ? { manga, chapter: toHomeChapter(entry) } : null
+          })
+          .filter((entry: HomeChapterEntry | null): entry is HomeChapterEntry => entry !== null),
+        listing: toHomeListing(value.listing),
+      }
+    case "filters":
+      return {
+        ...head,
+        type,
+        items: (Array.isArray(value.items) ? value.items : [])
+          .map((item: any): HomeFilterItem => ({
+            title: String(item?.title ?? ""),
+            values: Array.isArray(item?.values) ? (item.values as unknown[]) : undefined,
+          }))
+          .filter((item: HomeFilterItem) => item.title.length > 0),
+      }
+    case "links":
+      return { ...head, type, links: toHomeLinks(value.links) }
+    default:
+      log("warning", "aidoku home", `${key} 的首頁有未知的元件種類「${type || "?"}」，略過`)
+      return null
+  }
+}
+
+function toHomeLayout(raw: any, key: string): SourceHome {
+  const components = Array.isArray(raw?.components) ? raw.components : []
+  return {
+    components: components
+      .map((component: any) => toHomeComponent(component, key))
+      .filter((component: HomeComponent | null): component is HomeComponent => component !== null),
+  }
+}
+
+/**
+ * 一首頁（`getHome`）。跟 listings 同一條路：載入源、worker 隊列、自癒、CF 過盾與人話化錯誤。
+ * `reload` 是下拉刷新（丟掉快取重讀）。
+ */
+export async function home(source: InstalledSource, reload = false): Promise<SourceHome> {
+  const key = source.stored.key
+  const cached = homes.get(key)
+  if (cached && !reload) return cached
+  // 只要「源載好了」就好：不碰 listings，才不會因為 listings 讀不到而連首頁都拿不到。
+  await load(source)
+  if (!hasHome(key)) throw new Error(t("sources.unsupported.home"))
+
+  const started = Date.now()
+  const layout = await ask("home", async () =>
+    toHomeLayout(await call(source, "getHome", [], SLOW_CALL_TIMEOUT_MS), key)
+  )
+  homes.set(key, layout)
+  log("debug", "home", `${key} → ${layout.components.length} 個元件 (${Date.now() - started}ms)`)
+  return layout
 }

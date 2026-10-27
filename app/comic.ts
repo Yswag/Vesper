@@ -62,7 +62,15 @@ import {
   type ComicDetail,
   type ComicStatus,
   type ContentRating,
+  type HomeChapter,
+  type HomeChapterEntry,
+  type HomeComponent,
+  type HomeFilterItem,
+  type HomeLink,
+  type HomeLinkTarget,
+  type HomeListing,
   type SourceComment,
+  type SourceHome,
 } from "../sources/operations"
 import {
   accountSpec,
@@ -94,6 +102,13 @@ export type {
   ChapterDownloadState,
   DownloadRecord,
   ExploreEntry,
+  HomeChapter,
+  HomeChapterEntry,
+  HomeComponent,
+  HomeFilterItem,
+  HomeLink,
+  HomeLinkTarget,
+  HomeListing,
   ListTarget,
   RankingOption,
   /** 閱讀器／章節清單快取共用的章節形狀（`readerChapters()` 給的就是這個）。 */
@@ -102,6 +117,7 @@ export type {
   SearchProgress,
   SectionPage,
   SourceComment,
+  SourceHome,
 }
 
 export interface ComicRef {
@@ -278,6 +294,8 @@ export interface ComicSourceInfo {
   /** 源有沒有宣告分類頁 / 排行榜（決定瀏覽頁的選單要不要給入口）。 */
   hasCategory: boolean
   hasRanking: boolean
+  /** 源有沒有首頁（Aidoku 的 `get_home`）；Venera 一律沒有。載入過才可能為 true。 */
+  hasHome: boolean
   /** 這個源宣告的搜尋篩選列（沒宣告就是空陣列）。 */
   searchOptions: SearchOptionRow[]
   /** Aidoku 源宣告的設定（`settings.json`）；不是 Aidoku 或沒有這個檔就是 undefined。 */
@@ -392,6 +410,10 @@ export interface ComicLibrary {
    * Aidoku 的 listings 要先載入源才拿得到，所以這裡是非同步；畫面不必知道自己拿的是哪一種。
    */
   explore(sourceKey: string): Promise<ExploreEntry[]>
+  /** 源有沒有首頁（Aidoku 的 `get_home`）；先 `explore()` 載入過才準。 */
+  hasHome(sourceKey: string): boolean
+  /** 源的首頁；`reload` 是下拉刷新（丟掉快取重讀）。沒有首頁的源會拋。 */
+  home(sourceKey: string, opts?: { reload?: boolean }): Promise<SourceHome>
   browse(sourceKey: string, target: ListTarget, cursor?: Cursor): Promise<SectionPage>
   rankingOptions(sourceKey: string): RankingOption[]
   /** 排行榜一頁（平舖清單，形狀與 browse 的 SectionPage 不同）。 */
@@ -475,6 +497,7 @@ function infoOf(source: InstalledSource): ComicSourceInfo {
     settingsSpec: source.settingsSpec,
     hasCategory: hasCategoryPage(source),
     hasRanking: openSource(source).hasRanking(),
+    hasHome: openSource(source).hasHome(),
     searchOptions: searchOptionRows(source),
     needsLogin: account != null && source.stored.loggedIn !== true,
     accountName: source.stored.accountName,
@@ -690,6 +713,10 @@ export function createComicLibrary(): ComicLibrary {
     },
 
     browse: (sourceKey, target, cursor) => handleOf(sourceKey).handle.list(target, cursor ?? { page: 1 }),
+
+    hasHome: sourceKey => handleOf(sourceKey).handle.hasHome(),
+
+    home: (sourceKey, opts) => handleOf(sourceKey).handle.home(opts),
 
     rankingOptions: sourceKey => handleOf(sourceKey).handle.rankingOptions(),
 

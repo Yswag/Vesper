@@ -15,6 +15,7 @@ export default {
     browser: "This source does not support browser sign-in",
     explore: "\"{title}\" cannot be loaded (this source provides no load function)",
     exploreIndex: "This source has no explore section #{n}",
+    home: "This source has no home page",
   },
 
   notLoaded: "{name} failed to load",

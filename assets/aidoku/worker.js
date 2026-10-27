@@ -242,7 +242,7 @@ async function handle(message) {
       else currentSettings[key] = value
     }
     pendingWrites.clear()
-    return { manifest: source.manifest, settingsJson: source.settingsJson ?? null, defaults: currentSettings }
+    return { manifest: source.manifest, settingsJson: source.settingsJson ?? null, defaults: currentSettings, hasHome: source.hasHome === true }
   }
 
   // 唯讀：驗證「使用者值真的進到源看到的設定裡」用（探針）。

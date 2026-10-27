@@ -40,7 +40,8 @@ export interface InstalledSource {
 let current: InstalledSource[] = []
 
 /**
- * 來源視圖版本號：在 reloadRegistry 或更新登入狀態時遞增，供外部快取判定失效。
+ * 來源視圖版本號：在 reloadRegistry、更新登入狀態或 Aidoku 源的執行期狀態改變
+ * （首頁能力、圖片後處理）時遞增，供外部快取判定失效。
  */
 let revision = 0
 
@@ -53,8 +54,11 @@ const bus = createEmitter({
   onListenerError: error => log("error", "sources", "訂閱者拋錯", error),
 })
 
-/** Aidoku 源在執行期被標成不可用時，讓畫面跟著更新。 */
-aidoku.setStateListener(() => bus.emit())
+/** Aidoku 源在執行期改變狀態（標成不可用、首頁能力、圖片後處理）時，讓畫面跟著更新。 */
+aidoku.setStateListener(() => {
+  revision++
+  bus.emit()
+})
 
 /** 過盾視窗的標題要源的名字；cloudflare 不直接 import registry（循環依賴），在這裡接上。 */
 setCloudflareSourceNameLookup(key => {
