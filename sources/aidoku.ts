@@ -1092,7 +1092,7 @@ function toChapter(raw: any): { group: string; id: string; title: string; locked
   }
 }
 
-/** 搜尋（第一頁；翻頁由 hasNextPage 轉成 maxPage）。`filters` 是 `aidokuFilters.encodeFilters` 的結果。 */
+/** 搜尋（第一頁；翻頁由 hasNextPage 轉成 maxPage）。`filters` 是源吃的描述子（`{type,name,value}`）。 */
 export function search(
   source: InstalledSource,
   keyword: string,

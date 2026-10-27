@@ -3,7 +3,7 @@
   "permissions" : [
     "fileSystem"
   ],
-  "version" : "1.4.3",
+  "version" : "1.4.4",
   "name" : "Vesper",
   "localizedNames" : {
     "ja" : "Vesper",

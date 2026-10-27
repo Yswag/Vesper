@@ -36,7 +36,6 @@ import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { formatCommentTime } from "../shared/commentTime"
-import { FilteredListScreen } from "./FilteredListScreen"
 import { SectionGridScreen } from "./SectionGridScreen"
 
 /** 原版 `HomeScrollerView.coverHeight`：180 高、2:3 封面。 */
@@ -534,7 +533,7 @@ function LinksSection({ sourceKey, component }: { sourceKey: string; component: 
 /**
  * 篩選捷徑（原版 `HomeFiltersView.swift:99-116`）：點下去開一個帶著該篩選的漫畫列表頁；
  * 原版把 `item.values`（沒有就用同名的 genre 篩選）儭給 `getSearchMangaList(query: nil, page:, filters:)`。
- * 這裡的 `values` 已經就是描述子（`{type, name, value}`），直接給現有的 `searchSource`；沒 values 就空篩選。
+ * 這裡的 `values` 已經就是源吃的描述子（`{type, name, value}`），原樣透傳給 `SectionGridScreen` 的 search 目標；沒 values 就空篩選。
  */
 function FiltersSection({ sourceKey, component }: { sourceKey: string; component: HomeComponent }) {
   if (component.type !== "filters") return null
@@ -546,7 +545,7 @@ function FiltersSection({ sourceKey, component }: { sourceKey: string; component
           <NavigationLink
             key={`filter:${index}:${item.title}`}
             destination={
-              <FilteredListScreen sourceKey={sourceKey} title={item.title} filters={item.values ?? []} />
+              <SectionGridScreen sourceKey={sourceKey} title={item.title} search={{ keyword: "", filters: item.values ?? [] }} />
             }
             buttonStyle="plain"
           >

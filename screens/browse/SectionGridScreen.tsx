@@ -1,9 +1,10 @@
 // 單一列表的完整大網格頁：分類 chip 與探索區塊的「查看全部 ›」都導到這裡。
 //
-// 兩種進來的方式：
+// 三種進來的方式：
 //   entry   ：從探索的某個區塊進來，往後翻頁靠 `loadExploreSections`。
 //   target  ：從分類 chip 進來，帶著一個 `categoryComics.load` 的目標；
 //             掛載時手上還沒有內容，先自動載第一頁再繼續。
+//   search  ：首頁「filters」捷徑進來，空關鍵字＋源給的篩選描述子，分頁同樣走源的 search。
 //
 // target 進來時上面多一排源宣告的篩選列（`categoryComics.optionList`／`optionLoader`）：
 // 列順序就是 `load` 的 options 順序，預設選每列第一項，換選項就從第一頁重載。
@@ -30,6 +31,7 @@ export type MoreSource =
   | { kind: "entry"; cursor: Cursor }
   | { kind: "target"; target: JumpTarget; page: number }
   | { kind: "listing"; listing: HomeListing; page: number }
+  | { kind: "search"; keyword: string; filters: unknown[]; page: number }
   | { kind: "none" }
 
 const NO_MORE: MoreSource = { kind: "none" }
@@ -53,7 +55,9 @@ export interface SectionGridScreenProps {
   initialMore?: MoreSource
   /** 首頁元件帶回來的 listing：整頁就是那條 listing 的網格（掛載後自動載第一頁）。 */
   listing?: HomeListing
-  /** 導覽列標題；listing 進來時由呼叫端給名稱（同一個 listing 的元件可能標題不同）。 */
+  /** 首頁篩選捷徑：空關鍵字＋源給的篩選描述子，整頁就是這個搜尋的分頁。 */
+  search?: { keyword: string; filters: unknown[] }
+  /** 導覽列標題；listing／search 進來時由呼叫端給名稱（同一個目標的元件可能標題不同）。 */
   title?: string
 }
 
@@ -63,6 +67,7 @@ export function SectionGridScreen({
   section: initialSection = EMPTY_SECTION,
   initialMore = NO_MORE,
   listing,
+  search,
   title,
 }: SectionGridScreenProps) {
   const library = comicLibrary()
@@ -76,6 +81,7 @@ export function SectionGridScreen({
   const [selected, setSelected] = useState<string[]>([])
   const [targetPage, setTargetPage] = useState<number>(initialMore.kind === "target" ? initialMore.page : 1)
   const [listingPage, setListingPage] = useState(1)
+  const [searchPage, setSearchPage] = useState(1)
   const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState("")
 
@@ -87,6 +93,9 @@ export function SectionGridScreen({
 
   function currentMore(): MoreSource {
     if (listing) return listingPage < 0 ? NO_MORE : { kind: "listing", listing, page: listingPage }
+    if (search) {
+      return searchPage < 0 ? NO_MORE : { kind: "search", keyword: search.keyword, filters: search.filters, page: searchPage }
+    }
     if (entryPaging.kind === "entry") return entry ? entryPaging : NO_MORE
     const base = entryPaging.kind === "target" ? target : section.more
     if (!base) return NO_MORE
@@ -98,7 +107,7 @@ export function SectionGridScreen({
   const hasMore = more.kind !== "none"
 
   useEffect(() => {
-    if (listing) {
+    if (listing || search) {
       void loadMore()
       return
     }
@@ -162,27 +171,36 @@ export function SectionGridScreen({
         setEntryPaging(entryMore(page, more.cursor))
       } else if (more.kind === "listing") {
         const result = await library.browse(sourceKey, { kind: "listing", listing: more.listing }, { page: more.page })
-        const incoming = result.sections.flatMap(item => item.comics)
-        const added = appendComics(incoming)
-        const nextPage = more.page + 1
-        const alive = result.maxPage != null ? nextPage <= result.maxPage : incoming.length > 0 && added > 0
-        setListingPage(alive ? nextPage : -1)
+        setListingPage(nextPageOf(result, more.page))
+      } else if (more.kind === "search") {
+        const result = await library.browse(
+          sourceKey,
+          { kind: "search", keyword: more.keyword, filters: more.filters },
+          { page: more.page }
+        )
+        setSearchPage(nextPageOf(result, more.page))
       } else {
         const result = await library.browse(sourceKey, { kind: "category", target: more.target }, { page: more.page })
-        const incoming = result.sections.flatMap(item => item.comics)
-        const added = appendComics(incoming)
-        const nextPage = more.page + 1
-        const alive = result.maxPage != null ? nextPage <= result.maxPage : incoming.length > 0 && added > 0
-        setTargetPage(alive ? nextPage : -1)
+        setTargetPage(nextPageOf(result, more.page))
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
       setTargetPage(-1)
-      // listings 失敗就不自動重試（不然捲到底會一直重打）。
+      // listings／篩選結果失敗就不自動重試（不然捲到底會一直重打）。
       if (listing) setListingPage(-1)
+      if (search) setSearchPage(-1)
     } finally {
       setLoadingMore(false)
     }
+  }
+
+  /** 收下這一頁，回報下一頁的頁碼（-1＝到底了）：有 maxPage 就信它，沒有就看這頁有沒有新東西。 */
+  function nextPageOf(result: SectionPage, used: number): number {
+    const incoming = result.sections.flatMap(item => item.comics)
+    const added = appendComics(incoming)
+    const nextPage = used + 1
+    const alive = result.maxPage != null ? nextPage <= result.maxPage : incoming.length > 0 && added > 0
+    return alive ? nextPage : -1
   }
 
   function appendComics(items: ComicListItem[]): number {

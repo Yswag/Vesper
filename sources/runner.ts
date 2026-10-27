@@ -70,11 +70,15 @@ export interface RunnerDeps {
   auth?: Relogin
 }
 
-/** 清單目標：探索的某個區塊、首頁帶回來的 listing，或 viewMore 跳過去的分類／搜尋頁。 */
+/**
+ * 清單目標：探索的某個區塊、首頁帶回來的 listing、viewMore 跳過去的分類頁，
+ * 或首頁「filters」捷徑的搜尋（空關鍵字＋源給的篩選描述子，一樣是分頁清單）。
+ */
 export type ListTarget =
   | { kind: "explore"; index: number }
   | { kind: "listing"; listing: HomeListing }
   | { kind: "category"; target: JumpTarget }
+  | { kind: "search"; keyword: string; filters?: unknown[] }
 
 export type Cursor = { page: number } | { next: string }
 
@@ -156,6 +160,9 @@ async function loadList(
     case "listing":
       // Venera 沒有首頁，這種目標只會從 Aidoku 首頁的 listing 來。
       throw new Error(t("sources.unsupported.explore", { title: target.listing.name }))
+    case "search":
+      // 篩選捷徑同理：只有 Aidoku 首頁會產生這種目標。
+      throw new Error(t("sources.unsupported.search"))
     case "category":
       return loadCategorySections(source, target.target, "page" in cursor ? cursor : { page: 1 }, scope)
   }
@@ -226,12 +233,15 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
   }
 }
 
-/** Aidoku 的「瀏覽」只有 listings（沒有分類頁）。 */
+/** Aidoku 的「瀏覽」只有 listings 與搜尋（沒有分類頁）。 */
 function aidokuList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
   if (target.kind === "category") return Promise.reject(new Error(t("sources.unsupported.category")))
   const page = "page" in cursor ? cursor.page : 1
-  const ref = target.kind === "listing" ? target.listing : target.index
-  return aidoku.listing(source, ref, page).then(result => ({
+  const list =
+    target.kind === "search"
+      ? aidoku.search(source, target.keyword, page, target.filters ?? [])
+      : aidoku.listing(source, target.kind === "listing" ? target.listing : target.index, page)
+  return list.then(result => ({
     sections: [{ title: "", comics: result.comics }],
     maxPage: result.maxPage,
   }))
