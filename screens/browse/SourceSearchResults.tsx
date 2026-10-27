@@ -39,10 +39,10 @@ import {
   type AidokuFilterValue,
 } from "../../sources/aidokuFilters"
 import { findSource } from "../../sources/registry"
-import { ComicGridLayout } from "../../components/ComicGrid"
+import { ComicGridLayout, ComicGridSkeleton } from "../../components/ComicGrid"
 import { Chip } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
-import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
+import { EmptyState, NoticeBanner } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { AidokuFilterSheet } from "./AidokuFilterSheet"
 import { SearchFilterSheet } from "../search/SearchFilterSheet"
@@ -367,7 +367,13 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       )
     }
     // 尚無結果或重新搜尋中：先佔位的骨架，結果來了才換上網格。
-    if (hits === null || (searching && hits.length === 0)) return <PageLoading />
+    if (hits === null || (searching && hits.length === 0)) {
+      return (
+        <ScrollView scrollDisabled={true}>
+          <ComicGridSkeleton />
+        </ScrollView>
+      )
+    }
     if (hits.length === 0) {
       return <EmptyState variant="page" icon="magnifyingglass" title={t("browse.noResults")} />
     }

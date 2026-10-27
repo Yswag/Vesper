@@ -9,10 +9,10 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { ComicListItem } from "../../engine/adapt"
-import { ComicGridLayout } from "../../components/ComicGrid"
+import { ComicGridLayout, ComicGridSkeleton } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
-import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, type StatusKind } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { PageBackground } from "../../app/theme"
 
@@ -117,13 +117,11 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
         )}
       >
 
-      {!optionsLoaded ? <PageLoading text={t("browse.rankingLoading")} /> : null}
+      {!optionsLoaded || (busy && comics.length === 0) ? <ComicGridSkeleton /> : null}
 
       {optionsLoaded && options.length === 0 ? (
         <EmptyState variant="page" icon="chart.bar" title={t("browse.noRankingOptions")} />
       ) : null}
-
-      {busy && comics.length === 0 ? <PageLoading text={t("browse.rankingLoading")} /> : null}
 
       {failed ? (
         <VStack spacing={12} padding={{ top: 24, horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>

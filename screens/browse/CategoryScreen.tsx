@@ -14,9 +14,10 @@ import { PageBackground } from "../../app/theme"
 import { Chip } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
 import { EmptyState, NoticeBanner, type StatusKind } from "../../design/status"
-import { capsule, fill, pageInsets, pageSpacing } from "../../design/tokens"
+import { SkeletonBlock } from "../../design/skeleton"
+import { pageInsets, pageSpacing } from "../../design/tokens"
 
-/** 骨架的字條：redacted 會把它畫成一塊灰，內容不會顯示。 */
+/** 骨架 chip 的寬度：長短不一才像真的分類。 */
 const SKELETON_WIDTHS = [96, 72, 110]
 
 export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
@@ -112,12 +113,7 @@ function ChipSkeleton() {
       {[0, 1, 2].map(row => (
         <HStack key={row} spacing={8}>
           {SKELETON_WIDTHS.map((width, index) => (
-            <VStack
-              key={index}
-              frame={{ width, height: 34 }}
-              background={fill.surface}
-              clipShape={capsule("circular")}
-            />
+            <SkeletonBlock key={index} width={width} height={34} shape="capsule" />
           ))}
         </HStack>
       ))}

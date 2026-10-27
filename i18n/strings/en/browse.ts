@@ -19,7 +19,6 @@ export default {
   noRankingOptions: "This source has no rankings",
   refresh: "Refresh",
   reload: "Reload",
-  rankingLoading: "Loading ranking…",
 
   searchInSource: "Search {name}",
   searching: "Searching…",

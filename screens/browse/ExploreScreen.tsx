@@ -25,15 +25,16 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { exploreCardSize } from "../shared/comicMetrics"
-import { ComicGridLayout } from "../../components/ComicGrid"
+import { ComicGridLayout, ComicGridSkeleton } from "../../components/ComicGrid"
 import { WidthReporter } from "../../components/WidthReporter"
+import { SkeletonBlock, SkeletonText } from "../../design/skeleton"
 import { CoverImage } from "../../components/CoverImage"
 import { HomeSections, HomeSkeleton, visibleHomeComponents } from "./HomeSections"
 import { SectionGridScreen } from "./SectionGridScreen"
 import { PageBackground } from "../../app/theme"
 import { CoverBadge } from "../../design/CoverBadge"
 import { Chevron } from "../../design/rows"
-import { EmptyState, ListFooter, NoticeBanner, PageLoading, type StatusKind } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, type StatusKind } from "../../design/status"
 import { Chip, ChipRow } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
 import { pageInsets } from "../../design/tokens"
@@ -302,7 +303,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
         {!showHome && entries.length === 0 ? (
           entriesLoading ? (
-            <PageLoading />
+            <ComicGridSkeleton />
           ) : errorText ? (
             <RetryBlock text={errorText} onRetry={() => void loadEntries()} />
           ) : homeAvailable ? null : (
@@ -320,7 +321,9 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         ) : null}
 
         {/* 載入初態 */}
-        {!showHome && busy && entries.length > 0 && sections.length === 0 ? <PageLoading /> : null}
+        {!showHome && busy && entries.length > 0 && sections.length === 0 ? (
+          MULTI_PART_TYPES.has(entries[listingIndex]?.type ?? "") ? <MagazineSkeleton /> : <ComicGridSkeleton />
+        ) : null}
 
         {!showHome && isMultiSection ? (
           /* 多區塊模式：垂直列表 + 橫向輪播 */
@@ -360,6 +363,52 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
 }
 
 /** 橫向輪播區塊列 */
+/** 這兩種分類載入完是多區塊（標題＋橫向卡片排），其他是網格。 */
+const MULTI_PART_TYPES = new Set(["multiPartPage", "singlePageWithMultiPart"])
+
+/** 多區塊載入中：跟 `MagazineSectionRow` 同一組標題、卡片尺寸與間距。 */
+function MagazineSkeleton() {
+  const [width, setWidth] = useState(0)
+  const card = exploreCardSize(width)
+  return (
+    <VStack
+      spacing={14}
+      padding={{ top: 10, bottom: 44 }}
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      accessibilityLabel={t("common.loading")}
+      background={
+        <GeometryReader>
+          {geometry => <WidthReporter width={geometry.size.width} onWidth={value => setWidth(Math.round(value))} />}
+        </GeometryReader>
+      }
+    >
+      {width > 0
+        ? [0, 1, 2].map(row => (
+          <VStack key={row} spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+            <HStack padding={{ horizontal: pageInsets.horizontal }} alignment="center">
+              <SkeletonText font="title3" fontWeight="bold" length={2} />
+              <Spacer />
+            </HStack>
+            <ScrollView axes="horizontal" scrollDisabled={true} scrollIndicator="hidden">
+              <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 12 }}>
+                {[0, 1, 2, 3].map(index => (
+                  <VStack key={index} alignment="leading" spacing={6} frame={{ width: card.width }}>
+                    <SkeletonBlock width={card.width} height={card.height} />
+                    <VStack alignment="leading" spacing={1.5}>
+                      <SkeletonText font="footnote" fontWeight="medium" length={2} />
+                      <SkeletonText font="caption2" length={1} />
+                    </VStack>
+                  </VStack>
+                ))}
+              </HStack>
+            </ScrollView>
+          </VStack>
+        ))
+        : null}
+    </VStack>
+  )
+}
+
 function MagazineSectionRow({
   sourceKey,
   entry,

@@ -25,7 +25,8 @@ import {
   ToggleRow,
   rowSeparatorInset,
 } from "../../design/rows"
-import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { SkeletonCardGroups } from "../../design/skeleton"
 import { rowPadding } from "../../design/tokens"
 import { hostOf } from "../../engine/cookies"
 import { t } from "../../i18n"
@@ -221,7 +222,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
       ) : null}
 
       {!loaded ? (
-        <PageLoading />
+        <SkeletonCardGroups />
       ) : !hasContent || !spec ? (
         <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.aidokuSettings.empty")} />
       ) : (

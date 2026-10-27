@@ -4,7 +4,8 @@
 import { Button, Divider, HStack, Image, Spacer, Text, VStack, ZStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { SkeletonCardGroups } from "../../design/skeleton"
 import { Tag } from "../../design/Tag"
 import { Chip } from "../../design/chip"
 import { Caption, Footnote } from "../../design/text"
@@ -247,7 +248,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   if (!loaded) {
     return (
       <PageScroll title={t("settings.shared.repository")}>
-        <PageLoading />
+        <SkeletonCardGroups />
       </PageScroll>
     )
   }

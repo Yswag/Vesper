@@ -5,7 +5,8 @@ import { Divider, Navigation, NavigationLink, VStack, useEffect, useState } from
 import { Chip } from "../../design/chip"
 import { Card, CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
+import { EmptyState, NoticeBanner } from "../../design/status"
+import { SkeletonCardGroups } from "../../design/skeleton"
 import { toneText } from "../../design/tokens"
 import { t } from "../../i18n"
 import {
@@ -37,7 +38,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
   if (!loaded) {
     return (
       <PageScroll title={t("settings.sourceDetail.title")}>
-        <PageLoading />
+        <SkeletonCardGroups />
       </PageScroll>
     )
   }

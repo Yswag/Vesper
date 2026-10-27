@@ -25,7 +25,6 @@ export default {
   sent: "已送出",
 
   /** 列表本身。 */
-  loading: "載入留言…",
   loadFailed: "讀取留言失敗",
   empty: "還沒有人留言",
   emptyHint: "搶下第一則吧。",

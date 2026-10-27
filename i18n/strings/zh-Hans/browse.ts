@@ -19,7 +19,6 @@ export default {
   noRankingOptions: "这个来源没有排行榜",
   refresh: "重新整理",
   reload: "重新载入",
-  rankingLoading: "正在载入排行榜…",
 
   searchInSource: "搜索 {name}",
   searching: "搜索中…",

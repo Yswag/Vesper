@@ -16,10 +16,10 @@ import { type CategoryOptionRow, type ExploreEntry, type HomeListing } from "../
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { ComicGridLayout } from "../../components/ComicGrid"
+import { ComicGridLayout, ComicGridSkeleton } from "../../components/ComicGrid"
 import { Chip, ChipRow } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
-import { EmptyState, ListFooter, NoticeBanner, PageLoading } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner } from "../../design/status"
 import { Caption } from "../../design/text"
 import { pageInsets } from "../../design/tokens"
 import { initialOptionValues } from "../../sources/category"
@@ -253,7 +253,9 @@ export function SectionGridScreen({
       ) : null}
 
       {section.comics.length === 0 && loadingMore ? (
-        <PageLoading />
+        <ScrollView scrollDisabled={true} scrollContentBackground="hidden">
+          <ComicGridSkeleton />
+        </ScrollView>
       ) : (
         <ScrollView scrollContentBackground="hidden">
           {section.comics.length === 0 ? (

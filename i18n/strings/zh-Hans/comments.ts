@@ -15,7 +15,6 @@ export default {
   sending: "送出中…",
   sent: "已送出",
 
-  loading: "载入留言…",
   loadFailed: "读取留言失败",
   empty: "还没有人留言",
   emptyHint: "抢下第一则吧。",

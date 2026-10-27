@@ -80,7 +80,7 @@
 
 `pageInsets`、`pageSpacing`、`sectionSpacing`、`cardGap`、`rowPadding` 等都在 `design/tokens.ts`，頁面直接用名字。左右邊距全 App 都是 `pageInsets.horizontal`（16），網格也一樣；網格卡片間距 9、橫向卡片排 12。
 
-載入中的區塊用「骨架」：跟載入後同尺寸的 `fill.surface` 封面塊＋`redacted="placeholder"` 的字，資料來了版面不跳。不要用一行「載入中…」的字佔位。錯誤＝`NoticeBanner tone="error"`＋`Chip` 重試；空＝`EmptyState variant="page"`。
+載入中的區塊用「骨架」：跟載入後同尺寸的 `fill.surface` 封面塊＋同字級行高的實心字條（多行最後一條較短），資料來了版面不跳。一律用 `design/skeleton`（`SkeletonBlock`／`SkeletonText`／`SkeletonCardRow`／`SkeletonListRow`／`SkeletonCardGroups`）組，網格用 `ComicGridSkeleton`，頁面不自刻。`PageLoading` 只留給閱讀器開章。掃光內建在 `SkeletonBlock`／`SkeletonText` 裡，頁面不用另外包。不要用一行「載入中…」的字佔位。錯誤＝`NoticeBanner tone="error"`＋`Chip` 重試；空＝`EmptyState variant="page"`。
 
 sheet 本身是白底：裡面有 `Card` 就在捲動區鋪 `PageBackground`，否則淺色下卡片看不到邊。
 

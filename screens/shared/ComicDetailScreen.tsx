@@ -54,7 +54,8 @@ import { cardBackground, cardShape, capsule, fill, pageInsets, pageSpacing, pale
 import { Card } from "../../design/layout"
 import { Tag } from "../../design/Tag"
 import { Chip } from "../../design/chip"
-import { PageLoading } from "../../design/status"
+import { NoticeBanner } from "../../design/status"
+import { SkeletonBlock, SkeletonText } from "../../design/skeleton"
 import { GlassSurface } from "../../design/GlassSurface"
 import { liquidGlass, scrollTopBar } from "../../design/glass"
 
@@ -448,8 +449,13 @@ export function ComicDetailScreen({
           </Toolbar>
         }
     >
-      {/* 載入初態（失敗時同一個位置顯示錯誤訊息） */}
-      {!detail ? <PageLoading text={status ?? t("common.loading")} /> : null}
+      {/* 載入初態；失敗時同一個位置顯示錯誤訊息 */}
+      {!detail && status ? (
+        <VStack padding={pageInsets} frame={{ maxWidth: "infinity" }}>
+          <NoticeBanner tone="error" text={status} />
+        </VStack>
+      ) : null}
+      {!detail && !status ? <DetailSkeleton cover={heroCoverSize(heroContainerWidth)} /> : null}
 
       {detail ? (
         <ScrollView
@@ -1037,6 +1043,36 @@ export function ComicDetailScreen({
 }
 
 /** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
+/** 詳情載入中：hero（封面＋標題＋標籤）、閱讀按鈕、章節卡片，跟載入後同一個間距。 */
+function DetailSkeleton({ cover }: { cover: { width: number; height: number } }) {
+  return (
+    <ScrollView scrollDisabled={true} scrollContentBackground="hidden">
+      <VStack spacing={pageSpacing} padding={pageInsets} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("common.loading")}>
+        <HStack spacing={16} alignment="top" frame={{ maxWidth: "infinity" }}>
+          <SkeletonBlock width={cover.width} height={cover.height} />
+          <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+            <SkeletonText font="title3" fontWeight="bold" lineLimit={2} length={6} />
+            <SkeletonText font="footnote" length={2} />
+            <HStack spacing={6}>
+              <SkeletonBlock width={48} height={22} />
+              <SkeletonBlock width={64} height={22} />
+            </HStack>
+          </VStack>
+        </HStack>
+        <SkeletonBlock height={64} />
+        <VStack spacing={0} frame={{ maxWidth: "infinity" }} background={cardBackground} clipShape={cardShape}>
+          {Array.from({ length: 6 }, (_, index) => (
+            <HStack key={index} padding={rowPadding} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <SkeletonText font="subheadline" length={3} />
+              <Spacer />
+            </HStack>
+          ))}
+        </VStack>
+      </VStack>
+    </ScrollView>
+  )
+}
+
 function DownloadStateText({ state }: { state: ChapterDownloadState }) {
   const tint = useTint()
   if (state.state === "queued") {

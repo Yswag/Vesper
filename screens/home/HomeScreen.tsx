@@ -15,6 +15,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
 import { resumeEntry } from "../../app/shelf"
 import { EmptyState } from "../../design/status"
+import { SkeletonBlock, SkeletonCardRow, SkeletonText } from "../../design/skeleton"
 import { capsule, coverStroke, fill, radius, rect } from "../../design/tokens"
 import { listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
@@ -667,9 +668,6 @@ function BangumiCard({
   )
 }
 
-// 載入中的骨架：尺寸跟載入後的版面一樣，資料來了畫面不會跳。文字用 redacted 畫成灰條，內容不會顯示。
-const SKELETON_TEXT = "XXXXXXXXXXXX"
-
 /** hero 輪播的骨架：同樣 207 高的主體＋16 高的分頁點那一列。 */
 function HeroSkeleton() {
   return (
@@ -680,11 +678,11 @@ function HeroSkeleton() {
         frame={{ maxWidth: "infinity", height: 207 }}
         padding={{ horizontal: 16, vertical: 14 }}
       >
-        <VStack frame={{ width: 124, height: 179 }} background={fill.surface} clipShape={rect(radius.md)} />
-        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }} redacted="placeholder">
-          <Text font="title3" fontWeight="bold" lineLimit={1}>{SKELETON_TEXT}</Text>
-          <Text font="caption2" lineLimit={1}>{SKELETON_TEXT}</Text>
-          <Text font="caption2" lineLimit={2}>{SKELETON_TEXT.repeat(4)}</Text>
+        <SkeletonBlock width={124} height={179} />
+        <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <SkeletonText font="title3" fontWeight="bold" />
+          <SkeletonText font="caption2" />
+          <SkeletonText font="caption2" lineLimit={2} length={12} />
         </VStack>
       </HStack>
       <HStack frame={{ height: 16 }} />
@@ -695,18 +693,9 @@ function HeroSkeleton() {
 /** 橫向卡片排的骨架：跟真的卡片同尺寸，也替真的那排量寬。 */
 function RowSkeleton({ size, onWidth }: { size: CardSize; onWidth: (width: number) => void }) {
   return (
-    <ScrollView axes="horizontal" scrollDisabled={true} background={carouselWidthProbe(onWidth)}>
-      <HStack spacing={12} padding={{ horizontal: 16, vertical: 8 }} accessibilityLabel={t("home.feedLoading")}>
-        {[0, 1, 2, 3].map(index => (
-          <VStack key={index} alignment="leading" spacing={6} frame={{ width: size.width }}>
-            <VStack frame={{ width: size.width, height: size.height }} background={fill.surface} clipShape={rect(radius.md)} />
-            <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
-              {SKELETON_TEXT}
-            </Text>
-          </VStack>
-        ))}
-      </HStack>
-    </ScrollView>
+    <VStack frame={{ maxWidth: "infinity" }} background={carouselWidthProbe(onWidth)}>
+      <SkeletonCardRow size={size} accessibilityLabel={t("home.feedLoading")} />
+    </VStack>
   )
 }
 

@@ -31,7 +31,8 @@ import { Card } from "../../design/layout"
 import { Chevron } from "../../design/rows"
 import { Chip, ChipRow } from "../../design/chip"
 import { Tag } from "../../design/Tag"
-import { capsule, fill, pageInsets, pageSpacing, radius, rect, rowPadding } from "../../design/tokens"
+import { capsule, fill, pageInsets, pageSpacing, rect, rowPadding } from "../../design/tokens"
+import { SkeletonCardRow, SkeletonListRow, SkeletonText } from "../../design/skeleton"
 import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
@@ -805,8 +806,6 @@ function MangaListRow({
 
 // ---------------------------------------------------------------- 載入中的骨架
 
-const SKELETON_TEXT = "XXXXXXXXXXXX"
-
 /** 首頁載入中：兩段橫向卡片排 ＋ 一段列表，尺寸跟真的元件一樣，資料來了版面不跳。 */
 export function HomeSkeleton() {
   return (
@@ -814,49 +813,16 @@ export function HomeSkeleton() {
       {[0, 1].map(row => (
         <VStack key={`skeleton-row:${row}`} spacing={6} frame={{ maxWidth: "infinity" }}>
           <HStack padding={{ horizontal: pageInsets.horizontal }}>
-            <Text font="title3" fontWeight="semibold" lineLimit={1} redacted="placeholder">
-              {SKELETON_TEXT}
-            </Text>
+            <SkeletonText font="title3" fontWeight="semibold" />
             <Spacer />
           </HStack>
-          <ScrollView axes="horizontal" scrollDisabled={true} scrollIndicator="hidden">
-            <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
-              {[0, 1, 2, 3].map(card => (
-                <VStack key={`skeleton-card:${card}`} alignment="leading" spacing={6} frame={{ width: SCROLLER_COVER.width }}>
-                  <VStack
-                    frame={{ width: SCROLLER_COVER.width, height: SCROLLER_COVER.height }}
-                    background={fill.surface}
-                    clipShape={rect(radius.md)}
-                  />
-                  <Text font="footnote" fontWeight="medium" lineLimit={1} redacted="placeholder">
-                    {SKELETON_TEXT}
-                  </Text>
-                </VStack>
-              ))}
-            </HStack>
-          </ScrollView>
+          <SkeletonCardRow size={SCROLLER_COVER} titleFont="footnote" />
         </VStack>
       ))}
 
       <VStack spacing={LIST_ROW_GAP} frame={{ maxWidth: "infinity" }}>
         {[0, 1, 2].map(row => (
-          <HStack
-            key={`skeleton-list:${row}`}
-            spacing={12}
-            alignment="top"
-            padding={{ horizontal: pageInsets.horizontal }}
-            frame={{ maxWidth: "infinity", height: LIST_ROW_HEIGHT, alignment: "top" }}
-          >
-            <VStack frame={{ width: LIST_COVER.width, height: LIST_COVER.height }} background={fill.surface} clipShape={rect(radius.md)} />
-            <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }} redacted="placeholder">
-              <Text font="subheadline" lineLimit={1}>
-                {SKELETON_TEXT}
-              </Text>
-              <Text font="footnote" lineLimit={1}>
-                {SKELETON_TEXT}
-              </Text>
-            </VStack>
-          </HStack>
+          <SkeletonListRow key={`skeleton-list:${row}`} cover={LIST_COVER} lines={["subheadline", "footnote"]} height={LIST_ROW_HEIGHT} />
         ))}
       </VStack>
     </VStack>

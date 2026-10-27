@@ -15,7 +15,6 @@ export default {
   sending: "Sending…",
   sent: "Sent",
 
-  loading: "Loading comments…",
   loadFailed: "Couldn't load comments",
   empty: "No comments yet",
   emptyHint: "Be the first one.",

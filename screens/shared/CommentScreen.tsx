@@ -34,7 +34,8 @@ import { formatCommentTime } from "./commentTime"
 import { glass, scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { ActionRow } from "../../design/rows"
-import { EmptyState, ListFooter, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, ListFooter, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { SkeletonBlock, SkeletonText } from "../../design/skeleton"
 import {
   avatarSize,
   capsule,
@@ -163,6 +164,26 @@ export function CommentRow({
       </HStack>
       {!isLast ? <Divider padding={{ leading: 64, trailing: 16 }} /> : null}
     </VStack>
+  )
+}
+
+/** 留言載入中：跟 `CommentRow` 同一組內距與頭像尺寸。 */
+function CommentSkeleton() {
+  return (
+    <Card>
+      {Array.from({ length: 5 }, (_, index) => (
+        <VStack key={index} spacing={0} frame={{ maxWidth: "infinity" }}>
+          <HStack spacing={12} alignment="top" padding={{ horizontal: 16, vertical: 12 }} frame={{ maxWidth: "infinity" }}>
+            <SkeletonBlock width={avatarSize} height={avatarSize} shape="capsule" />
+            <VStack alignment="leading" spacing={5} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+              <SkeletonText font="subheadline" fontWeight="semibold" length={2} />
+              <SkeletonText font="subheadline" lineLimit={2} length={12} />
+            </VStack>
+          </HStack>
+          {index < 4 ? <Divider padding={{ leading: 64, trailing: 16 }} /> : null}
+        </VStack>
+      ))}
+    </Card>
   )
 }
 
@@ -367,8 +388,6 @@ export function CommentScreen({
             navigationBarTitleDisplayMode="inline"
             frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
           >
-            {loading && comments.length === 0 ? <PageLoading text={t("comments.loading")} /> : null}
-
             <ScrollView
               scrollContentBackground="hidden"
               scrollDismissesKeyboard="interactively"
@@ -400,6 +419,8 @@ export function CommentScreen({
                   if (Keyboard.visible) Keyboard.hide()
                 }}
               >
+                {loading && comments.length === 0 ? <CommentSkeleton /> : null}
+
                 {!loading && status !== null ? (
                   <NoticeBanner tone="error" text={t("comments.loadFailed")} detail={status} />
                 ) : null}

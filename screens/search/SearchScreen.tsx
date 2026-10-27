@@ -37,7 +37,8 @@ import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { Chevron } from "../../design/rows"
 import { EmptyState } from "../../design/status"
-import { fill, pageInsets, radius, rect, toneText } from "../../design/tokens"
+import { SkeletonCardRow } from "../../design/skeleton"
+import { fill, pageInsets, radius, toneText } from "../../design/tokens"
 import { type ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { log } from "../../engine/log"
@@ -338,7 +339,7 @@ function SourceRow({
           </LazyHStack>
         </ScrollView>
       ) : (
-        <RowSkeleton size={size} />
+        <SkeletonCardRow size={size} />
       )}
     </VStack>
   )
@@ -388,27 +389,6 @@ function ResultCard({ sourceKey, comic, size }: { sourceKey: string; comic: Comi
         </Text>
       </VStack>
     </NavigationLink>
-  )
-}
-
-// 骨架的字條：redacted 會把它畫成一塊灰。內容不會顯示。
-const SKELETON_TEXT = "XXXXXXXX"
-
-/** 還沒回來的源：跟真的那排同尺寸，結果到了版面不會跳。 */
-function RowSkeleton({ size }: { size: CardSize }) {
-  return (
-    <ScrollView axes="horizontal" scrollDisabled={true}>
-      <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, vertical: 8 }}>
-        {[0, 1, 2, 3].map(index => (
-          <VStack key={index} alignment="leading" spacing={6} frame={{ width: size.width }}>
-            <VStack frame={{ width: size.width, height: size.height }} background={fill.surface} clipShape={rect(radius.md)} />
-            <Text font="caption" fontWeight="medium" lineLimit={1} redacted="placeholder">
-              {SKELETON_TEXT}
-            </Text>
-          </VStack>
-        ))}
-      </HStack>
-    </ScrollView>
   )
 }
 

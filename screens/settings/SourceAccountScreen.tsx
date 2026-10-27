@@ -8,7 +8,8 @@
 import { Divider, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { SkeletonCardGroups } from "../../design/skeleton"
 import { radius, rect } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { t } from "../../i18n"
@@ -63,7 +64,7 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
       {!loaded ? (
-        <PageLoading />
+        <SkeletonCardGroups />
       ) : !spec ? (
         <EmptyState variant="page" icon="person.crop.circle" title={t("settings.account.noLoginNeeded")} />
       ) : loggedIn ? (

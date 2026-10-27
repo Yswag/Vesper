@@ -28,7 +28,6 @@ export default {
   noRankingOptions: "這個來源沒有排行榜",
   refresh: "重新整理",
   reload: "重新載入",
-  rankingLoading: "正在載入排行榜…",
 
   /** 下拉搜尋框的提示字；`{name}` 是源的名字（資料）。 */
   searchInSource: "搜尋 {name}",

@@ -9,7 +9,8 @@
 import { Divider, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
-import { EmptyState, NoticeBanner, PageLoading, statusTone, type StatusNotice } from "../../design/status"
+import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
+import { SkeletonCardGroups } from "../../design/skeleton"
 import { toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
@@ -161,7 +162,7 @@ export function SourceSettingsView({
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
 
       {loading ? (
-        <PageLoading />
+        <SkeletonCardGroups />
       ) : specs.length === 0 ? (
         <EmptyState variant="page" icon="slider.horizontal.3" title={t("settings.sourceSettings.empty")} />
       ) : (

@@ -18,6 +18,7 @@ import {
 } from "scripting"
 
 import { CoverBadge, UnreadBadge } from "../design/CoverBadge"
+import { SkeletonBlock, SkeletonText } from "../design/skeleton"
 import { radius } from "../design/tokens"
 import type { ComicListItem } from "../engine/adapt"
 import { t } from "../i18n"
@@ -90,6 +91,39 @@ function collapseShift(
     }
   })
   return shift
+}
+
+/** 網格載入中的骨架：同一套量寬與欄數，資料來了版面不跳。 */
+export function ComicGridSkeleton({ rows = 3 }: { rows?: number }) {
+  const [containerWidth, setContainerWidth] = useState(0)
+  const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
+  return (
+    <VStack
+      alignment="leading"
+      frame={{ maxWidth: "infinity", alignment: "leading" }}
+      accessibilityLabel={t("common.loading")}
+      background={
+        <GeometryReader>
+          {geometry => <WidthReporter width={geometry.size.width} onWidth={setContainerWidth} />}
+        </GeometryReader>
+      }
+    >
+      {containerWidth > 0 ? (
+        <VStack alignment="leading" spacing={V_SPACING} padding={{ horizontal: H_PADDING, top: 12, bottom: 8 }}>
+          {Array.from({ length: rows }, (_, row) => (
+            <HStack key={row} spacing={H_SPACING} alignment="top">
+              {Array.from({ length: columns }, (_, column) => (
+                <VStack key={column} alignment="leading" spacing={6} frame={{ width: cellWidth, alignment: "leading" }}>
+                  <SkeletonBlock width={cellWidth} height={cellHeight} />
+                  <SkeletonText font="caption" fontWeight="medium" length={2} />
+                </VStack>
+              ))}
+            </HStack>
+          ))}
+        </VStack>
+      ) : null}
+    </VStack>
+  )
 }
 
 /** 只有格子，不含 ScrollView。 */
