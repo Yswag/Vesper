@@ -26,7 +26,6 @@ import {
   useState,
 } from "scripting"
 
-import { areDependenciesInstalled } from "./app/dependencies"
 import { createComicLibrary } from "./app/comic"
 import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
@@ -104,11 +103,9 @@ async function loadVesperData() {
 }
 
 /**
- * 背景靜默查一輪。沒有依賴就不查：源的解析會全部失敗，換來的是每部一小時退避。
- * 排程器自己守 TTL、去重與讓路，這裡不需要再判斷。
+ * 背景靜默查一輪。排程器自己守 TTL、去重與讓路，這裡不需要再判斷。
  */
 function checkUpdatesQuietly() {
-  if (!areDependenciesInstalled()) return
   void updatesScheduler().checkUpdates({ background: true })
 }
 

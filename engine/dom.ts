@@ -1,22 +1,20 @@
 // Venera 的 html host method。源端是「同步」呼叫（init.js 的 querySelector 沒有 await），
-// 所以這裡用 cheerio 在 process 內同步解析，並以整數 key 指涉節點 —— 與 Venera 的語意一致。
+// 所以這裡用內建的單檔 cheerio 在 process 內同步解析，並以整數 key 指涉節點 —— 與 Venera 的語意一致。
 //
 // 命名照 init.js：element 只有 `.text`（沒有 textContent/innerText）、`.attributes[...]`、
 // `.innerHTML`、`.children`、`.nodes`、`.parent`、`.classNames`、`.id`、`.localName`、
 // `.previousElementSibling`、`.nextElementSibling`；node 有 `.text`、`.type`、`.toElement()`。
 
-import { t } from "../i18n"
+import { Script } from "scripting"
 
-declare const require: (id: string) => any
+/** 內建的單檔 cheerio：`assets/vendor/cheerio.js.txt`（全域 `createCheerio()`），讀檔＋eval 約 13ms。 */
+const CHEERIO_BUNDLE = "/assets/vendor/cheerio.js.txt"
 
 let _cheerio: any = null
 function getCheerio(): any {
   if (!_cheerio) {
-    try {
-      _cheerio = require("cheerio")
-    } catch {
-      throw new Error(t("common.depsMissing", { name: "cheerio" }))
-    }
+    const source = FileManager.readAsStringSync(Script.directory + CHEERIO_BUNDLE)
+    _cheerio = (new Function(source + "\nreturn createCheerio")() as () => any)()
   }
   return _cheerio
 }

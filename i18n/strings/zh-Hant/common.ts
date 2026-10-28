@@ -82,9 +82,4 @@ export default {
   loadingMore: "載入更多中…",
 
   /** 初次啟動準備環境與安裝核心依賴。 */
-  preparingEnv: "正在準備閱讀器環境…",
-  installingCoreDeps: "初次啟動正在安裝必要核心依賴 (cheerio, crypto-js)，請稍候數秒…",
-  depsInstallFailed: "核心依賴安裝失敗。請確認網路連線後重試。",
-  depsRetryInstall: "重試安裝",
-  depsMissing: "核心依賴 {name} 未安裝。請到「設定 → 核心依賴」重新安裝後再試。",
 }

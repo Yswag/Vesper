@@ -1,22 +1,11 @@
-// Convert 模組：提供來源沙箱所需之雜湊（MD5/SHA/HMAC）、對稱加密（AES-CBC/ECB）與編碼轉換。
-// 基於 crypto-js 實作，hash 函式回傳 Uint8Array 位元組，符合沙箱 API 規範。
+// Convert 模組：提供來源沙箱所需之雜湊（MD5/SHA/HMAC）、對稱加密（AES 四種模式）與編碼轉換。
+// 雜湊與 HMAC 走全域 Crypto（原生 CommonCrypto）；AES 走 node:crypto 的 createCipheriv，
+// 兩者都是同步呼叫，符合源端的用法。
 
-declare const require: (id: string) => any
+import { Buffer } from "node:buffer"
+import { createCipheriv, createDecipheriv } from "node:crypto"
 
-import { t } from "../i18n"
 import { log } from "./log"
-
-let _CryptoJS: any = null
-function getCryptoJS(): any {
-  if (!_CryptoJS) {
-    try {
-      _CryptoJS = require("crypto-js")
-    } catch {
-      throw new Error(t("common.depsMissing", { name: "crypto-js" }))
-    }
-  }
-  return _CryptoJS
-}
 
 export type Bytes = Uint8Array
 
@@ -30,6 +19,26 @@ function toBytes(value: any): Bytes {
   if (typeof value === "string") return utf8Encode(value)
   if (Array.isArray(value)) return new Uint8Array(value)
   throw new TypeError("Convert: 不支援的輸入型別")
+}
+
+/** 只複製必要區段：呼叫端可能傳進來的是大 buffer 的切片。 */
+function toData(bytes: Bytes): Data {
+  const buffer = (
+    bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer
+  ) as ArrayBuffer
+  return Data.fromArrayBuffer(buffer)!
+}
+
+function fromData(data: Data): Bytes {
+  return new Uint8Array(data.toArrayBuffer())
+}
+
+/**
+ * node:crypto / node:buffer 的宣告只吃 ArrayBuffer-backed 的緩衝區，型別上對不起來；
+ * 執行期只需要一份位元組，所以這裡統一轉一份並把型別放寬。
+ */
+function toBuffer(bytes: Bytes): any {
+  return Buffer.from(Array.from(bytes))
 }
 
 function utf8Encode(str: string): Bytes {
@@ -136,7 +145,19 @@ function base64Decode(value: string): Bytes {
   return out
 }
 
-function hexEncode(bytes: Bytes): string {  let out = ""
+function base64Encode(bytes: Bytes): string {
+  let out = ""
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0)
+    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63]
+    out += i + 1 < bytes.length ? B64[(n >> 6) & 63] : "="
+    out += i + 2 < bytes.length ? B64[n & 63] : "="
+  }
+  return out
+}
+
+function hexEncode(bytes: Bytes): string {
+  let out = ""
   for (const b of bytes) out += HEX[b >> 4] + HEX[b & 15]
   return out
 }
@@ -148,86 +169,53 @@ function fromHex(hex: string): Bytes {
   return out
 }
 
-/** Uint8Array → CryptoJS WordArray（直接建立，不走 hex，省一次膨脹）。 */
-function toWordArray(bytes: Bytes): any {
-  return getCryptoJS().lib.WordArray.create(bytes)
-}
-
-function fromWordArray(wordArray: any): Bytes {
-  const words: number[] = wordArray.words
-  const sigBytes: number = wordArray.sigBytes
-  const out = new Uint8Array(sigBytes)
-  for (let i = 0; i < sigBytes; i++) {
-    out[i] = (words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff
-  }
-  return out
-}
-
 type HashName = "md5" | "sha1" | "sha256" | "sha512"
 
-function hashOf(name: HashName): (message: any) => any {
-  const C = getCryptoJS()
-  if (name === "md5") return C.MD5
-  if (name === "sha1") return C.SHA1
-  if (name === "sha256") return C.SHA256
-  return C.SHA512
+function hash(name: HashName, data: Data): Data {
+  if (name === "md5") return Crypto.md5(data)
+  if (name === "sha1") return Crypto.sha1(data)
+  if (name === "sha256") return Crypto.sha256(data)
+  return Crypto.sha512(data)
 }
 
-function hmacOf(name: HashName): (message: any, key: any) => any {
-  const C = getCryptoJS()
-  if (name === "md5") return C.HmacMD5
-  if (name === "sha1") return C.HmacSHA1
-  if (name === "sha256") return C.HmacSHA256
-  return C.HmacSHA512
+function hmac(name: HashName, data: Data, key: Data): Data {
+  if (name === "md5") return Crypto.hmacMD5(data, key)
+  if (name === "sha1") return Crypto.hmacSHA1(data, key)
+  if (name === "sha256") return Crypto.hmacSHA256(data, key)
+  return Crypto.hmacSHA512(data, key)
 }
 
-function hash(name: HashName, value: any): Bytes {
-  return fromWordArray(hashOf(name)(toWordArray(toBytes(value))))
+function hashOf(name: HashName, value: any): Bytes {
+  return fromData(hash(name, toData(toBytes(value))))
 }
 
-function hmac(name: HashName, key: any, value: any): Bytes {
-  return fromWordArray(hmacOf(name)(toWordArray(toBytes(value)), toWordArray(toBytes(key))))
+function hmacOf(name: HashName, key: any, value: any): Bytes {
+  return fromData(hmac(name, toData(toBytes(value)), toData(toBytes(key))))
 }
 
 type CipherMode = "ecb" | "cbc" | "cfb" | "ofb"
 
-function modeOf(mode: CipherMode): any {
-  const C = getCryptoJS()
-  if (mode === "ecb") return C.mode.ECB
-  if (mode === "cbc") return C.mode.CBC
-  if (mode === "cfb") return C.mode.CFB
-  return C.mode.OFB
-}
-
 /**
  * AES **裸塊**運算：與 Venera 的 pointycastle 實作一致（`js_engine.dart:442-475` 就是
- * `CBCBlockCipher.processBlock` 逐塊跑），也就是：
- *   - 加密**不加** padding（來源要自己補到 16 的倍數）；
- *   - 解密**不剝** padding（回傳長度＝輸入長度）。
- *
- * 不能改用 CryptoJS 的 Pkcs7：它會在解密時自動幫你剝掉 padding，而源也會自己剝一次
- * （ccc 就是這樣：`decrypted.slice(0, len - padLen)`）→ 資料尾巴被切掉，取不到 `key:iv`。
- * （jm 自己掃 `{`…`}` 找 JSON，兩種都吃，所以只有 ccc 會被影響。）
+ * `CBCBlockCipher.processBlock` 逐塊跑），也就是加密不加 padding、解密不剝 padding。
+ * 源會自己補／自己剝（ccc 就是這樣），所以 `setAutoPadding(false)` 是必須的。
  */
 function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: any): Bytes {
-  const C = getCryptoJS()
-  const options: any = {
-    mode: modeOf(mode),
-    padding: C.pad.NoPadding,
+  if (mode !== "ecb" && iv == null) throw new Error(`Convert: AES-${mode.toUpperCase()} 需要 iv`)
+  const keyBytes = toBytes(key)
+  if (keyBytes.length !== 16 && keyBytes.length !== 24 && keyBytes.length !== 32) {
+    throw new Error(`Convert: AES 金鑰長度必須是 16/24/32 bytes（收到 ${keyBytes.length}）`)
   }
-  if (mode !== "ecb" && iv == null) {
-    throw new Error(`Convert: AES-${mode.toUpperCase()} 需要 iv`)
-  }
-  if (iv != null) options.iv = toWordArray(toBytes(iv))
-
-  const keyWordArray = toWordArray(toBytes(key))
-  const dataWordArray = toWordArray(toBytes(value))
-
-  if (encrypt) {
-    return fromWordArray(C.AES.encrypt(dataWordArray, keyWordArray, options).ciphertext)
-  }
-  const params = C.lib.CipherParams.create({ ciphertext: dataWordArray })
-  return fromWordArray(C.AES.decrypt(params, keyWordArray, options))
+  // ECB 的實作會讀 iv.length，而且只接受 0 長度（null 與 16 bytes 都會拋）。
+  const ivBuf = mode === "ecb" ? Buffer.alloc(0) : toBuffer(toBytes(iv))
+  const cipher = (encrypt ? createCipheriv : createDecipheriv)(
+    `aes-${keyBytes.length * 8}-${mode}`,
+    toBuffer(keyBytes),
+    ivBuf
+  )
+  cipher.setAutoPadding(false)
+  const out = Buffer.concat([cipher.update(toBuffer(toBytes(value))), cipher.final()])
+  return Uint8Array.from(out)
 }
 
 function normalizeHash(name: string): HashName {
@@ -246,21 +234,22 @@ export const Convert = {
   decodeGbk: (_value: any): string => {
     throw new Error("Convert.decodeGbk: 本環境不支援（請回報是哪個源需要）")
   },
-  encodeBase64: (value: any) => getCryptoJS().enc.Base64.stringify(toWordArray(toBytes(value))),
-  // 用自己寫的解碼：容許 URL-safe（-_）與空白/換行，而不是讓 crypto-js 對非正規輸入算出垃圾。
+  encodeBase64: (value: any) => base64Encode(toBytes(value)),
   decodeBase64: (value: string) => base64Decode(value),
-  md5: (value: any) => hash("md5", value),
-  sha1: (value: any) => hash("sha1", value),
-  sha256: (value: any) => hash("sha256", value),
-  sha512: (value: any) => hash("sha512", value),
-  hmac: (key: any, value: any, hashName: string) => hmac(normalizeHash(hashName), key, value),
-  hmacString: (key: any, value: any, hashName: string) => hexEncode(hmac(normalizeHash(hashName), key, value)),
+  md5: (value: any) => hashOf("md5", value),
+  sha1: (value: any) => hashOf("sha1", value),
+  sha256: (value: any) => hashOf("sha256", value),
+  sha512: (value: any) => hashOf("sha512", value),
+  hmac: (key: any, value: any, hashName: string) => hmacOf(normalizeHash(hashName), key, value),
+  hmacString: (key: any, value: any, hashName: string) => hexEncode(hmacOf(normalizeHash(hashName), key, value)),
   encryptAesEcb: (value: any, key: any) => aesRun(true, "ecb", value, key),
   decryptAesEcb: (value: any, key: any) => aesRun(false, "ecb", value, key),
   encryptAesCbc: (value: any, key: any, iv: any) => aesRun(true, "cbc", value, key, iv),
   decryptAesCbc: (value: any, key: any, iv: any) => aesRun(false, "cbc", value, key, iv),
   encryptAesCfb: (value: any, key: any, iv: any) => aesRun(true, "cfb", value, key, iv),
   decryptAesCfb: (value: any, key: any, iv: any) => aesRun(false, "cfb", value, key, iv),
+  // OFB 在上游沒有 iv 參數（`OFBBlockCipher(AESEngine(), blockSize)`），這裡也因此取不到 iv：
+  // 保留原簽名，用了就明確報錯，不要靜默把 blockSize 當 iv。
   encryptAesOfb: (value: any, key: any, _blockSize?: number) => aesRun(true, "ofb", value, key),
   decryptAesOfb: (value: any, key: any, _blockSize?: number) => aesRun(false, "ofb", value, key),
   decryptRsa: (_value: any, _key: any): Bytes => {

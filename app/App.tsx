@@ -18,12 +18,6 @@
 
 import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
-import {
-  InstallFailedView,
-  PreparingView,
-  areDependenciesInstalled,
-  installMissingDependencies,
-} from "./dependencies"
 import { PageBackground, useTint } from "./theme"
 import { liquidGlass } from "../design/glass"
 import { SECTIONS } from "./sections"
@@ -43,10 +37,7 @@ import { HomeScreen } from "../screens/home/HomeScreen"
 import { SearchScreen } from "../screens/search/SearchScreen"
 import { SettingsScreen } from "../screens/settings/SettingsScreen"
 
-/** 依賴狀態。 */
-type DepsState = "installing" | "failed" | "ready"
-
-/** 啟動後多久才背景查追更：先讓首屏與依賴安頓下來。 */
+/** 啟動後多久才背景查追更。 */
 const STARTUP_UPDATE_DELAY = 2500
 
 /** 分頁編號 → 畫面。順序要跟 app/sections.ts 的 SECTIONS 一致（切換分類的選單照它畫）。 */
@@ -70,8 +61,6 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   /** 冷啟動時由入口從 URL scheme 帶進來的倉庫網址。 */
   pendingInstall?: string | null
 }) {
-  // 安裝失敗不放行：沒有依賴的話每個源、每張圖都會爆。
-  const [depsState, setDepsState] = useState<DepsState>(() => (areDependenciesInstalled() ? "ready" : "installing"))
   const selection = useObservable<number>(0)
   // 根層 tint：會繼承的控制項（Toggle、borderless Button、menu Picker）跟主題；字面值與 segmented Picker 不跟，
   // 那些地方一律用 useTint() 的明確顏色（見 design/ 與 screens/）。中性盤（石墨）照樣套：tint 是近白，
@@ -84,34 +73,22 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   const [installTarget, setInstallTarget] = useState<string | null>(pendingInstall)
   const [installBusy, setInstallBusy] = useState(false)
 
-  useEffect(() => {
-    if (depsState !== "installing") return
-    let cancelled = false
-    void installMissingDependencies().then(ok => {
-      if (!cancelled) setDepsState(ok ? "ready" : "failed")
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [depsState])
-
-  // 實例活著時再被 run scheme 觸發：入口不會重跑，只能從這裡收。
+  // 実例活著時再被 run scheme 觸發：入口不會重跑，只能從這裡收。
   useEffect(() => {
     setInstallListener(url => setInstallTarget(url))
     return () => setInstallListener(null)
   }, [])
 
   // 啟動延遲 2.5 秒後背景查一次追更：不跟首屏搶資源；TTL 沒到期就零連線，
-  // 前台正在讀時排程器自己讓路（見 app/updates.ts）。依賴沒好就不查——那只會換來一小時退避。
+  // 前台正在讀時排程器自己讓路（見 app/updates.ts）。
   useEffect(() => {
-    if (depsState !== "ready") return
     const timer = setTimeout(() => {
       void updatesScheduler().checkUpdates({ background: true })
     }, STARTUP_UPDATE_DELAY)
     return () => {
       if (timer !== null) clearTimeout(timer)
     }
-  }, [depsState])
+  }, [])
 
   // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
   // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。
@@ -137,15 +114,15 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
     }
   }, [])
 
-  // 依賴就緒才處理：加入完要切到設定頁、開倉庫詳情，不該蓋在「準備中」上面。
+  // 放入新倉庫後要切到設定頁、開倉庫詳情。
   // 放在分頁監聽之後：冷啟動時 switchToTab 才有 listener 可接。
   useEffect(() => {
-    if (depsState !== "ready" || installTarget === null || installBusy) return
+    if (installTarget === null || installBusy) return
     const target = installTarget
     setInstallTarget(null)
     setInstallBusy(true)
     void installRepository(target).finally(() => setInstallBusy(false))
-  }, [depsState, installTarget, installBusy])
+  }, [installTarget, installBusy])
 
   /** 連結只是「請求」，內容由外人決定，一律先確認再抓索引。 */
   async function installRepository(url: string) {
@@ -199,19 +176,6 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
         <CustomDialogOverlay />
       </>
     ),
-  }
-
-  if (depsState !== "ready") {
-    return (
-      <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-        <PageBackground />
-        {depsState === "installing" ? (
-          <PreparingView />
-        ) : (
-          <InstallFailedView onRetry={() => setDepsState("installing")} />
-        )}
-      </ZStack>
-    )
   }
 
   if (hideTabBar) {

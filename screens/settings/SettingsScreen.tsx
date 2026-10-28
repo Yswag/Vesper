@@ -26,7 +26,6 @@ import { LOCALE_IDS, subscribe as subscribeLocale, t } from "../../i18n"
 import { allSources, reloadRegistry, subscribeSources } from "../../sources/registry"
 import { listDownloads, subscribeDownloads } from "../../sources/downloads"
 import { DownloadScreen } from "./DownloadScreen"
-import { DependencyScreen } from "./DependencyScreen"
 import { ImageCacheSettingsScreen } from "./ImageCacheSettingsScreen"
 import { LogScreen } from "./LogScreen"
 import { SourceListScreen } from "./SourceListScreen"
@@ -125,10 +124,6 @@ export function SettingsScreen() {
             if (isLocaleSetting(next)) applyLocaleSetting(next, Device.systemLocales)
           }}
         />
-        <Divider padding={{ leading: rowSeparatorInset }} />
-        <NavigationLink destination={<DependencyScreen />}>
-          <IconRow icon="shippingbox" title={t("settings.deps.title")} chevron />
-        </NavigationLink>
         <Divider padding={{ leading: rowSeparatorInset }} />
         <NavigationLink destination={<LogScreen />}>
           <IconRow icon="doc.text" title={t("settings.root.logs")} chevron />
