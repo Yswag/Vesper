@@ -12,6 +12,10 @@ import { log } from "../engine/log"
 import { hasPro } from "../engine/pro"
 import { t } from "../i18n"
 
+/** `warm(page)` 先量好的範圍：往後 6 頁、往前 2 頁（一頁約 1ms）。 */
+const WARM_AHEAD = 6
+const WARM_BEHIND = 2
+
 /** 這一章下載完了沒（目錄能列、閱讀器能開的都必須是 `done`）。 */
 export function isOfflineReadable(key: OfflineKey): boolean {
   return statusOf(key).state === "done"
@@ -46,6 +50,13 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
   const renderDir = openRenderDir(key.epId)
   // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
   const aspects = createPageAspects()
+  // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
+  const renders = new Map<number, PageRender>()
+  /** 記住這頁的渲染結果再回傳。 */
+  const memoRender = (index: number, render: PageRender | null): PageRender | null => {
+    if (render) renders.set(index, render)
+    return render
+  }
   let disposed = false
 
   const loadPageBytes = async (index: number): Promise<Uint8Array> => {
@@ -59,6 +70,22 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
   /** 離線的原圖路徑（就是顯示要用的那一個）。拿不到就回 null。 */
   const sourcePath = (index: number): string | null => offlinePagePath(key, index, imageKeyOf(index))
 
+  /**
+   * 同步量好一頁的比例並記住原圖渲染：頁面掛上去時 `renderOf` 就有值，
+   * 不必先出轉圈、高度也不會從估計值跳成真值。讀不到就略過，由 `loadPage` 報錯。
+   */
+  const prepare = (index: number): void => {
+    if (index < 0 || index >= imageKeys.length || renders.has(index)) return
+    const path = sourcePath(index)
+    const bytes = path ? readBytes(path) : null
+    if (!path || !bytes || bytes.length === 0) return
+    const decoded = UIImage.fromData(Data.fromUint8Array(bytes)!)
+    if (!decoded) return
+    const aspect = decoded.width / decoded.height
+    aspects.set(index, aspect)
+    renders.set(index, { path, aspect })
+  }
+
   return {
     ref: key,
     title: chapter.epTitle ?? key.epId,
@@ -69,12 +96,17 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     local: true,
     imageKey: imageKeyOf,
     aspectOf: index => aspects.get(index),
+    renderOf: index => renders.get(index) ?? null,
     pageImage: loadPageBytes,
     loadPage: async (
       index: number,
       onSharpened?: (render: PageRender) => void,
       isCancelled?: () => boolean
     ): Promise<PageRender | null> => {
+      // 已經備好這頁、又沒有超分要跑（預設）：直接回，不再重讀一次檔。
+      const ready = renders.get(index)
+      if (ready && !hardwareSharpenEnabled) return ready
+
       const bytes = await loadPageBytes(index)
       if (isCancelled && isCancelled()) return null
 
@@ -89,7 +121,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
       if (hardwareSharpenEnabled) {
         const cached = findSharpenedPage(renderDir, name, aspect)
-        if (cached) return cached
+        if (cached) return memoRender(index, cached)
       }
 
       // 漸進式超分：離線閱讀同樣享受 ACNet ONNX 超分
@@ -112,20 +144,28 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
               new Uint8Array(result.data.toArrayBuffer()),
               aspect
             )
-            if (sharpened) onSharpened(sharpened)
+            if (sharpened) {
+              // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
+              memoRender(index, sharpened)
+              onSharpened(sharpened)
+            }
           })
         }
       }
 
       const path = sourcePath(index)
       if (!path) return null
-      return { path, aspect }
+      return memoRender(index, { path, aspect })
     },
     setHardwareSharpen: enabled => {
       hardwareSharpenEnabled = enabled && hasPro()
     },
-    // 檔案就在本機、又沒有記憶體快取，所以沒有預取可做；超分圖的暫存檔要收掉。
-    warm: () => {},
+    warm: page => {
+      if (disposed) return
+      for (let i = page; i <= page + WARM_AHEAD; i++) prepare(i)
+      for (let i = page - 1; i >= page - WARM_BEHIND; i--) prepare(i)
+    },
+    // 超分圖的暫存檔要收掉。
     dispose: () => {
       disposed = true
       closeRenderDir(renderDir)

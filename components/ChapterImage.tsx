@@ -43,14 +43,16 @@ function estimateAspect(session: ChapterSession, index: number): number {
 }
 
 export function ChapterImage({ session, index, size }: ChapterImageProps) {
-  const [render, setRender] = useState<PageRender | null>(null)
+  // 重掛的頁直接沿用 session 記住的渲染：第一帧就是圖，不先出佔位再換（那一換就是一次卡頓）。
+  const [render, setRender] = useState<PageRender | null>(() => session.renderOf(index))
   const [error, setError] = useState("")
   const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     let alive = true
     const started = Date.now()
-    setRender(null)
+    // 已經有圖就不要退回佔位（重掛／回捲）；沒有才需要轉圈。
+    if (!session.renderOf(index)) setRender(null)
     setError("")
 
     void (async () => {

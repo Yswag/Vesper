@@ -48,6 +48,13 @@ export function createPageCache(): PageCache {
   const pages = new Map<string, Uint8Array>()
   let bytesInCache = 0
 
+  /**
+   * 這張圖解析過的請求（imageKey → 快取鍵 + spec）。
+   * 預取每次都會重跑，但同一張圖的 URL／modifyImage 不會變；沒這張表就會為了查快取而
+   * 重複呼叫源（`resolveImageRequest` 是源程式碼，用 Wasm 的源更貴）。
+   */
+  const resolved = new Map<string, { key: string; spec: ReturnType<typeof toCacheSpec> }>()
+
   /** 進行中的取圖請求映射表（避免同頁並發重複請求）。 */
   const inflight = new Map<string, Promise<Uint8Array>>()
 
@@ -86,15 +93,24 @@ export function createPageCache(): PageCache {
 
   return {
     async bytes(request, signal) {
-      const resolved = await resolveImageRequest(
-        request.comicModule,
-        request.imageKey,
-        request.comicId,
-        request.epId,
-        request.retry
-      )
-      const spec = toCacheSpec(resolved)
-      const key = keyOf(spec.url, spec.modifyImage)
+      let known = resolved.get(request.imageKey)
+      if (known) {
+        // 已解析過：不再問源（重複的源呼叫是跨頁頓一下的主要來源之一）。
+        log("debug", "image", `正文略過源解析（同一張圖已解析過）（${labelOf(known.spec.url)}）`)
+      } else {
+        const spec = toCacheSpec(
+          await resolveImageRequest(
+            request.comicModule,
+            request.imageKey,
+            request.comicId,
+            request.epId,
+            request.retry
+          )
+        )
+        known = { key: keyOf(spec.url, spec.modifyImage), spec }
+        resolved.set(request.imageKey, known)
+      }
+      const { key, spec } = known
 
       const hit = take(key)
       if (hit) {
@@ -140,6 +156,7 @@ export function createPageCache(): PageCache {
       pages.clear()
       bytesInCache = 0
       inflight.clear()
+      resolved.clear()
     },
   }
 }

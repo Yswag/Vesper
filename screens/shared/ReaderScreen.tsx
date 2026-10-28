@@ -32,6 +32,7 @@ import {
   useRef,
   useState,
   type Point,
+  type ScrollViewProxy,
 } from "scripting"
 
 import type { ChapterSession, ReaderChapter } from "../../app/comic"
@@ -41,13 +42,14 @@ import { describeError } from "../../engine/errors"
 import { hasPro } from "../../engine/pro"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
+import { createPageSignal, usePageSignal, type PageSignal } from "../../components/pageSignal"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
 import { ReaderCornerInfo, ReaderHUD } from "../../components/ReaderHUD"
 import { ZoomableView } from "../../components/ZoomableView"
 import { Chip } from "../../design/chip"
 import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { fill, neutral, radius, rect } from "../../design/tokens"
-import { isFavorite, setProgress, toggleFavorite } from "../../library/bookshelf"
+import { isFavorite, notifyLibrary, setProgress, toggleFavorite } from "../../library/bookshelf"
 import {
   clearPerComicSettings,
   readerAxis,
@@ -61,7 +63,7 @@ import { isOfflineReadable } from "../../app/offlineReading"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
 import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
-/** 單擊翻頁的滑動動畫（需以 withAnimation 包覆 scrollPos.setValue）。 */
+/** 單擊翻頁的滑動動畫（需以 withAnimation 包覆捲動指令）。 */
 const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
 
 /** 量到就回報（放在 `background` 的 `GeometryReader` 裡，不影響版面）。 */
@@ -155,6 +157,61 @@ export function ReaderStatusOverlay({
         {onRetry ? <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={onRetry} /> : null}
       </VStack>
     </VStack>
+  )
+}
+
+/**
+ * 頁碼的葉子：訂閱 `leadingPage` 訊號，翻頁要做的事（預取、寫進度、角落頁碼）都在這裡。
+ * 拖曳列跟隨由 HUD 的 ReaderScrubber 自己訂閱。
+ */
+function ReaderPageTracker({
+  leadingPage,
+  session,
+  pageCount,
+  ready,
+  progress,
+  cornerVisible,
+  safeAreaInsets,
+}: {
+  leadingPage: PageSignal
+  session: ChapterSession | undefined
+  pageCount: number
+  ready: boolean
+  progress: {
+    sourceKey: string
+    comicId: string
+    title: string
+    cover?: string
+    epId: string
+    epTitle: string
+  }
+  cornerVisible: boolean
+  safeAreaInsets: { top: number; bottom: number; leading: number; trailing: number }
+}) {
+  const value = usePageSignal(leadingPage)
+  const lastPage = Math.max(pageCount - 1, 0)
+  const page = Math.min(Math.max(value ?? 0, 0), lastPage)
+
+  // 頁碼落定 → 補預取（以這一頁為中心往前 3）。
+  useEffect(() => {
+    if (!session || pageCount === 0) return
+    session.warm(page)
+  }, [session, page, pageCount])
+
+  // 進度：還沒回報時當成第 1 頁（單張圖不會有可見集合回呼）。
+  useEffect(() => {
+    if (pageCount === 0 || !ready) return
+    // 不廣播：背景畫面等離開閱讀器時一次更新（見下方 unmount）。
+    setProgress({ ...progress, page, pageCount, offline: session?.local ? true : undefined }, { notify: false })
+  }, [page, pageCount, ready, progress.sourceKey, progress.comicId, progress.epId, session])
+
+  return (
+    <ReaderCornerInfo
+      visible={cornerVisible}
+      currentPage={Math.min(page + 1, Math.max(pageCount, 1))}
+      pageCount={pageCount}
+      safeAreaInsets={safeAreaInsets}
+    />
   )
 }
 
@@ -262,12 +319,32 @@ function ReaderContent({
   // 換過一次話就不再還原（換回來也一樣），否則會把後來讀到的位置拉回進入頁。
   const entryPending = useRef(true)
   const restoringEntry = entryPending.current && currentEpId === entryEpId.current && entryRestore !== null
-  const [leadingPage, setLeadingPage] = useState<number | null>(restoringEntry ? entryRestore : null)
+  // 頁碼是純 JS 訊號，只有訂閱的葉子（ReaderPageTracker、ReaderScrubber）重繪。
+  // 不用 useObservable：它每次 setValue 都會重繪這整個閱讀器。
+  const [leadingPage] = useState(() => createPageSignal(restoringEntry ? entryRestore : null))
+  const leadingPageRef = useRef<number | null>(restoringEntry ? entryRestore : null)
+  /** 寫頁碼：ref 給手勢／閘門同步讀，訊號給葉子訂閱。 */
+  function setLeadingPage(value: number | null) {
+    leadingPageRef.current = value
+    leadingPage.set(value)
+  }
   // 還原捲動完成前忽略可見集合回報，避免頂端初次回報覆蓋進度
   const restored = useRef(!restoringEntry)
-  const scrollPos = useObservable("0")
-  const scrubValue = useObservable(0)
-  const [scrubbing, setScrubbing] = useState(false)
+  // 跳頁用 ScrollViewReader 下單向指令：不綁 scrollPosition，原生捲動不寫回，閱讀器不跟著重繪。
+  const scrollProxy = useRef<ScrollViewProxy | null>(null)
+  // ScrollView 重建中（開章還原／換模式）頁面還沒排出來，scrollTo 會落空：先記著，畫好再捲。
+  const pendingScroll = useRef<number | null>(null)
+  /** 立刻捲到某一頁（翻頁、拖曳列；包在 withAnimation 裡就有動畫）。 */
+  function scrollToPage(page: number) {
+    scrollProxy.current?.scrollTo(String(page), settings.direction === "ttb" ? "top" : "leading")
+  }
+  // ScrollView 重建完（開章、換模式／方向）就執行等著的跳頁；頁面排出來（有 session、沒有狀態遮罩）才捲。
+  useEffect(() => {
+    const page = pendingScroll.current
+    if (page === null || !session || status !== null) return
+    pendingScroll.current = null
+    scrollToPage(page)
+  }, [session, status, settings.mode, settings.direction])
   // 非 null 期間忽略可見回報（等候捲動到達目標頁）
   const scrubTarget = useRef<number | null>(null)
   const turnTarget = useRef<number | null>(null)
@@ -348,14 +425,18 @@ function ReaderContent({
           return
         }
         sessionEpId.current = currentEpId
+        // 第一幀就有圖：離線 session 在這裡量好開頭幾頁，頁面掛上去不必先轉圈。
+        result.warm(restoringEntry && entryPage.current !== undefined ? entryPage.current : 0)
+        const wanted = restoringEntry ? entryPage.current : undefined
+        const target = wanted !== undefined && wanted > 0 && wanted < result.pageCount ? wanted : null
+        // 新的 ScrollView 從頂端開始；要還原才排一個跳頁。
+        // 必須在 setSession 前排好：頁面排出來那一輪的 effect 就要看得到。
+        pendingScroll.current = target
+        setLeadingPage(target)
         setSession(result)
         // session 自己建的时候讀的是全域；這裡對齊畫面看到的值（per-comic 可能不同）。
         result.setHardwareSharpen(settingsRef.current.hardwareSharpen)
         setStatus(result.pageCount === 0 ? { kind: "empty" } : null)
-        const wanted = restoringEntry ? entryPage.current : undefined
-        const target = wanted !== undefined && wanted > 0 && wanted < result.pageCount ? wanted : null
-        setLeadingPage(target)
-        scrollPos.setValue(target !== null ? String(target) : "0")
         if (target === null) {
           restored.current = true
         } else {
@@ -375,7 +456,7 @@ function ReaderContent({
           epTitle: title,
           pageCount: result.pageCount,
           offline: result.local ? true : undefined,
-        })
+        }, { notify: false })
       } catch (error) {
         if (alive) {
           setStatus({ kind: "error", message: error instanceof Error ? error.message : String(error) })
@@ -393,56 +474,29 @@ function ReaderContent({
     }
   }, [sourceKey, comicId, currentEpId, reloadKey])
 
-  // 頁碼落定 → 補預取（以這一頁為中心往前 3）。兩種閱讀模式都吃這一條（leadingPage 是共用的）。
-  // 拖曳頁碼列時只動 scrubValue，leadingPage 要放開（commitScrub）才會變 → 拖曳中不會重排。
-  useEffect(() => {
-    if (!session || pageCount === 0) return
-    session.warm(Math.min(Math.max(leadingPage ?? 0, 0), pageCount - 1))
-  }, [session, leadingPage, pageCount])
+  // 頁碼落定 → 補預取、寫進度：在 ReaderPageTracker；拖曳列跟隨：在 ReaderScrubber。
 
   // 離開閱讀器時釋放 WebGL 銳化引擎資源與臨時 session 快取
   useEffect(() => {
     return () => {
       disposeUpscaleEngine()
+      // 閱讀中的進度都是靜默寫入，離開時通知一次讓書架／首頁跟上。
+      notifyLibrary()
     }
   }, [])
-  // leadingPage 還沒回報時當成第 1 頁：新開一話若內容不需捲動（例如單張圖），
-  // 可見集合永遠不會回呼，不補這一下就會整話都沒有頁碼可用。
-  useEffect(() => {
-    if (pageCount === 0 || sessionEpId.current !== currentEpId) return
-    const page = Math.min(Math.max(leadingPage ?? 0, 0), pageCount - 1)
-    setProgress({
-      sourceKey,
-      comicId,
-      title: comicTitle,
-      cover: comicCover,
-      epId: currentEpId,
-      epTitle: title,
-      page,
-      pageCount,
-      offline: session?.local ? true : undefined,
-    })
-  }, [leadingPage, pageCount, currentEpId, sourceKey, comicId])
-
   // 拖曳列的上界＝最後一頁索引（章末提示卡不算一頁）。
   const lastPage = Math.max(pageCount - 1, 0)
   const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
 
-  // 沒在拖曳時讓拖曳列跟著實際閱讀位置走；拖曳中不搶，否則手指會被回報彈走。
-  useEffect(() => {
-    if (scrubbing) return
-    scrubValue.setValue(clampPage(leadingPage ?? 0))
-  }, [leadingPage, scrubbing, pageCount])
 
   /** 放開拖曳列：捲到目標頁，並擋掉捲動落定前的過期可見集合回報。 */
-  function commitScrub() {
-    const target = clampPage(scrubValue.value)
-    setScrubbing(false)
-    if (target === clampPage(leadingPage ?? 0)) return
+  function commitScrub(page: number) {
+    const target = clampPage(page)
+    if (target === clampPage(leadingPageRef.current ?? 0)) return
     releaseZoom()
     scrubTarget.current = target
     setLeadingPage(target)
-    void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
+    void withAnimation(TURN_ANIM, () => scrollToPage(target))
     // 兜底：單張圖那種不必捲動的情形不會有回報，別讓閘門永遠關著。
     // 先清上一次的兜底（連續拖放會各排一個，舊的不該留著），再排這次的。
     clearGate(scrubTimer)
@@ -471,8 +525,8 @@ function ReaderContent({
     clearUpscaleCache()
     hasTriggeredFullHapticRef.current = false
     setLeadingPage(0)
-    scrubValue.setValue(0)
-    scrollPos.setValue("0")
+    // 換話會重建 ScrollView（key 含 epId），自然從頂端開始；舊話還沒執行的跳頁作廢。
+    pendingScroll.current = null
     setCurrentEpId(id)
   }
 
@@ -492,8 +546,8 @@ function ReaderContent({
   function turnBase(): number | null {
     const commanded = turnTarget.current ?? scrubTarget.current
     if (commanded !== null) return commanded
-    if (!restored.current) return leadingPage
-    return displayedPage() ?? leadingPage
+    if (!restored.current) return leadingPageRef.current
+    return displayedPage() ?? leadingPageRef.current
   }
 
   /**
@@ -504,11 +558,12 @@ function ReaderContent({
     if (!restored.current || turnTarget.current !== null || scrubTarget.current !== null) return
     const page = displayedPage()
     if (page === null) return
-    setLeadingPage(previous => (previous === page ? previous : page))
+    if (leadingPageRef.current === page) return
+    setLeadingPage(page)
   }
 
   /**
-   * 翻一頁（往前後推一格並以 scrollPos 捲動，翻頁中忽略過期可見回報）。
+   * 翻一頁（往前後推一格並以捲動位置捲動，翻頁中忽略過期可見回報）。
    */
   function turnPage(delta: 1 | -1) {
     if (pageCount === 0) return
@@ -519,7 +574,7 @@ function ReaderContent({
     releaseZoom()
     turnTarget.current = target
     setLeadingPage(target)
-    void withAnimation(TURN_ANIM, () => scrollPos.setValue(String(target)))
+    void withAnimation(TURN_ANIM, () => scrollToPage(target))
     // 兜底計時器：防範無位移時回報中斷導致閘門常閉
     clearGate(turnTimer)
     turnTimer.current = setTimeout(() => {
@@ -589,14 +644,15 @@ function ReaderContent({
     const next = { ...settings, ...patch }
     // 換模式／方向會重建 ScrollView：先把目前頁寫進捲動位置，並擋住重建後第一個「在頂端」的回報。
     if (next.mode !== settings.mode || next.direction !== settings.direction) {
-      const page = displayedPage() ?? leadingPage ?? 0
+      const page = displayedPage() ?? leadingPageRef.current ?? 0
       clearGate(turnTimer)
       clearGate(scrubTimer)
       turnTarget.current = null
       scrubTarget.current = null
       setZoomed(false)
       setLeadingPage(page)
-      scrollPos.setValue(String(page))
+      // 換模式／方向會重建 ScrollView：等新的排好再捲回這一頁。
+      pendingScroll.current = page
       if (page > 0) {
         restored.current = false
         clearGate(restoreTimer)
@@ -721,16 +777,36 @@ function ReaderContent({
   ) : null
 
   // 頁碼：所有模式都看 onScrollTargetVisibilityChange 回報的領先可見頁。
-  const currentPage =
-    leadingPage !== null
-      ? Math.min(Math.max(leadingPage + 1, 1), Math.max(pageCount, 1))
-      : 1
+  // 頁碼顯示在 ReaderPageTracker 裡（它訂閱 leadingPage）。
 
   // HUD 的進出場全部走屬性動畫（offset / opacity）+ animation modifier，
   // 不用 transition + withAnimation——那條路徑在這塊 overlay 上會退化成淡入淡出。
   function toggleHUD() {
     hudVisible.setValue(!hudVisible.value)
   }
+
+  // 目錄抽屜：章節清單很長（幾百列），但只有拉開抽屜才看得到。
+  // 跨頁只是 leadingPage 變，不該讓它每次重建成千上百個元素——元素與 callback 都記住。
+  const onSelectChapter = useCallback((id: string) => selectChapter(id), [chapters, currentEpId])
+  const onCloseDrawer = useCallback(() => setShowChapterSheet(false), [])
+  const isDownloadedChapter = useCallback(
+    (epId: string) => isOfflineReadable({ sourceKey, comicId, epId }),
+    [sourceKey, comicId]
+  )
+  const chapterDrawer = useMemo(
+    () => (
+      <ChapterDrawer
+        currentEpId={currentEpId}
+        chapters={chapters}
+        chapterGroups={chapterGroups}
+        isGrouped={isGrouped}
+        isDownloaded={isDownloadedChapter}
+        onSelectChapter={onSelectChapter}
+        onClose={onCloseDrawer}
+      />
+    ),
+    [currentEpId, chapters, chapterGroups, isGrouped, isDownloadedChapter, onSelectChapter, onCloseDrawer]
+  )
 
   return (
     <VStack
@@ -744,17 +820,7 @@ function ReaderContent({
       sheet={{
         isPresented: showChapterSheet,
         onChanged: setShowChapterSheet,
-        content: (
-          <ChapterDrawer
-            currentEpId={currentEpId}
-            chapters={chapters}
-            chapterGroups={chapterGroups}
-            isGrouped={isGrouped}
-            isDownloaded={epId => isOfflineReadable({ sourceKey, comicId, epId })}
-            onSelectChapter={selectChapter}
-            onClose={() => setShowChapterSheet(false)}
-          />
-        ),
+        content: chapterDrawer,
       }}
     >
       <ZStack
@@ -774,145 +840,151 @@ function ReaderContent({
       >
 
         {/* 1. 漫畫閱讀畫布（依閱讀模式／方向切換排版） */}
-        <ScrollView
-          key={`${currentEpId}-${settings.mode}-${settings.direction}`}
-          axes={axes}
-          scrollDisabled={zoomed}
-          scrollIndicator="never"
-          scrollTargetBehavior={
-            paginated
-              ? vertical
-                ? "viewAlignedLimitAlwaysByOne" // 縱向畫廊：單頁吸附
-                : "paging"
-              : undefined                       // 連續模式：平滑流動
-          }
-          scrollPosition={{ value: scrollPos, anchor: "topLeading" }}
-          onScrollTargetVisibilityChange={{
-            idType: "string",
-            threshold: 0.0,
-            onChanged: ids => {
-              if (!restored.current) return
-              const indexes = (ids as string[])
-                .map(value => Number(value))
-                .filter(value => Number.isFinite(value))
-              if (indexes.length === 0) return
-              const leading = Math.min(...indexes)
-              // 拖曳跳頁／動畫翻頁途中的過期回報：真的走到目標頁才解除。
-              const pending = scrubTarget.current ?? turnTarget.current
-              if (pending !== null) {
-                if (leading === pending) {
-                  scrubTarget.current = null
-                  turnTarget.current = null
+        <ScrollViewReader>
+          {proxy => {
+            scrollProxy.current = proxy
+            return (
+              <ScrollView
+                key={`${currentEpId}-${settings.mode}-${settings.direction}`}
+                axes={axes}
+                scrollDisabled={zoomed}
+                scrollIndicator="never"
+                scrollTargetBehavior={
+                  paginated
+                    ? vertical
+                      ? "viewAlignedLimitAlwaysByOne" // 縱向畫廊：單頁吸附
+                      : "paging"
+                    : undefined                       // 連續模式：平滑流動
                 }
-                return
-              }
-              setLeadingPage(leading)
-            },
-          }}
-          environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
-          // 座標系必須宣告為 global，避免 local 包含累計滾動位移導致點擊分區漂移
-          // 畫廊模式的頁面與章末卡自己接點擊；這裡只管連續模式與載入／錯誤畫面。
-          onTapGesture={
-            !paginated || status !== null
-              ? { count: 1, coordinateSpace: "global", perform: handleCanvasTap }
-              : undefined
-          }
-          onScrollGeometryChange={{
-            of: "geometry",
-            onChanged: (_, geo) => {
-              // 記下實際位移：畫廊模式的頁碼與翻頁基準都是從這裡換算的
-              scrollOffset.current = { x: geo.contentOffset.x, y: geo.contentOffset.y }
-              syncPageFromGeometry()
-              if (!next) return
-              // 防誤觸守衛：僅在接近章末（最後 1~2 頁或確實滾至末端）時允許觸發 overscroll
-              if (pageCount > 0 && leadingPage !== null && leadingPage < lastPage - 1) {
-                if (pullProgress > 0) {
-                  setPullProgress(0)
-                  setOverscrollPx(0)
-                  overscrollRef.current = 0
+                onScrollTargetVisibilityChange={{
+                  idType: "string",
+                  threshold: 0.0,
+                  onChanged: ids => {
+                    if (!restored.current) return
+                    const indexes = (ids as string[])
+                      .map(value => Number(value))
+                      .filter(value => Number.isFinite(value))
+                    if (indexes.length === 0) return
+                    const leading = Math.min(...indexes)
+                    // 拖曳跳頁／動畫翻頁途中的過期回報：真的走到目標頁才解除。
+                    const pending = scrubTarget.current ?? turnTarget.current
+                    if (pending !== null) {
+                      if (leading === pending) {
+                        scrubTarget.current = null
+                        turnTarget.current = null
+                      }
+                      return
+                    }
+                    setLeadingPage(leading)
+                  },
+                }}
+                environments={rtl ? { layoutDirection: "rightToLeft" } : undefined}
+                // 座標系必須宣告為 global，避免 local 包含累計滾動位移導致點擊分區漂移
+                // 畫廊模式的頁面與章末卡自己接點擊；這裡只管連續模式與載入／錯誤畫面。
+                onTapGesture={
+                  !paginated || status !== null
+                    ? { count: 1, coordinateSpace: "global", perform: handleCanvasTap }
+                    : undefined
                 }
-                return
-              }
+                onScrollGeometryChange={{
+                  of: "geometry",
+                  onChanged: (_, geo) => {
+                    // 記下實際位移：畫廊模式的頁碼與翻頁基準都是從這裡換算的
+                    scrollOffset.current = { x: geo.contentOffset.x, y: geo.contentOffset.y }
+                    syncPageFromGeometry()
+                    if (!next) return
+                    // 防誤觸守衛：僅在接近章末（最後 1~2 頁或確實滾至末端）時允許觸發 overscroll
+                    if (pageCount > 0 && leadingPageRef.current !== null && leadingPageRef.current < lastPage - 1) {
+                      if (pullProgress > 0) {
+                        setPullProgress(0)
+                        setOverscrollPx(0)
+                        overscrollRef.current = 0
+                      }
+                      return
+                    }
 
-              let overscroll = 0
-              if (vertical) {
-                const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)
-                overscroll = geo.contentOffset.y - maxScrollY
-              } else if (rtl) {
-                // rightToLeft 下 contentOffset.x 的正負號未實測；取絕對值再扣捲動上界，兩種符號都只在末端拉過頭才為正。
-                const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
-                overscroll = Math.abs(geo.contentOffset.x) - maxScrollX
-              } else {
-                const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
-                overscroll = geo.contentOffset.x - maxScrollX
-              }
-              overscrollRef.current = overscroll
+                    let overscroll = 0
+                    if (vertical) {
+                      const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)
+                      overscroll = geo.contentOffset.y - maxScrollY
+                    } else if (rtl) {
+                      // rightToLeft 下 contentOffset.x 的正負號未實測；取絕對值再扣捲動上界，兩種符號都只在末端拉過頭才為正。
+                      const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                      overscroll = Math.abs(geo.contentOffset.x) - maxScrollX
+                    } else {
+                      const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                      overscroll = geo.contentOffset.x - maxScrollX
+                    }
+                    overscrollRef.current = overscroll
 
-              if (overscroll > 2) {
-                const p = Math.min(1, Math.max(0, (overscroll - 2) / PULL_THRESHOLD))
-                setPullProgress(p)
-                setOverscrollPx(overscroll)
-                if (p >= 1) {
-                  if (!hasTriggeredFullHapticRef.current) {
-                    hasTriggeredFullHapticRef.current = true
-                    HapticFeedback.mediumImpact()
+                    if (overscroll > 2) {
+                      const p = Math.min(1, Math.max(0, (overscroll - 2) / PULL_THRESHOLD))
+                      setPullProgress(p)
+                      setOverscrollPx(overscroll)
+                      if (p >= 1) {
+                        if (!hasTriggeredFullHapticRef.current) {
+                          hasTriggeredFullHapticRef.current = true
+                          HapticFeedback.mediumImpact()
+                        }
+                      } else {
+                        hasTriggeredFullHapticRef.current = false
+                      }
+                    } else {
+                      hasTriggeredFullHapticRef.current = false
+                      setPullProgress(0)
+                      setOverscrollPx(0)
+                    }
+                  },
+                }}
+                onScrollPhaseChange={(oldPhase, newPhase) => {
+                  if (newPhase === "interacting" || newPhase === "tracking") {
+                    isInteractingRef.current = true
                   }
-                } else {
-                  hasTriggeredFullHapticRef.current = false
-                }
-              } else {
-                hasTriggeredFullHapticRef.current = false
-                setPullProgress(0)
-                setOverscrollPx(0)
-              }
-            },
+                  // 人自己出手＝我們剛下的目標已經不是真相，放掉讓翻頁基準回到畫面上的實際位置
+                  if (newPhase === "interacting") {
+                    turnTarget.current = null
+                    scrubTarget.current = null
+                  }
+                  if (
+                    isInteractingRef.current &&
+                    (newPhase === "decelerating" || newPhase === "idle")
+                  ) {
+                    isInteractingRef.current = false
+                    hasTriggeredFullHapticRef.current = false
+                    if (overscrollRef.current >= PULL_THRESHOLD && next) {
+                      selectChapter(next.id)
+                    }
+                    setPullProgress(0)
+                    setOverscrollPx(0)
+                    overscrollRef.current = 0
+                  }
+                }}
+              >
+                {status !== null ? (
+                  <ReaderStatusOverlay status={status} size={pageSize} onRetry={() => setReloadKey(key => key + 1)} />
+                ) : vertical ? (
+                  <LazyVStack
+                    spacing={0}
+                    scrollTargetLayout={true}
+                    frame={{ maxWidth: "infinity" }}
+                  >
+                    {pages}
+                    {endCard}
+                  </LazyVStack>
+                ) : (
+                  <LazyHStack
+                    spacing={0}
+                    scrollTargetLayout={true}
+                    frame={{ maxHeight: "infinity" }}
+                  >
+                    {pages}
+                    {endCard}
+                  </LazyHStack>
+                )}
+              </ScrollView>
+            )
           }}
-          onScrollPhaseChange={(oldPhase, newPhase) => {
-            if (newPhase === "interacting" || newPhase === "tracking") {
-              isInteractingRef.current = true
-            }
-            // 人自己出手＝我們剛下的目標已經不是真相，放掉讓翻頁基準回到畫面上的實際位置
-            if (newPhase === "interacting") {
-              turnTarget.current = null
-              scrubTarget.current = null
-            }
-            if (
-              isInteractingRef.current &&
-              (newPhase === "decelerating" || newPhase === "idle")
-            ) {
-              isInteractingRef.current = false
-              hasTriggeredFullHapticRef.current = false
-              if (overscrollRef.current >= PULL_THRESHOLD && next) {
-                selectChapter(next.id)
-              }
-              setPullProgress(0)
-              setOverscrollPx(0)
-              overscrollRef.current = 0
-            }
-          }}
-        >
-          {status !== null ? (
-            <ReaderStatusOverlay status={status} size={pageSize} onRetry={() => setReloadKey(key => key + 1)} />
-          ) : vertical ? (
-            <LazyVStack
-              spacing={0}
-              scrollTargetLayout={true}
-              frame={{ maxWidth: "infinity" }}
-            >
-              {pages}
-              {endCard}
-            </LazyVStack>
-          ) : (
-            <LazyHStack
-              spacing={0}
-              scrollTargetLayout={true}
-              frame={{ maxHeight: "infinity" }}
-            >
-              {pages}
-              {endCard}
-            </LazyHStack>
-          )}
-        </ScrollView>
+        </ScrollViewReader>
 
         {/* 1.1 邊緣拉籤（Pull Tab：位於 overScroll 空隙中，支援畫廊與連續模式） */}
         {pullProgress > 0 && next ? (
@@ -1014,11 +1086,21 @@ function ReaderContent({
           )
         ) : null}
 
-        {/* 1.2 HUD 收起時的頁碼與時間 */}
-        <ReaderCornerInfo
-          visible={!hudVisible.value && status === null}
-          currentPage={currentPage}
+        {/* 1.2 HUD 收起時的頁碼與時間；順便跑頁碼副作用（只有這一小塊隨翻頁重繪） */}
+        <ReaderPageTracker
+          leadingPage={leadingPage}
+          session={session}
           pageCount={pageCount}
+          ready={sessionEpId.current === currentEpId}
+          progress={{
+            sourceKey,
+            comicId,
+            title: comicTitle,
+            cover: comicCover,
+            epId: currentEpId,
+            epTitle: title,
+          }}
+          cornerVisible={!hudVisible.value && status === null}
           safeAreaInsets={safeAreaInsets}
         />
 
@@ -1044,11 +1126,7 @@ function ReaderContent({
           totalChapters={currentGroupChapters.length}
           onSelectChapter={selectChapter}
           pageCount={pageCount}
-          currentPage={currentPage}
           leadingPage={leadingPage}
-          scrubbing={scrubbing}
-          scrubValue={scrubValue}
-          onScrubStart={() => setScrubbing(true)}
           onScrubCommit={commitScrub}
         />
 

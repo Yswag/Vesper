@@ -190,6 +190,11 @@ export interface ChapterSession {
    */
   aspectOf(index: number): number | null
   /**
+   * 已經備好的頁面渲染（路徑 + 比例）；還沒載過就是 null。
+   * 重掛的頁拿它當初始值，第一帧就是圖，不必先出佔位再換。
+   */
+  renderOf(index: number): PageRender | null
+  /**
    * 取得指定索引的圖片原始位元組（離線 ➔ 記憶體 LRU ➔ 網路）。
    */
   pageImage(index: number): Promise<Uint8Array>
@@ -793,6 +798,13 @@ export function createComicLibrary(): ComicLibrary {
       const renderDir = openRenderDir(ref.epId)
       // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
       const aspects = createPageAspects()
+      // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
+      const renders = new Map<number, PageRender>()
+      /** 記住這頁的渲染結果再回傳（所有成功路徑都要經過）。 */
+      const memoRender = (index: number, render: PageRender | null): PageRender | null => {
+        if (render) renders.set(index, render)
+        return render
+      }
       let disposed = false
 
       const loadPage = async (
@@ -800,6 +812,11 @@ export function createComicLibrary(): ComicLibrary {
         onSharpened?: (render: PageRender) => void,
         isCancelled?: () => boolean
       ): Promise<PageRender | null> => {
+        // 已經備好這頁、又沒有超分要跑（預設）：直接回。
+        // 重掛的頁走這裡，不特別去問源一次（`resolveImageRequest` 是源程式碼，不便宜）。
+        const ready = renders.get(index)
+        if (ready && !hardwareSharpenEnabled) return ready
+
         const bytes = await loadPageBytes(index)
         if (isCancelled && isCancelled()) return null
 
@@ -815,7 +832,7 @@ export function createComicLibrary(): ComicLibrary {
         // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
         if (hardwareSharpenEnabled) {
           const cached = findSharpenedPage(renderDir, name, aspect)
-          if (cached) return cached
+          if (cached) return memoRender(index, cached)
         }
 
         if (disposed) return null
@@ -842,12 +859,16 @@ export function createComicLibrary(): ComicLibrary {
                 new Uint8Array(result.data.toArrayBuffer()),
                 aspect
               )
-              if (sharpened) onSharpened(sharpened)
+              if (sharpened) {
+                // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
+                memoRender(index, sharpened)
+                onSharpened(sharpened)
+              }
             })
           }
         }
 
-        return render
+        return memoRender(index, render)
       }
 
       return {
@@ -860,6 +881,7 @@ export function createComicLibrary(): ComicLibrary {
         local: false,
         imageKey: index => imageKeyOf(index),
         aspectOf: index => aspects.get(index),
+        renderOf: index => renders.get(index) ?? null,
         pageImage: loadPageBytes,
         loadPage,
         setHardwareSharpen: enabled => {

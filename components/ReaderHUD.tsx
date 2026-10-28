@@ -20,6 +20,7 @@ type Observable<T> = ReturnType<typeof useObservable<T>>
 
 import { t } from "../i18n"
 import { glass } from "../design/glass"
+import { usePageSignal, type PageSignal } from "./pageSignal"
 import { capsule, fill, radius, rect, toneText } from "../design/tokens"
 import type { ReaderSettings } from "../library/readerSettings"
 
@@ -113,14 +114,11 @@ export interface ReaderHUDProps {
   chapterIndex: number
   totalChapters: number
   onSelectChapter: (id: string) => void
-  // 頁碼滑桿
+  // 頁碼滑桿：只有 ReaderScrubber 訂閱頁碼，HUD 與閱讀器不因翻頁重繪
   pageCount: number
-  currentPage: number
-  leadingPage: number | null
-  scrubbing: boolean
-  scrubValue: Observable<number>
-  onScrubStart: () => void
-  onScrubCommit: () => void
+  leadingPage: PageSignal
+  /** 放開拖曳列：目標頁（0 起算）。 */
+  onScrubCommit: (page: number) => void
 }
 
 /**
@@ -147,29 +145,10 @@ export function ReaderHUD({
   totalChapters,
   onSelectChapter,
   pageCount,
-  currentPage,
   leadingPage,
-  scrubbing,
-  scrubValue,
-  onScrubStart,
   onScrubCommit,
 }: ReaderHUDProps) {
-  const lastPage = Math.max(pageCount - 1, 0)
-  const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
   const tapZonesUnavailable = settings.direction === "ttb" && settings.mode !== "gallery"
-
-  // 拖動時每換一頁輕震一下；按下的第一個值只當起點。
-  const scrubPage = clampPage(scrubValue.value)
-  const lastScrubPageRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (!scrubbing) {
-      lastScrubPageRef.current = null
-      return
-    }
-    const last = lastScrubPageRef.current
-    if (last !== null && last !== scrubPage) HapticFeedback.selection()
-    lastScrubPageRef.current = scrubPage
-  }, [scrubbing, scrubPage])
 
   return (
     <ZStack
@@ -419,54 +398,13 @@ export function ReaderHUD({
             </HStack>
 
             {/* 拖曳翻頁 Slider（含實時頁碼反饋） */}
-            <VStack spacing={6} frame={{ maxWidth: "infinity" }}>
-              {pageCount > 1 ? (
-                <Slider
-                  min={0}
-                  max={lastPage}
-                  step={1}
-                  value={scrubValue}
-                  accessibilityLabel={t("reader.dragToTurn")}
-                  onEditingChanged={editing => {
-                    if (editing) {
-                      onScrubStart()
-                      scrubValue.setValue(clampPage(leadingPage ?? 0))
-                    } else {
-                      onScrubCommit()
-                    }
-                  }}
-                />
-              ) : null}
-
-              {/* 頁碼維持置中（以面板中心為準，跟頂部 HUD 的標題同一個套路），收藏貼齊右緣。 */}
-              <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
-                {pageCount > 1 ? (
-                  <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
-                    {t("reader.pageProgress", {
-                      page: scrubbing ? scrubPage + 1 : currentPage,
-                      total: pageCount,
-                    })}
-                  </Text>
-                ) : null}
-
-                <HStack frame={{ maxWidth: "infinity", alignment: "trailing" }}>
-                  <Button
-                    action={onToggleFavorite}
-                    buttonStyle="plain"
-                    accessibilityLabel={favorite ? t("detail.unfavorite") : t("detail.favorite")}
-                  >
-                    <Image
-                      systemName={favorite ? "heart.fill" : "heart"}
-                      font="subheadline"
-                      fontWeight="medium"
-                      // 高度取 32 配合緊湊進度膠囊面板高度
-                      frame={{ width: 44, height: 32 }}
-                      foregroundStyle={favorite ? toneText.love : "label"}
-                    />
-                  </Button>
-                </HStack>
-              </ZStack>
-            </VStack>
+            <ReaderScrubber
+              pageCount={pageCount}
+              leadingPage={leadingPage}
+              onScrubCommit={onScrubCommit}
+              favorite={favorite}
+              onToggleFavorite={onToggleFavorite}
+            />
           </VStack>
 
           {/* HUD 底部留白：面板踩在 Home Indicator 上 */}
@@ -474,6 +412,100 @@ export function ReaderHUD({
         </VStack>
       </VStack>
     </ZStack>
+  )
+}
+
+/**
+ * 拖曳列＋頁碼＋收藏：頁碼與拖曳值都由這一塊自己持有，翻頁時只有它重繪。
+ */
+function ReaderScrubber({
+  pageCount,
+  leadingPage,
+  onScrubCommit,
+  favorite,
+  onToggleFavorite,
+}: {
+  pageCount: number
+  leadingPage: PageSignal
+  onScrubCommit: (page: number) => void
+  favorite: boolean
+  onToggleFavorite: () => void
+}) {
+  const lead = usePageSignal(leadingPage)
+  const [scrubbing, setScrubbing] = useState(false)
+  const scrubValue = useObservable(0)
+  const lastPage = Math.max(pageCount - 1, 0)
+  const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
+  const currentPage = lead !== null ? Math.min(Math.max(lead + 1, 1), Math.max(pageCount, 1)) : 1
+  const scrubPage = clampPage(scrubValue.value)
+
+  // 沒在拖的時候滑桿跟著實際位置走。
+  useEffect(() => {
+    if (!scrubbing) scrubValue.setValue(clampPage(lead ?? 0))
+  }, [lead, scrubbing, pageCount])
+
+  // 拖動時每換一頁輕震一下；按下的第一個值只當起點。
+  const lastScrubPageRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!scrubbing) {
+      lastScrubPageRef.current = null
+      return
+    }
+    const last = lastScrubPageRef.current
+    if (last !== null && last !== scrubPage) HapticFeedback.selection()
+    lastScrubPageRef.current = scrubPage
+  }, [scrubbing, scrubPage])
+
+  return (
+    <VStack spacing={6} frame={{ maxWidth: "infinity" }}>
+      {pageCount > 1 ? (
+        <Slider
+          min={0}
+          max={lastPage}
+          step={1}
+          value={scrubValue}
+          accessibilityLabel={t("reader.dragToTurn")}
+          onEditingChanged={editing => {
+            if (editing) {
+              setScrubbing(true)
+              scrubValue.setValue(clampPage(lead ?? 0))
+            } else {
+              setScrubbing(false)
+              onScrubCommit(clampPage(scrubValue.value))
+            }
+          }}
+        />
+      ) : null}
+
+      {/* 頁碼維持置中（以面板中心為準，跟頂部 HUD 的標題同一個套路），收藏貼齊右緣。 */}
+      <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
+        {pageCount > 1 ? (
+          <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
+            {t("reader.pageProgress", {
+              page: scrubbing ? scrubPage + 1 : currentPage,
+              total: pageCount,
+            })}
+          </Text>
+        ) : null}
+
+        <HStack frame={{ maxWidth: "infinity", alignment: "trailing" }}>
+          <Button
+            action={onToggleFavorite}
+            buttonStyle="plain"
+            accessibilityLabel={favorite ? t("detail.unfavorite") : t("detail.favorite")}
+          >
+            <Image
+              systemName={favorite ? "heart.fill" : "heart"}
+              font="subheadline"
+              fontWeight="medium"
+              // 高度取 32 配合緊湊進度膠囊面板高度
+              frame={{ width: 44, height: 32 }}
+              foregroundStyle={favorite ? toneText.love : "label"}
+            />
+          </Button>
+        </HStack>
+      </ZStack>
+    </VStack>
   )
 }
 

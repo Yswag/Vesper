@@ -265,8 +265,12 @@ export function listProgress(): Progress[] {
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** 儲存閱讀進度。翻到最後一頁時順手把這一話結算成已讀。 */
-export function setProgress(entry: Omit<Progress, "updatedAt">) {
+/**
+ * 儲存閱讀進度。翻到最後一頁時順手把這一話結算成已讀。
+ * `notify: false`＝只落盤不通知：閱讀中逐頁寫進度用，離開時再 `notifyLibrary()` 一次，
+ * 否則每跨一頁背景的書架／首頁／詳情頁都會跟著重繪。
+ */
+export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notify?: boolean } = {}) {
   const library = load()
   const key = keyOf(entry.sourceKey, entry.comicId)
   const previous = library.progress[key]
@@ -282,6 +286,11 @@ export function setProgress(entry: Omit<Progress, "updatedAt">) {
     finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
   )
   schedule()
+  if (options.notify !== false) bus.emitDebounced()
+}
+
+/** 補送一次變更通知（搭配 `setProgress(…, { notify: false })`）。 */
+export function notifyLibrary(): void {
   bus.emitDebounced()
 }
 
