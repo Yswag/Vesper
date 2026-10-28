@@ -1,8 +1,8 @@
-// 書架收藏與閱讀進度持久化模組。
-// 儲存於 library.json（去抖 500ms 寫入，退出前 flush，無檔案權限時退守 KV）。
+// 書架收藏與閱讀進度（存於 library.json）：落盤管線（去抖、KV 退守、通知）與各操作的語意都在這支，
+// 寫入一律走 `mutate()`，呼叫端只講「這次要不要通知」。
 
 import { createEmitter } from "../engine/emitter"
-import { appDataRoot, hasFileAccess, join, readText, writeText } from "../engine/fs"
+import { appDataRoot, join, readText, writeText } from "../engine/fs"
 import { kv } from "../engine/storage"
 import type { ComicStatus } from "../sources/operations"
 
@@ -58,34 +58,12 @@ interface Library {
 }
 
 const VERSION = 1
-const FLUSH_DELAY = 500
-/** 沒有檔案授權時的備援位置（不讓書架默默不落盤）。 */
-const KV_KEY = "venera:library"
-
-let cache: Library | null = null
-let timer: ReturnType<typeof setTimeout> | null = null
-
-/**
- * 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。
- */
-const bus = createEmitter({ debounceMs: 250 })
-
-export const subscribeLibrary = bus.subscribe
-
-/** 即時通知變更（用於收藏等需要即時反饋的操作）。 */
-function notifyNow() {
-  bus.cancelPending()
-  bus.emit()
-}
-
-function libraryPath(): string {
-  return join(appDataRoot(), "library.json")
-}
 
 /**
  * 讀進來的東西一律過這裡：缺欄位補預設，壞掉的追更紀錄整筆丟掉（壞一筆不該擋住整份書架）。
  */
-function normalize(parsed: Partial<Library>): Library {
+function normalize(raw: unknown): Library {
+  const parsed = (raw && typeof raw === "object" ? raw : {}) as Partial<Library>
   return {
     version: parsed.version ?? VERSION,
     favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
@@ -94,25 +72,30 @@ function normalize(parsed: Partial<Library>): Library {
   }
 }
 
+/** 沒有檔案授權時的備援位置（不讓書架默默不落盤）。 */
+const KV_KEY = "venera:library"
+const FLUSH_DELAY = 500
+
+let cache: Library | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
+
+/** 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。 */
+const bus = createEmitter({ debounceMs: 250 })
+
+export const subscribeLibrary = bus.subscribe
+
+function libraryPath(): string {
+  return join(appDataRoot(), "library.json")
+}
+
 function load(): Library {
   if (cache) return cache
 
-  // 優先嘗試直接讀取檔案（如果系統已經有權限，不必等 ensureFileAccess 非同步返回）
-  let raw: string | null = null
-  try {
-    raw = readText(libraryPath())
-  } catch {
-    raw = null
-  }
-
-  // 檔案讀不到時才嘗試從 KV 讀取
-  if (!raw) {
-    raw = stringifyKv()
-  }
-
+  // 優先直接讀檔（系統已有權限時不必等 ensureFileAccess 非同步返回）；讀不到才退 KV。
+  const raw = readText(libraryPath()) ?? stringifyKv()
   if (raw) {
     try {
-      cache = normalize(JSON.parse(raw) as Partial<Library>)
+      cache = normalize(JSON.parse(raw))
       return cache
     } catch {
       // 壞檔就從空的開始，不擋啟動
@@ -127,7 +110,7 @@ export function reloadLibraryFromDisk(): void {
   const raw = readText(libraryPath())
   if (!raw) return
   try {
-    cache = normalize(JSON.parse(raw) as Partial<Library>)
+    cache = normalize(JSON.parse(raw))
     bus.emitDebounced()
   } catch {
     // 忽略格式錯誤
@@ -144,23 +127,38 @@ function schedule() {
 }
 
 /** 立即落盤（退出前呼叫）。 */
-export function flushLibrary() {
+export function flushLibrary(): void {
   if (!cache) return
   if (timer !== null) {
     clearTimeout(timer)
     timer = null
   }
   const payload = JSON.stringify(cache, null, 2)
-  // 如果能寫檔案就寫檔案（包含直接寫成功），否則才存 KV
-  const wrote = writeText(libraryPath(), payload)
-  if (!wrote) {
-    kv.set(KV_KEY, payload)
-  }
+  // 能寫檔案就寫檔案，寫不進去才存 KV。
+  if (!writeText(libraryPath(), payload)) kv.set(KV_KEY, payload)
 }
 
 function stringifyKv(): string | null {
   const raw = kv.get(KV_KEY)
   return typeof raw === "string" ? raw : null
+}
+
+/** 變更通知的時機：now＝立刻（手動操作）、debounced＝合併（高頻進度）、none＝只落盤。 */
+type NotifyMode = "now" | "debounced" | "none"
+
+/**
+ * 讀-改-寫：`fn` 回 `false` 表示沒有變更（不落盤、也不通知）。
+ * 所有寫入都走這裡，呼叫端只講「這次要不要通知」。
+ */
+function mutate(fn: (library: Library) => boolean | void, notify: NotifyMode = "debounced"): void {
+  if (fn(load()) === false) return
+  schedule()
+  if (notify === "now") {
+    bus.cancelPending()
+    bus.emit()
+  } else if (notify === "debounced") {
+    bus.emitDebounced()
+  }
 }
 
 function keyOf(sourceKey: string, comicId: string): string {
@@ -224,29 +222,27 @@ export function isFavorite(sourceKey: string, comicId: string): boolean {
 }
 
 export function toggleFavorite(entry: Omit<Favorite, "addedAt">): boolean {
-  const library = load()
-  const index = library.favorites.findIndex(
-    item => item.sourceKey === entry.sourceKey && item.comicId === entry.comicId
-  )
-  if (index >= 0) {
-    library.favorites.splice(index, 1)
-    schedule()
-    notifyNow()
-    return false
-  }
-  library.favorites.push({ ...entry, addedAt: Date.now() })
-  schedule()
-  notifyNow()
-  return true
+  let added = false
+  mutate(library => {
+    const index = library.favorites.findIndex(
+      item => item.sourceKey === entry.sourceKey && item.comicId === entry.comicId
+    )
+    if (index >= 0) {
+      library.favorites.splice(index, 1)
+      return
+    }
+    library.favorites.push({ ...entry, addedAt: Date.now() })
+    added = true
+  }, "now")
+  return added
 }
 
 export function removeFavorite(sourceKey: string, comicId: string) {
-  const library = load()
-  library.favorites = library.favorites.filter(
-    item => !(item.sourceKey === sourceKey && item.comicId === comicId)
-  )
-  schedule()
-  notifyNow()
+  mutate(library => {
+    library.favorites = library.favorites.filter(
+      item => !(item.sourceKey === sourceKey && item.comicId === comicId)
+    )
+  }, "now")
 }
 
 // ------------------------------------------------------------------ 進度
@@ -271,22 +267,21 @@ export function listProgress(): Progress[] {
  * 否則每跨一頁背景的書架／首頁／詳情頁都會跟著重繪。
  */
 export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notify?: boolean } = {}) {
-  const library = load()
-  const key = keyOf(entry.sourceKey, entry.comicId)
-  const previous = library.progress[key]
-  const finished =
-    entry.page !== undefined &&
-    entry.pageCount !== undefined &&
-    entry.pageCount > 0 &&
-    entry.page === entry.pageCount - 1
-  // 換話／開啟章節時呼叫端不一定帶已讀清單：一律沿用上一筆，別把已讀洗掉。
-  const readEpIds = cleanIds(entry.readEpIds ?? previous?.readEpIds)
-  library.progress[key] = withReadIds(
-    { ...entry, updatedAt: Date.now() },
-    finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
-  )
-  schedule()
-  if (options.notify !== false) bus.emitDebounced()
+  mutate(library => {
+    const key = keyOf(entry.sourceKey, entry.comicId)
+    const previous = library.progress[key]
+    const finished =
+      entry.page !== undefined &&
+      entry.pageCount !== undefined &&
+      entry.pageCount > 0 &&
+      entry.page === entry.pageCount - 1
+    // 換話／開啟章節時呼叫端不一定帶已讀清單：一律沿用上一筆，別把已讀洗掉。
+    const readEpIds = cleanIds(entry.readEpIds ?? previous?.readEpIds)
+    library.progress[key] = withReadIds(
+      { ...entry, updatedAt: Date.now() },
+      finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
+    )
+  }, options.notify === false ? "none" : "debounced")
 }
 
 /** 補送一次變更通知（搭配 `setProgress(…, { notify: false })`）。 */
@@ -301,23 +296,22 @@ export function notifyLibrary(): void {
 export function markChapterRead(sourceKey: string, comicId: string, epIds: string[], isRead: boolean): void {
   const ids = cleanIds(epIds)
   if (!ids) return
-  const library = load()
-  const key = keyOf(sourceKey, comicId)
-  const existing = library.progress[key]
-  const current = cleanIds(existing?.readEpIds) ?? []
-  const next = isRead
-    ? (cleanIds([...current, ...ids]) ?? [])
-    : current.filter(id => !ids.includes(id))
-  if (next.length === current.length) return
-
-  if (next.length === 0 && existing !== undefined && !existing.epId) {
-    delete library.progress[key]
-  } else {
-    library.progress[key] = withReadIds(existing ?? recordFor(library, sourceKey, comicId), next)
-  }
   // 手動標記要立刻反映在畫面上，不等 250ms 的滑動進度去抖。
-  schedule()
-  notifyNow()
+  mutate(library => {
+    const key = keyOf(sourceKey, comicId)
+    const existing = library.progress[key]
+    const current = cleanIds(existing?.readEpIds) ?? []
+    const next = isRead
+      ? (cleanIds([...current, ...ids]) ?? [])
+      : current.filter(id => !ids.includes(id))
+    if (next.length === current.length) return false
+
+    if (next.length === 0 && existing !== undefined && !existing.epId) {
+      delete library.progress[key]
+    } else {
+      library.progress[key] = withReadIds(existing ?? recordFor(library, sourceKey, comicId), next)
+    }
+  }, "now")
 }
 
 /** 一鍵全部已讀（原有已讀清單保留）。 */
@@ -339,26 +333,25 @@ export function isChapterRead(sourceKey: string, comicId: string, epId: string):
  * 所以只把閱讀位置（`epId`／頁碼）抹掉，已讀清單原樣留著。
  */
 export function clearProgress(sourceKey: string, comicId: string) {
-  const library = load()
-  const key = keyOf(sourceKey, comicId)
-  const entry = library.progress[key]
-  if (!entry) return
-  const readEpIds = cleanIds(entry.readEpIds)
-  if (readEpIds) {
-    library.progress[key] = {
-      sourceKey,
-      comicId,
-      title: "",
-      epId: "",
-      epTitle: "",
-      readEpIds,
-      updatedAt: Date.now(),
+  mutate(library => {
+    const key = keyOf(sourceKey, comicId)
+    const entry = library.progress[key]
+    if (!entry) return false
+    const readEpIds = cleanIds(entry.readEpIds)
+    if (readEpIds) {
+      library.progress[key] = {
+        sourceKey,
+        comicId,
+        title: "",
+        epId: "",
+        epTitle: "",
+        readEpIds,
+        updatedAt: Date.now(),
+      }
+    } else {
+      delete library.progress[key]
     }
-  } else {
-    delete library.progress[key]
-  }
-  schedule()
-  bus.emitDebounced()
+  })
 }
 
 // ------------------------------------------------------------------ 追更快取
@@ -369,10 +362,9 @@ export function getComicUpdate(sourceKey: string, comicId: string): ComicUpdateR
 
 /** 寫入一部作品的最新一話（同作品覆寫）。 */
 export function setComicUpdate(record: ComicUpdateRecord): void {
-  const library = load()
-  library.updates[keyOf(record.sourceKey, record.comicId)] = record
-  schedule()
-  bus.emitDebounced()
+  mutate(library => {
+    library.updates[keyOf(record.sourceKey, record.comicId)] = record
+  })
 }
 
 /** 整份追更快取（拷貝；呼叫端排序／筛選不會改到 cache）。 */
@@ -381,10 +373,9 @@ export function allComicUpdates(): Record<string, ComicUpdateRecord> {
 }
 
 export function removeComicUpdate(sourceKey: string, comicId: string): void {
-  const library = load()
-  const key = keyOf(sourceKey, comicId)
-  if (library.updates[key] === undefined) return
-  delete library.updates[key]
-  schedule()
-  bus.emitDebounced()
+  mutate(library => {
+    const key = keyOf(sourceKey, comicId)
+    if (library.updates[key] === undefined) return false
+    delete library.updates[key]
+  })
 }
