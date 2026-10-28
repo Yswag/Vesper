@@ -1,6 +1,7 @@
-// 閱讀紀錄：從 Mini Hub 的熱力圖推進來。依日期分組（新的在上），每天列出讀過的作品與話名，點進詳情。
+// 閱讀紀錄：從 Mini Hub 的熱力圖推進來。依日期分組（新的在上），標題右側是當天讀完的話數；
+// 一部作品一張卡，點進詳情。
 
-import { LazyVStack, NavigationLink, ScrollView, VStack, ZStack } from "scripting"
+import { HStack, LazyVStack, NavigationLink, ScrollView, Spacer, Text, VStack, ZStack } from "scripting"
 
 import { comicLibrary } from "../../app/services"
 import { PageBackground } from "../../app/theme"
@@ -18,6 +19,8 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export interface LogDay {
   day: string
+  /** 當天讀完的話數。 */
+  chapters: number
   comics: DayComic[]
 }
 
@@ -26,7 +29,13 @@ function logDays(): LogDay[] {
   return Object.entries(readingActivity())
     .filter(([, activity]) => (activity.comics?.length ?? 0) > 0)
     .sort(([a], [b]) => (a < b ? 1 : -1))
-    .map(([day, activity]) => ({ day, comics: [...(activity.comics ?? [])].reverse() }))
+    .map(([day, activity]) => ({ day, chapters: activity.chapters, comics: [...(activity.comics ?? [])].reverse() }))
+}
+
+/** 只碰一話就顯示話名；好幾話顯示話數與最後讀的那話（話名格式各源不一，排不出範圍）。 */
+function episodeSummary(epTitles: string[]): string | null {
+  if (epTitles.length <= 1) return epTitles[0] || null
+  return t("home.miniHub.episodes", { n: epTitles.length, last: epTitles[epTitles.length - 1] })
 }
 
 /** 今天／昨天走 `Intl.RelativeTimeFormat`，其他日子顯示月日與星期。 */
@@ -75,9 +84,17 @@ export function ReadingLogView({ days }: { days: LogDay[] }) {
           />
         ) : (
           <LazyVStack spacing={22} padding={{ horizontal: 16, vertical: 12 }}>
-            {days.map(({ day, comics }) => (
+            {days.map(({ day, chapters, comics }) => (
               <VStack key={day} spacing={cardGap} alignment="leading" frame={{ maxWidth: "infinity" }}>
-                <GroupHeader title={formatDay(day)} />
+                <HStack alignment="firstTextBaseline" padding={{ trailing: 4 }} frame={{ maxWidth: "infinity" }}>
+                  <GroupHeader title={formatDay(day)} />
+                  <Spacer />
+                  {chapters > 0 ? (
+                    <Text font="footnote" foregroundStyle="secondaryLabel">
+                      {t("home.miniHub.dayChapters", { n: chapters })}
+                    </Text>
+                  ) : null}
+                </HStack>
                 {comics.map(comic => (
                   <NavigationLink
                     key={`${comic.sourceKey}:${comic.comicId}`}
@@ -89,7 +106,7 @@ export function ReadingLogView({ days }: { days: LogDay[] }) {
                         sourceKey={comic.sourceKey}
                         cover={comic.cover}
                         title={comic.title}
-                        subtitle={comic.epTitles.join(" · ") || null}
+                        subtitle={episodeSummary(comic.epTitles)}
                       />
                     </Card>
                   </NavigationLink>

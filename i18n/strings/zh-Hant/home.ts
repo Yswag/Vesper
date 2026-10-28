@@ -26,6 +26,10 @@ export default {
     allUpToDate: "所有收藏已是最新",
     activityTitle: "閱讀紀錄",
     streak: "連續 {days} 天",
+    /** 閱讀紀錄：當天讀完的話數。 */
+    dayChapters: { one: "{n} 話", other: "{n} 話" },
+    /** 閱讀紀錄：一部當天碰過好幾話時的副標，last 是最後讀的那話。 */
+    episodes: { one: "{n} 話 · {last}", other: "{n} 話 · {last}" },
   },
 
   /** Bangumi 條目詳情頁。 */

@@ -20,6 +20,8 @@ export default {
     allUpToDate: "All favorites are up to date",
     activityTitle: "Reading activity",
     streak: "{days}-day streak",
+    dayChapters: { one: "{n} chapter", other: "{n} chapters" },
+    episodes: { one: "{n} chapter · {last}", other: "{n} chapters · {last}" },
   },
 
   bangumi: {

@@ -20,6 +20,8 @@ export default {
     allUpToDate: "所有收藏已是最新",
     activityTitle: "阅读记录",
     streak: "连续 {days} 天",
+    dayChapters: { one: "{n} 话", other: "{n} 话" },
+    episodes: { one: "{n} 话 · {last}", other: "{n} 话 · {last}" },
   },
 
   bangumi: {
