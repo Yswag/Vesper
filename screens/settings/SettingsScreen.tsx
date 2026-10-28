@@ -28,6 +28,7 @@ import { listDownloads, subscribeDownloads } from "../../sources/downloads"
 import { DownloadScreen } from "./DownloadScreen"
 import { ImageCacheSettingsScreen } from "./ImageCacheSettingsScreen"
 import { LogScreen } from "./LogScreen"
+import { MiniHubSettingsScreen } from "./MiniHubSettingsScreen"
 import { SourceListScreen } from "./SourceListScreen"
 import { ThemeSettingsScreen } from "./ThemeSettingsScreen"
 import scriptJson from "../../script.json"
@@ -87,6 +88,10 @@ export function SettingsScreen() {
             detail={`${t(comp.nameKey)} · ${t(pal.nameKey)}`}
             chevron
           />
+        </NavigationLink>
+        <Divider padding={{ leading: rowSeparatorInset }} />
+        <NavigationLink destination={<MiniHubSettingsScreen />}>
+          <IconRow icon="rectangle.grid.1x2" title={t("settings.root.miniHub")} chevron />
         </NavigationLink>
       </CardGroup>
 

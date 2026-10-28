@@ -2,7 +2,7 @@
 // 長駐於 Scripting 首頁分頁，不可調用 Navigation.present 與 Script.exit()。
 //
 // 全螢幕 App 不再塞進來：這裡只有四件事，資料全在本機（不抓 Bangumi）——
-//   續讀 Hero → 最新追更 → 閱讀熱力圖 → 導覽列的「開啟完整 App」。
+//   續讀 Hero、最新追更、閱讀熱力圖（順序與開關見 app/miniHubLayout.ts），加上導覽列的「開啟完整 App」。
 // 追更檢查是靜默的：首次掛載延遲 2.5 秒、每次切回首頁各觸發一次；TTL 由排程器把關
 // （12 小時內零連線，見 app/updates.ts），所以這裡放心呼叫。
 
@@ -26,11 +26,13 @@ import {
   ZStack,
   useEffect,
   useState,
+  type VirtualNode,
 } from "scripting"
 
 import { createComicLibrary } from "./app/comic"
 import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
+import { getMiniHubLayout, type MiniHubSection } from "./app/miniHubLayout"
 import { comicLibrary, installComicLibrary } from "./app/services"
 import { resumeEntry, unreadCountOf, type ResumeEntry } from "./app/shelf"
 import { PageBackground, useTint } from "./app/theme"
@@ -182,16 +184,23 @@ export default function HomeScreenDefaultUI() {
     )
   }
 
-  const resume = listProgress()[0]
-  const favorites = listFavorites()
+  // 順序與開關在完整 App 的設定裡改；切回首頁的 refresh() 會重讀。
+  const sections: Record<MiniHubSection, () => VirtualNode | null> = {
+    resume: () => {
+      const resume = listProgress()[0]
+      return resume ? <ResumeHero key="resume" entry={resumeEntry(resume)} /> : null
+    },
+    updates: () => (
+      <UpdatesSection key="updates" items={pendingUpdates()} shelfEmpty={listFavorites().length === 0} />
+    ),
+    activity: () => <ActivitySection key="activity" activity={readingActivity()} />,
+  }
 
   return (
     <NavigationStack>
       <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageScroll title="Vesper" trailing={OpenAppButton}>
-          {resume ? <ResumeHero entry={resumeEntry(resume)} /> : null}
-          <UpdatesSection items={pendingUpdates()} shelfEmpty={favorites.length === 0} />
-          <ActivitySection activity={readingActivity()} />
+          {getMiniHubLayout().enabled.map(section => sections[section]())}
         </PageScroll>
       </ZStack>
     </NavigationStack>

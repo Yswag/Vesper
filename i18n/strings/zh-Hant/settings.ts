@@ -43,6 +43,7 @@ export default {
     installed: { one: "{n} 個已安裝", other: "{n} 個已安裝" },
     groupAppearance: "外觀",
     appearance: "外觀主題",
+    miniHub: "Mini Hub",
     groupStorage: "下載與儲存空間",
     downloads: "離線下載",
     thumbCache: "縮圖快取",
@@ -56,6 +57,13 @@ export default {
     sourceSpec: "漫畫源規格",
     sourceSpecDetail: "相容 Venera / Aidoku 規範",
     homeData: "首頁熱門與數據",
+  },
+
+  /** Mini Hub 管理頁。 */
+  miniHub: {
+    title: "Mini Hub",
+    enabledGroup: "啟用",
+    disabledGroup: "停用",
   },
 
   /** 縮圖快取配置頁。 */

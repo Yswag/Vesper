@@ -35,6 +35,7 @@ export default {
     installed: { one: "{n} installed", other: "{n} installed" },
     groupAppearance: "Appearance",
     appearance: "Theme",
+    miniHub: "Mini Hub",
     groupStorage: "Downloads & storage",
     downloads: "Offline downloads",
     thumbCache: "Thumbnail cache",
@@ -49,6 +50,13 @@ export default {
     sourceSpec: "Source spec",
     sourceSpecDetail: "Venera / Aidoku compatible",
     homeData: "Home rankings & data",
+  },
+
+  /** Mini Hub 管理頁。 */
+  miniHub: {
+    title: "Mini Hub",
+    enabledGroup: "Shown",
+    disabledGroup: "Hidden",
   },
 
   /** 縮圖快取配置頁。 */
