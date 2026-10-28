@@ -1,8 +1,7 @@
 // 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
-import { Button, Divider, GeometryReader, GlassEffectContainer, Group, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
+import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
 
-import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { CoverBadge } from "../../design/CoverBadge"
 import { CoverShadow } from "../../design/CoverShadow"
@@ -20,6 +19,7 @@ import { capsule, coverStroke, fill, radius, rect } from "../../design/tokens"
 import { clearProgress, listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
+import { canOpenComicDetail, progressDetailDestination, ProgressMenuItems } from "../shared/progressActions"
 import { PageBackground, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
@@ -135,23 +135,7 @@ export function HomeScreen() {
         <ScrollView
           scrollContentBackground="hidden"
           {...scrollTopBar(null)}
-          navigationDestination={{
-            content: detailOf ? (
-              // key 跟著漫畫換：同一個推頁位置會沿用上一本的狀態，先閃一下舊的詳情。
-              <ComicDetailScreen
-                key={`${detailOf.sourceKey}:${detailOf.comicId}`}
-                sourceKey={detailOf.sourceKey}
-                comicId={detailOf.comicId}
-                title={detailOf.title}
-              />
-            ) : (
-              <VStack />
-            ),
-            isPresented: detailOf !== null,
-            onChanged: presented => {
-              if (!presented) setDetailOf(null)
-            },
-          }}
+          navigationDestination={progressDetailDestination({ entry: detailOf, onDismiss: () => setDetailOf(null) })}
           // 下拉重新整理：略過 24 小時快取重抓榜單，並重讀一次書架的進度。
           // iOS 自己會顯示轉圈，所以這裡不動 loadingFeed（那是給首次載入用的 placeholder）。
           refreshable={async () => {
@@ -617,20 +601,15 @@ function ResumeCard({
     </Button>
   ) : card
 
-  // 跟閱讀歷史同一組長按選單（HistoryCard）：推頁與刪除都掛在卡片外層，不搭 Button 的點擊。
-  const canOpenDetail = onOpenDetail !== undefined && shown.source === "present"
+  // 跟閱讀歷史同一組長按選單（screens/shared/progressActions）：推頁與刪除都掛在卡片外層，不搭 Button 的點擊。
+  const canOpenDetail = onOpenDetail !== undefined && canOpenComicDetail(shown)
   if (!onDelete && !canOpenDetail) return body
 
   return (
     <VStack
       spacing={0}
       contextMenu={{
-        menuItems: (
-          <Group>
-            {canOpenDetail ? <Button title={t("bookshelf.openDetail")} action={onOpenDetail} /> : null}
-            {onDelete ? <Button title={t("common.delete")} role="destructive" action={onDelete} /> : null}
-          </Group>
-        ),
+        menuItems: <ProgressMenuItems onOpenDetail={canOpenDetail ? onOpenDetail : undefined} onDelete={onDelete} />,
       }}
     >
       {body}

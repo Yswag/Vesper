@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Group,
   LazyVStack,
   NamespaceReader,
   ProgressView,
@@ -23,7 +22,7 @@ import { EmptyState } from "../../design/status"
 import { cardShape, fill, palette, radius, rect } from "../../design/tokens"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { clearProgress, listProgress, type Progress } from "../../library/bookshelf"
-import { ComicDetailScreen } from "../shared/ComicDetailScreen"
+import { canOpenComicDetail, progressDetailDestination, ProgressMenuItems, progressZoomID } from "../shared/progressActions"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { formatHistoryTime } from "./historyTime"
 
@@ -43,24 +42,11 @@ export function HistoryScreen() {
             navigationTitle={t("bookshelf.historyTab")}
             navigationBarTitleDisplayMode="inline"
             {...scrollTopBar(null)}
-            navigationDestination={{
-              content: detailOf ? (
-                // key 跟著漫畫換：同一個推頁位置會沿用上一本的狀態，先閃一下舊的詳情。
-                <ComicDetailScreen
-                  key={`${detailOf.sourceKey}:${detailOf.comicId}`}
-                  sourceKey={detailOf.sourceKey}
-                  comicId={detailOf.comicId}
-                  title={detailOf.title}
-                  zoomTransition={{ sourceID: historyZoomID(detailOf), namespace: historyNs }}
-                />
-              ) : (
-                <VStack />
-              ),
-              isPresented: detailOf !== null,
-              onChanged: presented => {
-                if (!presented) setDetailOf(null)
-              },
-            }}
+            navigationDestination={progressDetailDestination({
+              entry: detailOf,
+              onDismiss: () => setDetailOf(null),
+              zoomNamespace: historyNs,
+            })}
           >
             {progress.length === 0 ? (
               <EmptyState
@@ -88,11 +74,6 @@ export function HistoryScreen() {
       </NamespaceReader>
     </ZStack>
   )
-}
-
-/** 歷史列封面 → 詳情頁的 zoom 配對 id。 */
-function historyZoomID(entry: Progress): string {
-  return `history:${entry.sourceKey}:${entry.comicId}`
 }
 
 /** 閱讀歷史卡片：小封面 + 標題／來源·話數／頁數·時間。 */
@@ -138,7 +119,7 @@ export function HistoryCard({
         subtitle={meta}
         subtitleColor={shown.openable ? "secondaryLabel" : palette.red}
         detail={detail}
-        coverTransition={zoomNamespace ? { id: historyZoomID(entry), namespace: zoomNamespace } : undefined}
+        coverTransition={zoomNamespace ? { id: progressZoomID(entry), namespace: zoomNamespace } : undefined}
         footer={barValue !== null ? <ProgressView value={barValue} total={1} frame={{ maxWidth: "infinity" }} /> : undefined}
         coverOverlay={
           opening ? (
@@ -169,7 +150,7 @@ export function HistoryCard({
     body
   )
 
-  const canOpenDetail = onOpenDetail !== undefined && shown.source === "present"
+  const canOpenDetail = onOpenDetail !== undefined && canOpenComicDetail(shown)
   if (!onDelete && !canOpenDetail) return row
 
   return (
@@ -189,10 +170,7 @@ export function HistoryCard({
       }
       contextMenu={{
         menuItems: (
-          <Group>
-            {canOpenDetail ? <Button title={t("bookshelf.openDetail")} action={onOpenDetail} /> : null}
-            {onDelete ? <Button title={t("common.delete")} role="destructive" action={onDelete} /> : null}
-          </Group>
+          <ProgressMenuItems onOpenDetail={canOpenDetail ? onOpenDetail : undefined} onDelete={onDelete} />
         ),
       }}
     >
