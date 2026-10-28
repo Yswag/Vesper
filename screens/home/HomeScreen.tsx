@@ -1,6 +1,6 @@
 // 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
-import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
+import { Button, Divider, GeometryReader, GlassEffectContainer, Group, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
 
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
@@ -17,7 +17,7 @@ import { resumeEntry } from "../../app/shelf"
 import { EmptyState } from "../../design/status"
 import { SkeletonBlock, SkeletonCardRow, SkeletonText } from "../../design/skeleton"
 import { capsule, coverStroke, fill, radius, rect } from "../../design/tokens"
-import { listProgress, type Progress } from "../../library/bookshelf"
+import { clearProgress, listProgress, type Progress } from "../../library/bookshelf"
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { PageBackground, useTint } from "../../app/theme"
@@ -54,6 +54,9 @@ export function HomeScreen() {
   const [heroIndex, setHeroIndex] = useState(0)
   // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錐位。
   const [heroActive, setHeroActive] = useState(true)
+
+  // 繼續閱讀卡片長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
+  const [detailOf, setDetailOf] = useState<Progress | null>(null)
 
   // 「繼續閱讀」與 Bangumi 兩條 carousel 各自量自己的捲動視窗寬，卡片尺寸照 comicMetrics 算。
   const [resumeCarouselWidth, setResumeCarouselWidth] = useState(0)
@@ -132,6 +135,23 @@ export function HomeScreen() {
         <ScrollView
           scrollContentBackground="hidden"
           {...scrollTopBar(null)}
+          navigationDestination={{
+            content: detailOf ? (
+              // key 跟著漫畫換：同一個推頁位置會沿用上一本的狀態，先閃一下舊的詳情。
+              <ComicDetailScreen
+                key={`${detailOf.sourceKey}:${detailOf.comicId}`}
+                sourceKey={detailOf.sourceKey}
+                comicId={detailOf.comicId}
+                title={detailOf.title}
+              />
+            ) : (
+              <VStack />
+            ),
+            isPresented: detailOf !== null,
+            onChanged: presented => {
+              if (!presented) setDetailOf(null)
+            },
+          }}
           // 下拉重新整理：略過 24 小時快取重抓榜單，並重讀一次書架的進度。
           // iOS 自己會顯示轉圈，所以這裡不動 loadingFeed（那是給首次載入用的 placeholder）。
           refreshable={async () => {
@@ -360,7 +380,13 @@ export function HomeScreen() {
                 <ScrollView axes="horizontal" scrollIndicator="hidden" background={carouselWidthProbe(setResumeCarouselWidth)}>
                   <LazyHStack spacing={12} padding={{ horizontal: 16, vertical: 8 }}>
                     {progress.slice(0, 10).map(entry => (
-                      <ResumeCard key={`${entry.sourceKey}:${entry.comicId}`} entry={entry} size={resumeCard} />
+                      <ResumeCard
+                        key={`${entry.sourceKey}:${entry.comicId}`}
+                        entry={entry}
+                        size={resumeCard}
+                        onDelete={() => clearProgress(entry.sourceKey, entry.comicId)}
+                        onOpenDetail={() => setDetailOf(entry)}
+                      />
                     ))}
                   </LazyHStack>
                 </ScrollView>
@@ -474,8 +500,20 @@ function formatEpisodeBadge(epTitle?: string): string {
   return match ? match[1].replace(/\s+/g, "") : epTitle.trim()
 }
 
-/** 繼續閱讀卡片：包含封面、進度話數磨砂標籤、雙行對齊標題 */
-function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
+/** 繼續閱讀卡片：封面 + 進度話數磨砂標籤 + 標題；長按可前往詳情或刪掉這筆紀錄。 */
+function ResumeCard({
+  entry,
+  size,
+  onDelete,
+  onOpenDetail,
+}: {
+  entry: Progress
+  size: CardSize
+  /** 長按選單的「刪除」：抹掉這本的閱讀紀錄。 */
+  onDelete?: () => void
+  /** 長按選單的「前往詳情」；源不在了就不給（詳情頁要源）。 */
+  onOpenDetail?: () => void
+}) {
   const shown = resumeEntry(entry)
   // 來源那一行：離線的紀錄在源名前面標「離線」；源被移除但還有離線內容時就只剩「離線」。
   const sourceLabel = [
@@ -564,9 +602,7 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
   )
 
   // 源沒了、也沒有離線內容就進不去（封面也要源才解析得出來）；標籤那顆膠囊改成「源失效」。
-  if (!shown.openable) return card
-
-  return (
+  const body = shown.openable ? (
     <Button
       buttonStyle="plain"
       disabled={opening}
@@ -579,6 +615,26 @@ function ResumeCard({ entry, size }: { entry: Progress; size: CardSize }) {
     >
       {card}
     </Button>
+  ) : card
+
+  // 跟閱讀歷史同一組長按選單（HistoryCard）：推頁與刪除都掛在卡片外層，不搭 Button 的點擊。
+  const canOpenDetail = onOpenDetail !== undefined && shown.source === "present"
+  if (!onDelete && !canOpenDetail) return body
+
+  return (
+    <VStack
+      spacing={0}
+      contextMenu={{
+        menuItems: (
+          <Group>
+            {canOpenDetail ? <Button title={t("bookshelf.openDetail")} action={onOpenDetail} /> : null}
+            {onDelete ? <Button title={t("common.delete")} role="destructive" action={onDelete} /> : null}
+          </Group>
+        ),
+      }}
+    >
+      {body}
+    </VStack>
   )
 }
 
