@@ -24,6 +24,8 @@ export default {
     openApp: "開啟 App",
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
+    activityTitle: "閱讀紀錄",
+    streak: "連續 {days} 天",
   },
 
   /** Bangumi 條目詳情頁。 */

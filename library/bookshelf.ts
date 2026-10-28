@@ -50,11 +50,29 @@ export interface ComicUpdateRecord {
   updateTime?: string
 }
 
+/** 一天裡讀過的一部作品：當天碰過的話名（去重、依先後）。 */
+export interface DayComic {
+  sourceKey: string
+  comicId: string
+  title: string
+  cover?: string
+  epTitles: string[]
+}
+
+/** 一天的閱讀量：讀完幾話、翻了幾頁；`comics` 最後碰的在後（功能上線前的日子沒有）。 */
+export interface DayActivity {
+  chapters: number
+  pages: number
+  comics?: DayComic[]
+}
+
 interface Library {
   version: number
   favorites: Favorite[]
   progress: Record<string, Progress>
   updates: Record<string, ComicUpdateRecord>
+  /** 以本地日期 `YYYY-MM-DD` 為鍵。 */
+  activity: Record<string, DayActivity>
 }
 
 const VERSION = 1
@@ -69,6 +87,7 @@ function normalize(raw: unknown): Library {
     favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
     progress: parsed.progress && typeof parsed.progress === "object" ? parsed.progress : {},
     updates: cleanUpdates(parsed.updates),
+    activity: cleanActivity(parsed.activity),
   }
 }
 
@@ -101,7 +120,7 @@ function load(): Library {
       // 壞檔就從空的開始，不擋啟動
     }
   }
-  cache = { version: VERSION, favorites: [], progress: {}, updates: {} }
+  cache = { version: VERSION, favorites: [], progress: {}, updates: {}, activity: {} }
   return cache
 }
 
@@ -185,6 +204,31 @@ function cleanUpdates(raw: unknown): Record<string, ComicUpdateRecord> {
     }
   }
   return updates
+}
+
+function cleanActivity(raw: unknown): Record<string, DayActivity> {
+  const activity: Record<string, DayActivity> = {}
+  if (!raw || typeof raw !== "object") return activity
+  for (const [day, value] of Object.entries(raw as Record<string, unknown>)) {
+    const entry = value as Partial<DayActivity> | null
+    if (!entry || typeof entry !== "object") continue
+    const comics = Array.isArray(entry.comics)
+      ? entry.comics.filter(
+          (comic): comic is DayComic =>
+            Boolean(comic) && typeof comic.sourceKey === "string" && typeof comic.comicId === "string"
+        ).map(comic => ({
+          ...comic,
+          title: typeof comic.title === "string" ? comic.title : "",
+          epTitles: Array.isArray(comic.epTitles) ? comic.epTitles.filter(title => typeof title === "string") : [],
+        }))
+      : undefined
+    activity[day] = {
+      chapters: typeof entry.chapters === "number" ? entry.chapters : 0,
+      pages: typeof entry.pages === "number" ? entry.pages : 0,
+      comics: comics && comics.length > 0 ? comics : undefined,
+    }
+  }
+  return activity
 }
 
 /** 去重（保留原順序）、丟掉空字串；沒有就回 undefined，空陣列不進 library.json。 */
@@ -277,6 +321,12 @@ export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notif
       entry.page === entry.pageCount - 1
     // 換話／開啟章節時呼叫端不一定帶已讀清單：一律沿用上一筆，別把已讀洗掉。
     const readEpIds = cleanIds(entry.readEpIds ?? previous?.readEpIds)
+    const turnedPage =
+      entry.page !== undefined && (previous?.epId !== entry.epId || previous?.page !== entry.page)
+    const newlyFinished = finished && Boolean(entry.epId) && !(readEpIds ?? []).includes(entry.epId)
+    if (turnedPage || newlyFinished) {
+      recordActivity(library, { chapters: newlyFinished ? 1 : 0, pages: turnedPage ? 1 : 0 }, entry)
+    }
     library.progress[key] = withReadIds(
       { ...entry, updatedAt: Date.now() },
       finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
@@ -352,6 +402,58 @@ export function clearProgress(sourceKey: string, comicId: string) {
       delete library.progress[key]
     }
   })
+}
+
+// ------------------------------------------------------------------ 閱讀活動
+
+/** 保留天數（熱力圖只看最近幾個月，多留一點給之後的統計）。 */
+const ACTIVITY_KEEP_DAYS = 400
+
+/** 本地日期鍵 `YYYY-MM-DD`。 */
+export function dayKey(time: number): string {
+  const date = new Date(time)
+  const pad = (value: number): string => String(value).padStart(2, "0")
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+function recordActivity(
+  library: Library,
+  delta: { chapters: number; pages: number },
+  entry: Omit<Progress, "updatedAt">
+): void {
+  const now = Date.now()
+  const today = dayKey(now)
+  const current = library.activity[today]
+  if (!current) {
+    // 只在跨日時修剪一次：日期鍵可直接比字串大小。
+    const cutoff = dayKey(now - ACTIVITY_KEEP_DAYS * 24 * 60 * 60 * 1000)
+    for (const day of Object.keys(library.activity)) if (day < cutoff) delete library.activity[day]
+  }
+  // 同一部移到最後，話名續接在舊的後面；作品名／封面以最新一次為準。
+  const comics = (current?.comics ?? []).filter(
+    comic => !(comic.sourceKey === entry.sourceKey && comic.comicId === entry.comicId)
+  )
+  const previous = current?.comics?.find(
+    comic => comic.sourceKey === entry.sourceKey && comic.comicId === entry.comicId
+  )
+  const epTitles = previous?.epTitles ?? []
+  comics.push({
+    sourceKey: entry.sourceKey,
+    comicId: entry.comicId,
+    title: entry.title || previous?.title || "",
+    cover: entry.cover ?? previous?.cover,
+    epTitles: entry.epTitle && !epTitles.includes(entry.epTitle) ? [...epTitles, entry.epTitle] : epTitles,
+  })
+  library.activity[today] = {
+    chapters: (current?.chapters ?? 0) + delta.chapters,
+    pages: (current?.pages ?? 0) + delta.pages,
+    comics,
+  }
+}
+
+/** 每日閱讀量（拷貝）。 */
+export function readingActivity(): Record<string, DayActivity> {
+  return { ...load().activity }
 }
 
 // ------------------------------------------------------------------ 追更快取

@@ -18,6 +18,8 @@ export default {
     openApp: "打开 App",
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
+    activityTitle: "阅读记录",
+    streak: "连续 {days} 天",
   },
 
   bangumi: {

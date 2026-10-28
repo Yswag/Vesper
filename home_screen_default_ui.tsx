@@ -1,8 +1,8 @@
 // Scripting 首頁入口（Home Screen Tab UI）：Vesper 的 Mini Hub。
 // 長駐於 Scripting 首頁分頁，不可調用 Navigation.present 與 Script.exit()。
 //
-// 全螢幕 App 不再塞進來：這裡只有三件事，資料全在本機（不抓 Bangumi）——
-//   續讀 Hero → 最新追更 → 導覽列的「開啟完整 App」。
+// 全螢幕 App 不再塞進來：這裡只有四件事，資料全在本機（不抓 Bangumi）——
+//   續讀 Hero → 最新追更 → 閱讀熱力圖 → 導覽列的「開啟完整 App」。
 // 追更檢查是靜默的：首次掛載延遲 2.5 秒、每次切回首頁各觸發一次；TTL 由排程器把關
 // （12 小時內零連線，見 app/updates.ts），所以這裡放心呼叫。
 
@@ -11,11 +11,13 @@ import {
   Circle,
   Divider,
   Device,
+  GeometryReader,
   HStack,
   Image,
   NavigationLink,
   NavigationStack,
   ProgressView,
+  RoundedRectangle,
   Script,
   ScrollView,
   Spacer,
@@ -36,24 +38,29 @@ import { parseUpdateTime, updatesScheduler } from "./app/updates"
 import { useSubscription } from "./app/useSubscription"
 import { CoverImage } from "./components/CoverImage"
 import { composeImage } from "./components/ModifyImageRenderer"
+import { WidthReporter } from "./components/WidthReporter"
 import { Card, GroupHeader, PageScroll } from "./design/layout"
 import { Chevron } from "./design/rows"
 import { EmptyState } from "./design/status"
-import { capsule, cardBackground, cardGap, pageInsets, rowPadding } from "./design/tokens"
+import { capsule, cardBackground, cardGap, fill, pageInsets, rowPadding } from "./design/tokens"
 import { ensureFileAccess, fileAccess } from "./engine/fs"
 import { comicGroupKey } from "./engine/offline"
 import { setImageCompositor } from "./engine/imagecache"
 import { subscribe as subscribeLocale, t } from "./i18n"
 import {
   allComicUpdates,
+  dayKey,
   flushLibrary,
   listFavorites,
   listProgress,
+  readingActivity,
   reloadLibraryFromDisk,
   subscribeLibrary,
   type ComicUpdateRecord,
+  type DayActivity,
   type Favorite,
 } from "./library/bookshelf"
+import { ReadingLogScreen } from "./screens/home/ReadingLogScreen"
 import { ComicDetailScreen } from "./screens/shared/ComicDetailScreen"
 import { launchResumeReader } from "./screens/shared/ResumeReaderScreen"
 import { reloadRegistry } from "./sources/registry"
@@ -69,6 +76,13 @@ const RAIL_COVER = { width: 84, height: 118 }
 const COVER_GAP = 12
 const DORMANT_AFTER_DAYS = 90
 const DAY_MS = 24 * 60 * 60 * 1000
+
+const HEATMAP_WEEKS = 18
+/** 量到卡片寬度前的暫用格子邊長。 */
+const HEATMAP_CELL = 14
+const HEATMAP_GAP = 3
+/** 第 1–4 階的 tint 不透明度（0 階用中性底色）。 */
+const HEATMAP_OPACITY = [0.45, 0.65, 0.85, 1]
 
 let isInitialized = false
 
@@ -177,6 +191,7 @@ export default function HomeScreenDefaultUI() {
         <PageScroll title="Vesper" trailing={OpenAppButton}>
           {resume ? <ResumeHero entry={resumeEntry(resume)} /> : null}
           <UpdatesSection items={pendingUpdates()} shelfEmpty={favorites.length === 0} />
+          <ActivitySection activity={readingActivity()} />
         </PageScroll>
       </ZStack>
     </NavigationStack>
@@ -307,6 +322,110 @@ function ResumeHero({ entry }: { entry: ResumeEntry }) {
         </HStack>
       </Card>
     </VStack>
+  )
+}
+
+interface HeatmapCell {
+  day: string
+  level: number
+}
+
+/** 深淺看讀完的話數；只翻了頁沒讀完也算第 1 階。 */
+function heatLevel(activity: DayActivity | undefined): number {
+  if (!activity) return 0
+  if (activity.chapters >= 5) return 4
+  if (activity.chapters >= 3) return 3
+  if (activity.chapters >= 2) return 2
+  return activity.chapters > 0 || activity.pages > 0 ? 1 : 0
+}
+
+/** 最近 `HEATMAP_WEEKS × 7` 天逐欄由上而下排，舊→新；今天固定在右下角。 */
+function heatmapWeeks(activity: Record<string, DayActivity>, now: number): HeatmapCell[][] {
+  // 取中午，逐日加減時不會因日光節約時間跳日。
+  const start = new Date(now)
+  start.setHours(12, 0, 0, 0)
+  start.setDate(start.getDate() - (HEATMAP_WEEKS * 7 - 1))
+
+  const weeks: HeatmapCell[][] = []
+  for (let week = 0; week < HEATMAP_WEEKS; week++) {
+    const cells: HeatmapCell[] = []
+    for (let weekday = 0; weekday < 7; weekday++) {
+      const date = new Date(start)
+      date.setDate(start.getDate() + week * 7 + weekday)
+      const day = dayKey(date.getTime())
+      cells.push({ day, level: heatLevel(activity[day]) })
+    }
+    weeks.push(cells)
+  }
+  return weeks
+}
+
+/** 連續閱讀天數：今天還沒讀就從昨天算起，不讓一大早的紀錄歸零。 */
+function readingStreak(activity: Record<string, DayActivity>, now: number): number {
+  const cursor = new Date(now)
+  cursor.setHours(12, 0, 0, 0)
+  if (heatLevel(activity[dayKey(cursor.getTime())]) === 0) cursor.setDate(cursor.getDate() - 1)
+  let days = 0
+  while (heatLevel(activity[dayKey(cursor.getTime())]) > 0) {
+    days++
+    cursor.setDate(cursor.getDate() - 1)
+  }
+  return days
+}
+
+/** 閱讀熱力圖：最近 18 週的每日閱讀量；範圍內完全沒紀錄就整塊不顯示。整塊點下去推閱讀紀錄頁。 */
+function ActivitySection({ activity }: { activity: Record<string, DayActivity> }) {
+  const tint = useTint()
+  const [gridWidth, setGridWidth] = useState(0)
+  const now = Date.now()
+  const weeks = heatmapWeeks(activity, now)
+  if (!weeks.some(week => week.some(cell => cell.level > 0))) return null
+  const streak = readingStreak(activity, now)
+  // 格子平分卡片內的寬度，左右貼齊卡片內距。
+  const size = gridWidth > 0 ? (gridWidth - HEATMAP_GAP * (HEATMAP_WEEKS - 1)) / HEATMAP_WEEKS : HEATMAP_CELL
+
+  return (
+    <NavigationLink destination={<ReadingLogScreen />} buttonStyle="plain">
+      <VStack spacing={cardGap} alignment="leading" frame={{ maxWidth: "infinity" }}>
+        <HStack spacing={6} alignment="center" padding={{ trailing: 4 }} frame={{ maxWidth: "infinity" }}>
+          <GroupHeader title={t("home.miniHub.activityTitle")} />
+          <Spacer />
+          {streak >= 2 ? (
+            <Text font="footnote" fontWeight="medium" foregroundStyle={tint.tint}>
+              {t("home.miniHub.streak", { days: streak })}
+            </Text>
+          ) : null}
+          <Chevron />
+        </HStack>
+        <Card>
+          <VStack padding={rowPadding} frame={{ maxWidth: "infinity" }}>
+            <HStack
+              spacing={HEATMAP_GAP}
+              frame={{ maxWidth: "infinity" }}
+              background={
+                <GeometryReader>
+                  {geometry => <WidthReporter width={geometry.size.width} onWidth={setGridWidth} />}
+                </GeometryReader>
+              }
+            >
+              {weeks.map(week => (
+                <VStack key={week[0].day} spacing={HEATMAP_GAP}>
+                  {week.map(cell => (
+                    <RoundedRectangle
+                      key={cell.day}
+                      cornerRadius={3}
+                      fill={cell.level > 0 ? tint.tint : fill.tag}
+                      opacity={cell.level > 0 ? HEATMAP_OPACITY[cell.level - 1] : 1}
+                      frame={{ width: size, height: size }}
+                    />
+                  ))}
+                </VStack>
+              ))}
+            </HStack>
+          </VStack>
+        </Card>
+      </VStack>
+    </NavigationLink>
   )
 }
 

@@ -18,6 +18,8 @@ export default {
     openApp: "Open App",
     updatesTitle: "Latest updates",
     allUpToDate: "All favorites are up to date",
+    activityTitle: "Reading activity",
+    streak: "{days}-day streak",
   },
 
   bangumi: {
