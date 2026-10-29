@@ -527,6 +527,9 @@ function ReaderContent({
     setLeadingPage(0)
     // 換話會重建 ScrollView（key 含 epId），自然從頂端開始；舊話還沒執行的跳頁作廢。
     pendingScroll.current = null
+    // 與換 ID 同一輪進入載入中：否則重建後的 ScrollView 會先用舊 session 畫出上一話的第一頁。
+    setSession(undefined)
+    setStatus({ kind: "loading" })
     setCurrentEpId(id)
   }
 
