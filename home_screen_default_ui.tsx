@@ -212,13 +212,17 @@ export default function HomeScreenDefaultUI() {
 function OpenAppButton() {
   const tint = useTint()
   return (
-    <Button action={openFullApp} buttonStyle="borderless">
-      <HStack spacing={4} alignment="center">
-        <Image systemName="arrow.up.forward.app" font="subheadline" foregroundStyle={tint.tint} />
-        <Text font="subheadline" fontWeight="medium" foregroundStyle={tint.tint}>
-          {t("home.miniHub.openApp")}
-        </Text>
-      </HStack>
+    <Button
+      action={openFullApp}
+      buttonStyle="plain"
+      accessibilityLabel={t("home.miniHub.openApp")}
+    >
+      <Image
+        systemName="arrow.up.forward.app"
+        font="body"
+        fontWeight="semibold"
+        foregroundStyle={tint.tint}
+      />
     </Button>
   )
 }
