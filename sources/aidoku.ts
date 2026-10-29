@@ -1132,9 +1132,11 @@ export function detail(source: InstalledSource, comicId: string): Promise<ComicD
       contentRating: contentRatingOf(raw),
       viewer: viewerOf(raw),
       tags: normalizeTags(raw?.tags),
+      // Aidoku 源約定新→舊（原版閱讀器下一話是 index - 1）；Vesper 全 App 一律舊→新，在這裡轉一次。
       chapters: (Array.isArray(chapters) ? chapters : [])
         .map(toChapter)
-        .filter((chapter): chapter is { group: string; id: string; title: string; locked: boolean; lang?: string } => chapter !== null),
+        .filter((chapter): chapter is { group: string; id: string; title: string; locked: boolean; lang?: string } => chapter !== null)
+        .reverse(),
       uploader: names(raw?.authors) || undefined,
       artists: names(raw?.artists) || undefined,
       url: typeof raw?.url === "string" && raw.url ? raw.url : undefined,

@@ -282,9 +282,15 @@ function chapterListFile(sourceKey: string, comicId: string): string {
   return join(appDataRoot(), "offline-chapters", `${hash}.json`)
 }
 
-/** 覆寫這部漫畫的章節清單快取（照源給的順序）。 */
+/**
+ * 章節清單快取的順序標記：舊→新（閱讀順序）。沒有這個標記的檔是更早寫的，
+ * Aidoku 作品當時存的是新→舊，讀到就當沒有快取，等下次線上取得時覆寫。
+ */
+const CHAPTER_LIST_ORDER = "reading"
+
+/** 覆寫這部漫畫的章節清單快取（舊→新）。 */
 export function saveChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
-  const payload = JSON.stringify({ updatedAt: Date.now(), chapters })
+  const payload = JSON.stringify({ updatedAt: Date.now(), order: CHAPTER_LIST_ORDER, chapters })
   if (!writeText(chapterListFile(sourceKey, comicId), payload)) {
     log("warning", "offline", `章節清單快取寫入失敗：${comicId}`)
   }
@@ -305,7 +311,7 @@ export function cachedChapterList(sourceKey: string, comicId: string): ReaderCha
   if (!raw) return null
   try {
     const item = JSON.parse(raw) as Record<string, any>
-    if (!Array.isArray(item.chapters)) return null
+    if (item.order !== CHAPTER_LIST_ORDER || !Array.isArray(item.chapters)) return null
     const chapters: ReaderChapter[] = []
     for (const entry of item.chapters) {
       if (!entry || typeof entry !== "object" || entry.id == null) continue
