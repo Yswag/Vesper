@@ -79,9 +79,10 @@ const COVER_GAP = 12
 const DORMANT_AFTER_DAYS = 90
 const DAY_MS = 24 * 60 * 60 * 1000
 
-const HEATMAP_WEEKS = 18
+const HEATMAP_COLS = 14
+const HEATMAP_ROWS = 5
 /** 量到卡片寬度前的暫用格子邊長。 */
-const HEATMAP_CELL = 14
+const HEATMAP_CELL = 20
 const HEATMAP_GAP = 3
 /** 第 1–4 階的 tint 不透明度（0 階用中性底色）。 */
 const HEATMAP_OPACITY = [0.45, 0.65, 0.85, 1]
@@ -348,25 +349,26 @@ function heatLevel(activity: DayActivity | undefined): number {
   return activity.chapters > 0 || activity.pages > 0 ? 1 : 0
 }
 
-/** 最近 `HEATMAP_WEEKS × 7` 天逐欄由上而下排，舊→新；今天固定在右下角。 */
-function heatmapWeeks(activity: Record<string, DayActivity>, now: number): HeatmapCell[][] {
+/** 最近 `HEATMAP_COLS × HEATMAP_ROWS` 天逐欄由上而下排（5 列），舊→新；今天固定在右下角。 */
+function heatmapColumns(activity: Record<string, DayActivity>, now: number): HeatmapCell[][] {
+  const totalDays = HEATMAP_COLS * HEATMAP_ROWS
   // 取中午，逐日加減時不會因日光節約時間跳日。
   const start = new Date(now)
   start.setHours(12, 0, 0, 0)
-  start.setDate(start.getDate() - (HEATMAP_WEEKS * 7 - 1))
+  start.setDate(start.getDate() - (totalDays - 1))
 
-  const weeks: HeatmapCell[][] = []
-  for (let week = 0; week < HEATMAP_WEEKS; week++) {
+  const cols: HeatmapCell[][] = []
+  for (let col = 0; col < HEATMAP_COLS; col++) {
     const cells: HeatmapCell[] = []
-    for (let weekday = 0; weekday < 7; weekday++) {
+    for (let row = 0; row < HEATMAP_ROWS; row++) {
       const date = new Date(start)
-      date.setDate(start.getDate() + week * 7 + weekday)
+      date.setDate(start.getDate() + col * HEATMAP_ROWS + row)
       const day = dayKey(date.getTime())
       cells.push({ day, level: heatLevel(activity[day]) })
     }
-    weeks.push(cells)
+    cols.push(cells)
   }
-  return weeks
+  return cols
 }
 
 /** 連續閱讀天數：今天還沒讀就從昨天算起，不讓一大早的紀錄歸零。 */
@@ -382,16 +384,16 @@ function readingStreak(activity: Record<string, DayActivity>, now: number): numb
   return days
 }
 
-/** 閱讀熱力圖：最近 18 週的每日閱讀量；範圍內完全沒紀錄就整塊不顯示。整塊點下去推閱讀紀錄頁。 */
+/** 閱讀熱力圖：最近 70 天（14 欄 × 5 列）的每日閱讀量；範圍內完全沒紀錄就整塊不顯示。整塊點下去推閱讀紀錄頁。 */
 function ActivitySection({ activity }: { activity: Record<string, DayActivity> }) {
   const tint = useTint()
   const [gridWidth, setGridWidth] = useState(0)
   const now = Date.now()
-  const weeks = heatmapWeeks(activity, now)
-  if (!weeks.some(week => week.some(cell => cell.level > 0))) return null
+  const cols = heatmapColumns(activity, now)
+  if (!cols.some(col => col.some(cell => cell.level > 0))) return null
   const streak = readingStreak(activity, now)
   // 格子平分卡片內的寬度，左右貼齊卡片內距。
-  const size = gridWidth > 0 ? (gridWidth - HEATMAP_GAP * (HEATMAP_WEEKS - 1)) / HEATMAP_WEEKS : HEATMAP_CELL
+  const size = gridWidth > 0 ? (gridWidth - HEATMAP_GAP * (HEATMAP_COLS - 1)) / HEATMAP_COLS : HEATMAP_CELL
 
   return (
     <NavigationLink destination={<ReadingLogScreen />} buttonStyle="plain">
@@ -417,12 +419,12 @@ function ActivitySection({ activity }: { activity: Record<string, DayActivity> }
                 </GeometryReader>
               }
             >
-              {weeks.map(week => (
-                <VStack key={week[0].day} spacing={HEATMAP_GAP}>
-                  {week.map(cell => (
+              {cols.map(col => (
+                <VStack key={col[0].day} spacing={HEATMAP_GAP}>
+                  {col.map(cell => (
                     <RoundedRectangle
                       key={cell.day}
-                      cornerRadius={3}
+                      cornerRadius={4}
                       fill={cell.level > 0 ? tint.tint : fill.tag}
                       opacity={cell.level > 0 ? HEATMAP_OPACITY[cell.level - 1] : 1}
                       frame={{ width: size, height: size }}
