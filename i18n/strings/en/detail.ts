@@ -56,6 +56,9 @@ export default {
   resumeDownload: "Resume download",
   markRead: "Mark read",
   markUnread: "Mark unread",
+  previousChapters: "Previous chapters",
+  cancelDownload: "Cancel download",
+  removeDownload: "Remove download",
 
   lastRead: "Last read",
   lastReadAtPage: "Last read · Page {n}",

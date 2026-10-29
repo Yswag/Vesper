@@ -75,6 +75,10 @@ export default {
   resumeDownload: "繼續下載",
   markRead: "標為已讀",
   markUnread: "標為未讀",
+  /** 章節列長按選單；「之前的章節」是子選單，裡面是標為已讀／未讀。 */
+  previousChapters: "之前的章節",
+  cancelDownload: "取消下載",
+  removeDownload: "移除下載",
 
   /** 續讀徽章；`{n}` 是頁碼。 */
   lastRead: "上次讀到",

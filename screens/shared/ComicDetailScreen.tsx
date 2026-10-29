@@ -4,15 +4,18 @@ import {
   Button,
   Divider,
   GeometryReader,
+  Group,
   HStack,
   Image,
   LazyVStack,
   LazyHStack,
+  Menu,
   NamespaceReader,
   Navigation,
   NavigationLink,
   NavigationStack,
   ScrollView,
+  Section,
   Spacer,
   Text,
   Toolbar,
@@ -480,6 +483,27 @@ export function ComicDetailScreen({
   /** 章節列左滑：反轉這一話的已讀狀態。 */
   function toggleRead(chapter: ChapterRef) {
     markChapterRead(sourceKey, comicId, [chapter.id], !readIds.has(chapter.id))
+  }
+
+  /** 這一話之前（章節順序，不是畫面排序）、同一分組裡讀得到的章節。 */
+  function chaptersBefore(chapter: ChapterRef): ChapterRef[] {
+    const index = currentGroupChapters.findIndex(item => item.id === chapter.id)
+    return index > 0 ? readableChapters(currentGroupChapters.slice(0, index)) : []
+  }
+
+  /** 長按選單「之前的章節」：一次標成已讀或未讀。 */
+  function markChaptersBefore(chapter: ChapterRef, read: boolean) {
+    const ids = chaptersBefore(chapter).map(item => item.id)
+    if (ids.length > 0) markChapterRead(sourceKey, comicId, ids, read)
+  }
+
+  function cancelChapterDownload(chapter: ChapterRef) {
+    library.cancelDownload({ sourceKey, comicId, epId: chapter.id })
+  }
+
+  /** 刪掉這一話的離線檔（下載中的先取消、等任務收尾再刪，見 offline.deleteChapter）。 */
+  function removeChapterDownload(chapter: ChapterRef) {
+    void library.offline.deleteChapter({ sourceKey, comicId, epId: chapter.id })
   }
 
   /** 「全部標為已讀」：一次標完當前分組裡還讀得到的章節。 */
@@ -1096,6 +1120,62 @@ export function ComicDetailScreen({
                     )
                   }
 
+                  // 長按：左滑的全部再加上「之前的章節」與取消／移除下載。選取模式給空選單（空的不會彈出）。
+                  const before = chaptersBefore(chapter)
+                  const removable = download.state === "done" || download.state === "partial" || download.state === "failed"
+                  const menuItems = selecting ? (
+                    <Group />
+                  ) : (
+                    <Group>
+                      <Section>
+                        {isActive(download.state) ? (
+                          <Button
+                            title={t("detail.cancelDownload")}
+                            systemImage="xmark.circle"
+                            action={() => cancelChapterDownload(chapter)}
+                          />
+                        ) : download.state !== "done" ? (
+                          <Button
+                            title={download.state === "none" ? t("detail.download") : t("detail.resumeDownload")}
+                            systemImage="arrow.down.circle"
+                            action={() => downloadChapter(chapter)}
+                          />
+                        ) : null}
+                      </Section>
+                      <Section>
+                        <Button
+                          title={read ? t("detail.markUnread") : t("detail.markRead")}
+                          systemImage={read ? "arrow.uturn.backward.circle" : "checkmark.circle"}
+                          action={() => toggleRead(chapter)}
+                        />
+                        {before.length > 0 ? (
+                          <Menu title={t("detail.previousChapters")} systemImage="text.line.first.and.arrowtriangle.forward">
+                            <Button
+                              title={t("detail.markRead")}
+                              systemImage="checkmark.circle"
+                              action={() => markChaptersBefore(chapter, true)}
+                            />
+                            <Button
+                              title={t("detail.markUnread")}
+                              systemImage="arrow.uturn.backward.circle"
+                              action={() => markChaptersBefore(chapter, false)}
+                            />
+                          </Menu>
+                        ) : null}
+                      </Section>
+                      {removable ? (
+                        <Section>
+                          <Button
+                            title={t("detail.removeDownload")}
+                            systemImage="trash"
+                            role="destructive"
+                            action={() => removeChapterDownload(chapter)}
+                          />
+                        </Section>
+                      ) : null}
+                    </Group>
+                  )
+
                   // 選取模式只清空動作、不拿掉修飾子：結構一變整列會被換掉，圓點與位移就沒有動畫。
                   return locked ? (
                     <VStack key={chapter.id} spacing={0} clipShape={cardShape}>
@@ -1107,6 +1187,7 @@ export function ComicDetailScreen({
                       spacing={0}
                       clipShape={cardShape}
                       trailingSwipeActions={{ allowsFullSwipe: !selecting, actions: selecting ? [] : actions }}
+                      contextMenu={{ menuItems }}
                     >
                       {row}
                     </VStack>

@@ -56,6 +56,9 @@ export default {
   resumeDownload: "继续下载",
   markRead: "标为已读",
   markUnread: "标为未读",
+  previousChapters: "之前的章节",
+  cancelDownload: "取消下载",
+  removeDownload: "移除下载",
 
   lastRead: "上次读到",
   lastReadAtPage: "上次读到 · 第 {n} 页",
