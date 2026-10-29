@@ -48,7 +48,13 @@ import {
 import { formatStars } from "../../design/rating"
 import { CommentScreen } from "./CommentScreen"
 import { SourceSwitchSheet } from "./SourceSwitchSheet"
-import { ChapterListHeader, ChapterSelectionBar, selectionAnimation, selectionBarClearance } from "./ChapterSelection"
+import {
+  ChapterListHeader,
+  ChapterSelectionBar,
+  selectionAnimation,
+  selectionBarClearance,
+  SelectionTabBarHider,
+} from "./ChapterSelection"
 import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { presentReader } from "./ResumeReaderScreen"
 import { type ChapterRef } from "./ReaderScreen"
@@ -596,6 +602,8 @@ export function ComicDetailScreen({
           </Toolbar>
         }
     >
+      <SelectionTabBarHider selecting={selecting} />
+
       {/* 載入初態；失敗時同一個位置顯示錯誤訊息 */}
       {!detail && status ? (
         <VStack padding={pageInsets} frame={{ maxWidth: "infinity" }}>

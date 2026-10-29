@@ -27,6 +27,8 @@ export interface ChipProps {
   interactive?: boolean
   /** 讀屏用的說法（沒有文字時必填）。 */
   accessibilityLabel?: string
+  /** 只淡內容、玻璃照畫：收進鄰居膠囊時讓玻璃融合用。 */
+  contentOpacity?: number
 }
 
 export function Chip({
@@ -40,6 +42,7 @@ export function Chip({
   onTap,
   interactive,
   accessibilityLabel,
+  contentOpacity = 1,
 }: ChipProps) {
   const tint = useTint()
   const textColor = selected ? tint.tint : disabled ? "tertiaryLabel" : "label"
@@ -53,6 +56,7 @@ export function Chip({
       <HStack
         spacing={compact ? 4 : 6}
         padding={compact ? chipCompactPadding : chipPadding}
+        opacity={contentOpacity}
         background={selected ? tint.selected : undefined}
         clipShape={capsule("circular")}
         // 沒有 `onTap`（例如當成 Menu 的 label）時，說法掛在膠囊本身，不然圖示 chip 讀不出來。
