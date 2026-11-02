@@ -60,6 +60,10 @@ export default {
   hardwareSharpen: "超解析度",
   /** 超分開關下方的說明與錯誤訊息：沒有 Scripting Pro 就按不下去。 */
   upscaleRequiresPro: "超解析度需要 Scripting Pro",
+  /** 圖片預取（± 調整）。`{n}` 是往後幾頁。 */
+  prefetch: "圖片預取",
+  prefetchPages: { one: "{n} 頁", other: "{n} 頁" },
+  prefetchOff: "關閉",
   /** 預設跟隨源宣告的閱讀方式（沒有就退全域）；打開就存成這本的獨立設定。 */
   perComic: "記住這本的設定",
 

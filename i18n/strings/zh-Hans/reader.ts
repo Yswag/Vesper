@@ -41,6 +41,9 @@ export default {
   tapZonesVerticalOnly: "纵向连续模式只能滑动翻页",
   hardwareSharpen: "超分辨率",
   upscaleRequiresPro: "超分辨率需要 Scripting Pro",
+  prefetch: "图片预加载",
+  prefetchPages: { one: "{n} 页", other: "{n} 页" },
+  prefetchOff: "关闭",
   /** 預設跟随源宣告的阅读方式（没有就退全域）；打开就存成这部的独立设置。 */
   perComic: "记住这部的设置",
 

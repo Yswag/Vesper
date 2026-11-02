@@ -41,6 +41,9 @@ export default {
   tapZonesVerticalOnly: "Vertical continuous mode turns pages by scrolling only",
   hardwareSharpen: "Super Resolution",
   upscaleRequiresPro: "Super Resolution needs Scripting Pro",
+  prefetch: "Image Prefetch",
+  prefetchPages: { one: "{n} page", other: "{n} pages" },
+  prefetchOff: "Off",
   /** Default follows the source's viewer (then global); on saves settings for this title only. */
   perComic: "Remember for this title",
 

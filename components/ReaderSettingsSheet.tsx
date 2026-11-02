@@ -1,11 +1,17 @@
-import { Form, HStack, Image, Menu, Picker, Rectangle, Section, Spacer, Text, Toggle, VStack } from "scripting"
+import { Form, HStack, Image, Menu, Picker, Rectangle, Section, Spacer, Stepper, Text, Toggle, VStack, useState } from "scripting"
 
 import { t } from "../i18n"
 import { useTint } from "../app/theme"
 import { glass } from "../design/glass"
 import { toggleTint } from "../design/rows"
 import { capsule, fill, radius, rect } from "../design/tokens"
-import type { ReaderSettings } from "../library/readerSettings"
+import {
+  getPrefetchPages,
+  PREFETCH_MAX,
+  PREFETCH_MIN,
+  setPrefetchPages,
+  type ReaderSettings,
+} from "../library/readerSettings"
 
 export interface ReaderSettingsSheetProps {
   settings: ReaderSettings
@@ -24,15 +30,13 @@ function directionLabel(direction: ReaderSettings["direction"]): string {
   return t("reader.directionTtb")
 }
 
-/** 開關列：圖示灰色（只是裝飾），開關跟主題色。 */
+/** 開關列：開關跟主題色。 */
 function SettingToggle({
-  icon,
   title,
   value,
   disabled = false,
   onChanged,
 }: {
-  icon: string
   title: string
   value: boolean
   disabled?: boolean
@@ -41,15 +45,35 @@ function SettingToggle({
   const tint = useTint()
   return (
     <HStack spacing={12} alignment="center" listRowBackground={rowBackground}>
-      <Image
-        systemName={icon}
-        foregroundStyle={disabled ? "tertiaryLabel" : "secondaryLabel"}
-        frame={{ width: 24 }}
-      />
       <Text foregroundStyle={disabled ? "tertiaryLabel" : "label"}>{title}</Text>
       <Spacer />
       <Toggle title="" value={value} disabled={disabled} tint={toggleTint(tint)} onChanged={onChanged} />
     </HStack>
+  )
+}
+
+/** 預取頁數列：全域設定，自己讀寫（不走 per-comic／viewer）；預取佇列下次翻頁就讀到新值。 */
+function PrefetchStepper() {
+  const [pages, setPages] = useState<number>(getPrefetchPages)
+  const change = (delta: number) => setPages(setPrefetchPages(pages + delta))
+  return (
+    <Stepper
+      listRowBackground={rowBackground}
+      onIncrement={() => {
+        if (pages < PREFETCH_MAX) change(1)
+      }}
+      onDecrement={() => {
+        if (pages > PREFETCH_MIN) change(-1)
+      }}
+    >
+      <HStack>
+        <Text foregroundStyle="label">{t("reader.prefetch")}</Text>
+        <Spacer />
+        <Text foregroundStyle="secondaryLabel" monospacedDigit>
+          {pages === 0 ? t("reader.prefetchOff") : t("reader.prefetchPages", { n: pages })}
+        </Text>
+      </HStack>
+    </Stepper>
   )
 }
 
@@ -93,7 +117,7 @@ export function ReaderSettingsSheet({
       <Form scrollContentBackground="hidden">
         {/* 預設跟隨源宣告（再退全域）；打開才把這本記成獨立設定。 */}
         <Section>
-          <SettingToggle icon="pin" title={t("reader.perComic")} value={perComic} onChanged={onTogglePerComic} />
+          <SettingToggle title={t("reader.perComic")} value={perComic} onChanged={onTogglePerComic} />
         </Section>
 
         {/* 版面兩個控制放同一塊：模式是分段切換，方向是欄位式選單（點開是系統勾選清單）。 */}
@@ -145,7 +169,6 @@ export function ReaderSettingsSheet({
 
         <Section footer={tapZonesUnavailable ? <Text>{t("reader.tapZonesVerticalOnly")}</Text> : undefined}>
           <SettingToggle
-            icon="hand.tap"
             title={t("reader.tapZones")}
             disabled={tapZonesUnavailable}
             value={settings.tapZones && !tapZonesUnavailable}
@@ -155,9 +178,12 @@ export function ReaderSettingsSheet({
           />
         </Section>
 
+        <Section>
+          <PrefetchStepper />
+        </Section>
+
         <Section footer={canUpscale ? undefined : <Text>{t("reader.upscaleRequiresPro")}</Text>}>
           <SettingToggle
-            icon="sparkles"
             title={t("reader.hardwareSharpen")}
             disabled={!canUpscale}
             value={settings.hardwareSharpen}

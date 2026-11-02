@@ -79,6 +79,27 @@ export function clearPerComicSettings(scope: ReaderScope): void {
   if (kv.contains(key)) kv.remove(key)
 }
 
+/** 預取頁數（往後幾頁，不含當前頁）：全域一份，不跟 per-comic／viewer。 */
+const PREFETCH_KEY = "venera:readerPrefetch"
+export const PREFETCH_MIN = 0
+export const PREFETCH_MAX = 10
+const PREFETCH_DEFAULT = 2
+
+function clampPrefetch(value: number): number {
+  return Math.min(PREFETCH_MAX, Math.max(PREFETCH_MIN, Math.round(value)))
+}
+
+export function getPrefetchPages(): number {
+  const raw = kv.get(PREFETCH_KEY)
+  return typeof raw === "number" && Number.isFinite(raw) ? clampPrefetch(raw) : PREFETCH_DEFAULT
+}
+
+export function setPrefetchPages(value: number): number {
+  const next = clampPrefetch(value)
+  kv.set(PREFETCH_KEY, next)
+  return next
+}
+
 /** viewer 對我們兩個軸的對應（Aidoku：rtl/ltr/vertical 是分頁，scroll 是連續）。 */
 const VIEWER_AXES: Record<SourceViewer, { mode: ReaderMode; direction: ReaderDirection }> = {
   rtl: { mode: "gallery", direction: "rtl" },

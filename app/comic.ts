@@ -21,7 +21,7 @@ import {
   type ReaderChapter,
 } from "../engine/offline"
 import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
-import { getReaderSettings, type SourceViewer } from "../library/readerSettings"
+import { getPrefetchPages, getReaderSettings, type SourceViewer } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
@@ -786,6 +786,7 @@ export function createComicLibrary(): ComicLibrary {
         total: imageKeys.length,
         signal: controller.signal,
         load: loadPageBytes,
+        ahead: getPrefetchPages,
         // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
         onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
       })

@@ -1,12 +1,12 @@
-// 正文圖片預取佇列：以當前閱讀頁為中心往前排程預載（預設深度 3 頁，併發 2），
+// 正文圖片預取佇列：以當前閱讀頁為中心往後排程預載（頁數由呼叫端給，併發 2），
 // 採用插隊優先策略並過濾重複請求，消除翻頁等待時間。
 
 import type { AbortSignal } from "scripting"
 
 import { isAbortError } from "./http"
 
-/** 往前幾頁（含當前頁；實測一頁 0.1–0.2MB，3 頁的代價可接受）。 */
-const DEPTH = 3
+/** 沒給 `ahead` 時往後幾頁（不含當前頁；實測一頁 0.1–0.2MB）。 */
+const DEFAULT_AHEAD = 2
 /** 同時抓幾頁（再多會跟「當下要的那一頁」搶頻寬）。 */
 const CONCURRENCY = 2
 
@@ -15,6 +15,8 @@ export interface PrefetchQueueOptions {
   total: number
   /** 抓一頁。 */
   load(page: number): Promise<unknown>
+  /** 往後預取幾頁；每次 `focus` 都重讀，所以設定改了下一次翻頁就生效。 */
+  ahead?(): number
   /** 取消範圍；abort 之後在飛的會失敗，排隊中的不再啟動。 */
   signal?: AbortSignal
   /** 失敗的紀錄（取消不算失敗）。預設什麼都不做。 */
@@ -72,7 +74,8 @@ export function createPrefetchQueue(options: PrefetchQueueOptions): PrefetchQueu
         queue.unshift(page)
         working.add(page)
       }
-      for (let step = 1; step < DEPTH; step++) {
+      const ahead = options.ahead ? options.ahead() : DEFAULT_AHEAD
+      for (let step = 1; step <= ahead; step++) {
         const target = page + step
         if (target >= options.total || working.has(target) || finished.has(target)) continue
         working.add(target)
