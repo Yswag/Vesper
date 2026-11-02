@@ -23,6 +23,8 @@ export interface ReaderSettingsSheetProps {
 
 /** 列底要半透明才接得上玻璃；系統列底不跟區域的深色覆蓋，會畫成白底。 */
 const rowBackground = <Rectangle fill={fill.chip} />
+/** 組內不畫分隔線，靠分組區隔。 */
+const rowStyle = { listRowBackground: rowBackground, listRowSeparator: "hidden" } as const
 
 function directionLabel(direction: ReaderSettings["direction"]): string {
   if (direction === "ltr") return t("reader.directionLtr")
@@ -44,7 +46,7 @@ function SettingToggle({
 }) {
   const tint = useTint()
   return (
-    <HStack spacing={12} alignment="center" listRowBackground={rowBackground}>
+    <HStack spacing={12} alignment="center" {...rowStyle}>
       <Text foregroundStyle={disabled ? "tertiaryLabel" : "label"}>{title}</Text>
       <Spacer />
       <Toggle title="" value={value} disabled={disabled} tint={toggleTint(tint)} onChanged={onChanged} />
@@ -58,7 +60,7 @@ function PrefetchStepper() {
   const change = (delta: number) => setPages(setPrefetchPages(pages + delta))
   return (
     <Stepper
-      listRowBackground={rowBackground}
+      {...rowStyle}
       onIncrement={() => {
         if (pages < PREFETCH_MAX) change(1)
       }}
@@ -122,9 +124,9 @@ export function ReaderSettingsSheet({
           <SettingToggle title={t("reader.perComic")} value={perComic} onChanged={onTogglePerComic} />
         </Section>
 
-        {/* 版面兩個控制放同一塊：模式是分段切換，方向是欄位式選單（點開是系統勾選清單）。 */}
-        <Section>
-          <VStack spacing={10} listRowBackground={rowBackground}>
+        {/* 翻頁與版面一組：模式是分段切換，方向是欄位式選單（點開是系統勾選清單）；切割寬圖緊跟模式，變灰的原因一眼看得到。 */}
+        <Section footer={tapZonesUnavailable ? <Text>{t("reader.tapZonesVerticalOnly")}</Text> : undefined}>
+          <VStack spacing={10} {...rowStyle}>
             <Picker
               title={t("reader.mode")}
               value={settings.mode}
@@ -167,9 +169,7 @@ export function ReaderSettingsSheet({
               </Picker>
             </Menu>
           </VStack>
-        </Section>
 
-        <Section footer={tapZonesUnavailable ? <Text>{t("reader.tapZonesVerticalOnly")}</Text> : undefined}>
           <SettingToggle
             title={t("reader.tapZones")}
             disabled={tapZonesUnavailable}
@@ -178,9 +178,6 @@ export function ReaderSettingsSheet({
               if (!tapZonesUnavailable) onUpdateSettings({ tapZones: value })
             }}
           />
-        </Section>
-
-        <Section footer={splitUnavailable ? <Text>{t("reader.splitWideGalleryOnly")}</Text> : undefined}>
           <SettingToggle
             title={t("reader.splitWide")}
             disabled={splitUnavailable}
@@ -198,11 +195,9 @@ export function ReaderSettingsSheet({
           ) : null}
         </Section>
 
-        <Section>
-          <PrefetchStepper />
-        </Section>
-
+        {/* 圖片載入與畫質一組。 */}
         <Section footer={canUpscale ? undefined : <Text>{t("reader.upscaleRequiresPro")}</Text>}>
+          <PrefetchStepper />
           <SettingToggle
             title={t("reader.hardwareSharpen")}
             disabled={!canUpscale}

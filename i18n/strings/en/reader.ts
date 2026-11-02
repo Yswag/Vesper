@@ -42,7 +42,6 @@ export default {
   hardwareSharpen: "Super Resolution",
   splitWide: "Split Wide Images",
   splitSwap: "Reverse Split Order",
-  splitWideGalleryOnly: "Only applies in gallery mode",
   upscaleRequiresPro: "Super Resolution needs Scripting Pro",
   prefetch: "Image Prefetch",
   prefetchPages: { one: "{n} page", other: "{n} pages" },

@@ -60,7 +60,6 @@ export default {
   hardwareSharpen: "超解析度",
   splitWide: "切割寬圖",
   splitSwap: "交換切割順序",
-  splitWideGalleryOnly: "只在畫廊模式生效",
   /** 超分開關下方的說明與錯誤訊息：沒有 Scripting Pro 就按不下去。 */
   upscaleRequiresPro: "超解析度需要 Scripting Pro",
   /** 圖片預取（± 調整）。`{n}` 是往後幾頁。 */
