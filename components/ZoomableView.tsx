@@ -220,12 +220,25 @@ export function ZoomableView({
     []
   )
 
+  /**
+   * 帶過場地縮放。`withAnimation` 的 body 不是同步執行，ref 要先寫好，
+   * 緊接的 `notify()` 才讀得到新倍率（否則拖曳不會掛上、外層捲動也不會停用）。
+   */
+  const animateTo = (nextZoom: number, nextPan: { x: number; y: number }) => {
+    latest.current.zoom = nextZoom
+    latest.current.pan = nextPan
+    void withAnimation(DOUBLE_TAP_ANIMATION, () => {
+      setZoom(nextZoom)
+      setPan(nextPan)
+    })
+    notify()
+  }
+
   /** 雙擊：以點到的位置為錨點放大／還原。 */
   const toggleAt = (location: { x: number; y: number }) => {
     if (latest.current.zoom > 1.001) {
       clearStart()
-      void withAnimation(DOUBLE_TAP_ANIMATION, () => commit(1, { x: 0, y: 0 }))
-      notify()
+      animateTo(1, { x: 0, y: 0 })
       return
     }
     // 內容置中、以中心縮放。想讓局部點 q（相對中心的位移）留在原地，偏移取 q * (1 - 倍率)。
@@ -233,9 +246,7 @@ export function ZoomableView({
     const qy = location.y - latest.current.box.height / 2
     const target = doubleTapZoom
     clearStart()
-    const nextPan = clampPan({ x: qx * (1 - target), y: qy * (1 - target) }, target)
-    void withAnimation(DOUBLE_TAP_ANIMATION, () => commit(target, nextPan))
-    notify()
+    animateTo(target, clampPan({ x: qx * (1 - target), y: qy * (1 - target) }, target))
   }
 
   /** 第一下先等時間窗；窗內來第二下＝雙擊，否則交給 onSingleTap。 */
