@@ -45,7 +45,7 @@ import { ChapterImage } from "../../components/ChapterImage"
 import { createPageSignal, usePageSignal, type PageSignal } from "../../components/pageSignal"
 import { ChapterDrawer } from "../../components/ChapterDrawer"
 import { ReaderCornerInfo, ReaderHUD } from "../../components/ReaderHUD"
-import { ZoomableView } from "../../components/ZoomableView"
+import { MAX_ZOOM, ZoomableView } from "../../components/ZoomableView"
 import { Chip } from "../../design/chip"
 import { EmptyState, NoticeBanner, PageLoading } from "../../design/status"
 import { fill, neutral, radius, rect } from "../../design/tokens"
@@ -712,7 +712,8 @@ function ReaderContent({
                       key={`${id}:${renderGeneration}`}
                       session={session}
                       index={i}
-                      size={pageSize}
+                      // 可縮放：超分照放大後的框算，放大時才有細節。
+                      size={{ width: pageSize.width, height: pageSize.height, zoom: MAX_ZOOM }}
                     />
                   </ZoomableView>
                 </ZStack>

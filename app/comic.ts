@@ -20,7 +20,7 @@ import {
   type OfflineStatus,
   type ReaderChapter,
 } from "../engine/offline"
-import { clearUpscaleCache, isSafeForUpscale, sharpenImage } from "../engine/upscale"
+import { clearUpscaleCache, planUpscale, sharpenImage } from "../engine/upscale"
 import { getPrefetchPages, getReaderSettings, type SourceViewer } from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
@@ -29,10 +29,12 @@ import { hasPro } from "../engine/pro"
 import {
   closeRenderDir,
   createPageAspects,
+  displayPixels,
   findSharpenedPage,
   openRenderDir,
   writePage,
   writeSharpenedPage,
+  type PageFrame,
   type PageRender,
 } from "../engine/pagefiles"
 import { createPageCache } from "../engine/pageimages"
@@ -201,11 +203,13 @@ export interface ChapterSession {
   /**
    * 載入並渲染頁面圖片（含解碼與可選的 AI 超解析度管線）。
    * 原圖先見：直接 resolve 原圖；若開啟超分且處理成功，透過 onSharpened 回調推送超分圖。
+   * `frame`＝這一頁的顯示框（點，與 `ChapterImage` 的 `size` 同一份）；沒給就不超分。
    */
   loadPage(
     index: number,
     onSharpened?: (render: PageRender) => void,
-    isCancelled?: () => boolean
+    isCancelled?: () => boolean,
+    frame?: PageFrame
   ): Promise<PageRender | null>
   /** 動態更新當前會話是否啟用 AI 超解析度。 */
   setHardwareSharpen(enabled: boolean): void
@@ -811,7 +815,8 @@ export function createComicLibrary(): ComicLibrary {
       const loadPage = async (
         index: number,
         onSharpened?: (render: PageRender) => void,
-        isCancelled?: () => boolean
+        isCancelled?: () => boolean,
+        frame?: PageFrame
       ): Promise<PageRender | null> => {
         // 已經備好這頁、又沒有超分要跑（預設）：直接回。
         // 重掛的頁走這裡，不特別去問源一次（`resolveImageRequest` 是源程式碼，不便宜）。
@@ -830,9 +835,19 @@ export function createComicLibrary(): ComicLibrary {
         aspects.set(index, aspect)
 
         const name = `p${index}`
+        // 有放大效益、縮後放得下才超分；輸出按這一頁的顯示框算。
+        const target = hardwareSharpenEnabled && frame
+          ? planUpscale({ width: decoded.width, height: decoded.height }, displayPixels(frame, aspect))
+          : null
+        // 檔名帶輸出尺寸：框變了不拿舊的小圖。
+        const sharpenedName = target ? `${name}-${target.outWidth}x${target.outHeight}` : ""
+        const sizes = `${decoded.width}×${decoded.height}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
+        if (hardwareSharpenEnabled && frame && !target) {
+          log("debug", "upscale", `第 ${index + 1} 頁不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
+        }
         // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
-        if (hardwareSharpenEnabled) {
-          const cached = findSharpenedPage(renderDir, name, aspect)
+        if (target) {
+          const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
           if (cached) return memoRender(index, cached)
         }
 
@@ -840,23 +855,23 @@ export function createComicLibrary(): ComicLibrary {
         const render = writePage(renderDir, name, bytes, aspect)
         if (!render) return null
 
-        // 漸進式超分：若開關開啟且尺寸在 ACNet 安全範圍內，在背景排入超分推論並透過 callback 回傳
-        if (hardwareSharpenEnabled && isSafeForUpscale(decoded.width, decoded.height)) {
+        // 漸進式超分：在背景排入超分推論並透過 callback 回傳
+        if (target) {
           if (onSharpened) {
             const pageKey = `${ref.epId}_p${index}`
             const t0 = Date.now()
-            void sharpenImage(pageKey, data, isCancelled).then(result => {
+            void sharpenImage(pageKey, data, isCancelled, target).then(result => {
               // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
               if (!result || disposed || (isCancelled && isCancelled())) return
               const costMs = Date.now() - t0
               if (result.fromCache) {
                 log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
               } else {
-                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
               }
               const sharpened = writeSharpenedPage(
                 renderDir,
-                name,
+                sharpenedName,
                 new Uint8Array(result.data.toArrayBuffer()),
                 aspect
               )

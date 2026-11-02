@@ -8,6 +8,7 @@ import type { ChapterSession, PageRender } from "../app/comic"
 import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
+import { fitBox, type PageFrame } from "../engine/pagefiles"
 
 /** 連鄰頁都還沒量到比例時的估計值（直式漫畫常見比例）。 */
 const DEFAULT_ASPECT = 0.7
@@ -20,18 +21,7 @@ export interface ChapterImageProps {
    * 可用的顯示框（點）。只給 `width`＝以寬為準（條漫）；只給 `height`＝以高為準（橫向）；
    * 兩者都給＝contain 置中。圖實際佔的框由 `fitBox` 依比例算出。
    */
-  size: { width?: number; height?: number }
-}
-
-/** 在框裡以 contain 放入 `aspect`（寬/高）的圖；只約束一邊時，另一邊按比例長。 */
-export function fitBox(size: { width?: number; height?: number }, aspect: number): { width: number; height: number } {
-  if (size.width !== undefined && size.height !== undefined) {
-    const width = Math.min(size.width, size.height * aspect)
-    return { width, height: width / aspect }
-  }
-  if (size.width !== undefined) return { width: size.width, height: size.width / aspect }
-  if (size.height !== undefined) return { width: size.height * aspect, height: size.height }
-  return { width: 0, height: 0 }
+  size: PageFrame
 }
 
 /**
@@ -62,7 +52,8 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
           sharpened => {
             if (alive) setRender(sharpened)
           },
-          () => !alive
+          () => !alive,
+          size
         )
 
         if (!alive) return
@@ -85,7 +76,8 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     return () => {
       alive = false
     }
-  }, [session, index, retryKey])
+    // 框變了（直拿↔橫拿）要重跑：超分圖是按框的大小算的。
+  }, [session, index, retryKey, size.width, size.height, size.zoom])
 
   // 比例：這一頁解碼過就用真值，否則借鄰頁。整個框在 render 期間就決定，不等圖到。
   const aspect = render?.aspect ?? session.aspectOf(index) ?? estimateAspect(session, index)

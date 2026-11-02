@@ -5,8 +5,16 @@
 import type { ChapterSession, PageRender } from "./comic"
 import { readBytes } from "../engine/fs"
 import { chapterOf, offlinePagePath, statusOf, type OfflineKey } from "../engine/offline"
-import { closeRenderDir, createPageAspects, findSharpenedPage, openRenderDir, writeSharpenedPage } from "../engine/pagefiles"
-import { isSafeForUpscale, sharpenImage } from "../engine/upscale"
+import {
+  closeRenderDir,
+  createPageAspects,
+  displayPixels,
+  findSharpenedPage,
+  openRenderDir,
+  writeSharpenedPage,
+  type PageFrame,
+} from "../engine/pagefiles"
+import { planUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings } from "../library/readerSettings"
 import { log } from "../engine/log"
 import { hasPro } from "../engine/pro"
@@ -101,7 +109,8 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     loadPage: async (
       index: number,
       onSharpened?: (render: PageRender) => void,
-      isCancelled?: () => boolean
+      isCancelled?: () => boolean,
+      frame?: PageFrame
     ): Promise<PageRender | null> => {
       // 已經備好這頁、又沒有超分要跑（預設）：直接回，不再重讀一次檔。
       const ready = renders.get(index)
@@ -117,30 +126,39 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       const aspect = decoded.width / decoded.height
       aspects.set(index, aspect)
       const name = `p${index}`
+      // 有放大效益、縮後放得下才超分；輸出按這一頁的顯示框算，檔名帶輸出尺寸。
+      const target = hardwareSharpenEnabled && frame
+        ? planUpscale({ width: decoded.width, height: decoded.height }, displayPixels(frame, aspect))
+        : null
+      const sharpenedName = target ? `${name}-${target.outWidth}x${target.outHeight}` : ""
+      const sizes = `${decoded.width}×${decoded.height}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
+      if (hardwareSharpenEnabled && frame && !target) {
+        log("debug", "upscale", `第 ${index + 1} 頁 (離線) 不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
+      }
 
       // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
-      if (hardwareSharpenEnabled) {
-        const cached = findSharpenedPage(renderDir, name, aspect)
+      if (target) {
+        const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
         if (cached) return memoRender(index, cached)
       }
 
       // 漸進式超分：離線閱讀同樣享受 ACNet ONNX 超分
-      if (hardwareSharpenEnabled && isSafeForUpscale(decoded.width, decoded.height)) {
+      if (target) {
         if (onSharpened) {
           const pageKey = `${key.epId}_p${index}`
           const t0 = Date.now()
-          void sharpenImage(pageKey, Data.fromUint8Array(bytes)!, isCancelled).then(result => {
+          void sharpenImage(pageKey, Data.fromUint8Array(bytes)!, isCancelled, target).then(result => {
             // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
             if (!result || disposed || (isCancelled && isCancelled())) return
             const costMs = Date.now() - t0
             if (result.fromCache) {
               log("debug", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX [快取命中]，0ms 直接顯示`)
             } else {
-              log("info", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX 超分完成，耗時 ${costMs}ms`)
+              log("info", "upscale", `第 ${index + 1} 頁 (離線) ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
             }
             const sharpened = writeSharpenedPage(
               renderDir,
-              name,
+              sharpenedName,
               new Uint8Array(result.data.toArrayBuffer()),
               aspect
             )

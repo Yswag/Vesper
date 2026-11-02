@@ -21,6 +21,9 @@ import {
   type VirtualNode,
 } from "scripting"
 
+/** 預設最大縮放倍率。 */
+export const MAX_ZOOM = 5
+
 /** 兩下點擊判定為雙擊的時間窗（ms）。 */
 const DOUBLE_TAP_WINDOW = 330
 
@@ -66,7 +69,7 @@ export function ZoomableView({
   box,
   onZoomChange,
   resetToken,
-  maxZoom = 5,
+  maxZoom = MAX_ZOOM,
   doubleTapZoom = 2.5,
   clampPan: shouldClamp = true,
   onSingleTap,

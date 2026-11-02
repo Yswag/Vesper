@@ -12,6 +12,35 @@ export interface PageRender {
   aspect: number
 }
 
+/**
+ * 一頁可用的顯示框（點）。只給 `width`＝以寬為準（條漫）；只給 `height`＝以高為準（橫向）；
+ * 兩者都給＝contain 置中。
+ */
+export interface PageFrame {
+  width?: number
+  height?: number
+  /** 這一頁最多能放大幾倍（畫廊模式可縮放）；不給＝1。不影響版面，只影響超分輸出多大。 */
+  zoom?: number
+}
+
+/** 在框裡以 contain 放入 `aspect`（寬/高）的圖；只約束一邊時，另一邊按比例長。 */
+export function fitBox(size: PageFrame, aspect: number): { width: number; height: number } {
+  if (size.width !== undefined && size.height !== undefined) {
+    const width = Math.min(size.width, size.height * aspect)
+    return { width, height: width / aspect }
+  }
+  if (size.width !== undefined) return { width: size.width, height: size.width / aspect }
+  if (size.height !== undefined) return { width: size.height * aspect, height: size.height }
+  return { width: 0, height: 0 }
+}
+
+/** 超分要撐滿的框（像素）：`fitBox` × 螢幕倍率 × 可放大倍率（縮放時會用檔案本身重畫）。 */
+export function displayPixels(size: PageFrame, aspect: number): { width: number; height: number } {
+  const box = fitBox(size, aspect)
+  const scale = Device.screen.scale * (size.zoom ?? 1)
+  return { width: Math.round(box.width * scale), height: Math.round(box.height * scale) }
+}
+
 /** 每頁的寬高比（key＝頁索引）。長在 session 上：解碼過的頁重掛不必再等一次才知道要多高。 */
 export interface PageAspects {
   get(index: number): number | null
