@@ -38,6 +38,8 @@ import {
   type PageRender,
 } from "../engine/pagefiles"
 import { createPageCache } from "../engine/pageimages"
+import { readImageSize } from "../engine/imagesize"
+import { halfRect, halfSuffix, slotAspect, type SlotHalf } from "../engine/pageslots"
 import { createPrefetchQueue } from "../engine/prefetch"
 import {
   hasCategoryPage,
@@ -191,11 +193,13 @@ export interface ChapterSession {
    * 同步查詢——畫面在 render 期間就要拿它定尺寸，不能等 `loadPage`。
    */
   aspectOf(index: number): number | null
+  /** 量到新的比例就通知（預取讀檔頭或解碼）。 */
+  subscribeAspects(listener: (index: number, aspect: number) => void): () => void
   /**
    * 已經備好的頁面渲染（路徑 + 比例）；還沒載過就是 null。
    * 重掛的頁拿它當初始值，第一帧就是圖，不必先出佔位再換。
    */
-  renderOf(index: number): PageRender | null
+  renderOf(index: number, half?: SlotHalf): PageRender | null
   /**
    * 取得指定索引的圖片原始位元組（離線 ➔ 記憶體 LRU ➔ 網路）。
    */
@@ -204,12 +208,14 @@ export interface ChapterSession {
    * 載入並渲染頁面圖片（含解碼與可選的 AI 超解析度管線）。
    * 原圖先見：直接 resolve 原圖；若開啟超分且處理成功，透過 onSharpened 回調推送超分圖。
    * `frame`＝這一頁的顯示框（點，與 `ChapterImage` 的 `size` 同一份）；沒給就不超分。
+   * `half`＝寬圖切割的半邊：原圖照樣回整張，超分只算這一半、回來的渲染帶 `half`。
    */
   loadPage(
     index: number,
     onSharpened?: (render: PageRender) => void,
     isCancelled?: () => boolean,
-    frame?: PageFrame
+    frame?: PageFrame,
+    half?: SlotHalf
   ): Promise<PageRender | null>
   /** 動態更新當前會話是否啟用 AI 超解析度。 */
   setHardwareSharpen(enabled: boolean): void
@@ -786,10 +792,16 @@ export function createComicLibrary(): ComicLibrary {
           pageCache,
           controller.signal
         )
+      // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
+      const aspects = createPageAspects()
       const prefetch = createPrefetchQueue({
         total: imageKeys.length,
         signal: controller.signal,
-        load: loadPageBytes,
+        // 預取到的頁先讀檔頭記比例：畫廊切寬圖要在翻到之前就知道。
+        load: async page => {
+          const size = readImageSize(await loadPageBytes(page))
+          if (size && aspects.get(page) === null) aspects.set(page, size.width / size.height)
+        },
         ahead: getPrefetchPages,
         // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
         onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
@@ -801,26 +813,29 @@ export function createComicLibrary(): ComicLibrary {
       // 這一話的暫存檔目錄（每頁的原圖與超分圖），生命週期＝這個 session。
       // 開場順手清掉上一輪被系統殺掉時留下的孤兒。
       const renderDir = openRenderDir(ref.epId)
-      // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
-      const aspects = createPageAspects()
       // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
-      const renders = new Map<number, PageRender>()
+      // key＝頁索引＋半張尾碼（整張沒有尾碼）。
+      const renders = new Map<string, PageRender>()
       /** 記住這頁的渲染結果再回傳（所有成功路徑都要經過）。 */
       const memoRender = (index: number, render: PageRender | null): PageRender | null => {
-        if (render) renders.set(index, render)
+        if (render) renders.set(`${index}${halfSuffix(render.half)}`, render)
         return render
       }
+      /** 半張先找切好的超分圖，沒有就用整張。 */
+      const renderOf = (index: number, half?: SlotHalf): PageRender | null =>
+        (half ? renders.get(`${index}${halfSuffix(half)}`) : undefined) ?? renders.get(String(index)) ?? null
       let disposed = false
 
       const loadPage = async (
         index: number,
         onSharpened?: (render: PageRender) => void,
         isCancelled?: () => boolean,
-        frame?: PageFrame
+        frame?: PageFrame,
+        half?: SlotHalf
       ): Promise<PageRender | null> => {
         // 已經備好這頁、又沒有超分要跑（預設）：直接回。
         // 重掛的頁走這裡，不特別去問源一次（`resolveImageRequest` 是源程式碼，不便宜）。
-        const ready = renders.get(index)
+        const ready = renders.get(String(index))
         if (ready && !hardwareSharpenEnabled) return ready
 
         const bytes = await loadPageBytes(index)
@@ -835,20 +850,20 @@ export function createComicLibrary(): ComicLibrary {
         aspects.set(index, aspect)
 
         const name = `p${index}`
-        // 有放大效益、縮後放得下才超分；輸出按這一頁的顯示框算。
+        // 有放大效益、縮後放得下才超分；輸出按這一格的顯示框算（半張只算那一半）。
         const target = hardwareSharpenEnabled && frame
-          ? planUpscale({ width: decoded.width, height: decoded.height }, displayPixels(frame, aspect))
+          ? planUpscale(halfRect(decoded.width, decoded.height, half), displayPixels(frame, slotAspect(aspect, half)))
           : null
-        // 檔名帶輸出尺寸：框變了不拿舊的小圖。
-        const sharpenedName = target ? `${name}-${target.outWidth}x${target.outHeight}` : ""
-        const sizes = `${decoded.width}×${decoded.height}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
+        // 檔名帶半邊與輸出尺寸：框變了不拿舊的小圖。
+        const sharpenedName = target ? `${name}${halfSuffix(half)}-${target.outWidth}x${target.outHeight}` : ""
+        const sizes = `${decoded.width}×${decoded.height}${halfSuffix(half)}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
         if (hardwareSharpenEnabled && frame && !target) {
           log("debug", "upscale", `第 ${index + 1} 頁不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
         }
         // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
         if (target) {
           const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
-          if (cached) return memoRender(index, cached)
+          if (cached) return memoRender(index, { ...cached, half })
         }
 
         if (disposed) return null
@@ -877,8 +892,9 @@ export function createComicLibrary(): ComicLibrary {
               )
               if (sharpened) {
                 // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
-                memoRender(index, sharpened)
-                onSharpened(sharpened)
+                const render = { ...sharpened, half }
+                memoRender(index, render)
+                onSharpened(render)
               }
             })
           }
@@ -897,7 +913,8 @@ export function createComicLibrary(): ComicLibrary {
         local: false,
         imageKey: index => imageKeyOf(index),
         aspectOf: index => aspects.get(index),
-        renderOf: index => renders.get(index) ?? null,
+        subscribeAspects: aspects.subscribe,
+        renderOf,
         pageImage: loadPageBytes,
         loadPage,
         setHardwareSharpen: enabled => {

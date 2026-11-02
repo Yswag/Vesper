@@ -9,6 +9,7 @@ import { t } from "../i18n"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
 import { fitBox, type PageFrame } from "../engine/pagefiles"
+import { slotAspect, type SlotHalf } from "../engine/pageslots"
 
 /** 連鄰頁都還沒量到比例時的估計值（直式漫畫常見比例）。 */
 const DEFAULT_ASPECT = 0.7
@@ -22,6 +23,8 @@ export interface ChapterImageProps {
    * 兩者都給＝contain 置中。圖實際佔的框由 `fitBox` 依比例算出。
    */
   size: PageFrame
+  /** 只畫半張（畫廊寬圖切割）。 */
+  half?: SlotHalf
 }
 
 /**
@@ -32,9 +35,9 @@ function estimateAspect(session: ChapterSession, index: number): number {
   return session.aspectOf(index - 1) ?? session.aspectOf(index + 1) ?? DEFAULT_ASPECT
 }
 
-export function ChapterImage({ session, index, size }: ChapterImageProps) {
+export function ChapterImage({ session, index, size, half }: ChapterImageProps) {
   // 重掛的頁直接沿用 session 記住的渲染：第一帧就是圖，不先出佔位再換（那一換就是一次卡頓）。
-  const [render, setRender] = useState<PageRender | null>(() => session.renderOf(index))
+  const [render, setRender] = useState<PageRender | null>(() => session.renderOf(index, half))
   const [error, setError] = useState("")
   const [retryKey, setRetryKey] = useState(0)
 
@@ -42,7 +45,7 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
     let alive = true
     const started = Date.now()
     // 已經有圖就不要退回佔位（重掛／回捲）；沒有才需要轉圈。
-    if (!session.renderOf(index)) setRender(null)
+    if (!session.renderOf(index, half)) setRender(null)
     setError("")
 
     void (async () => {
@@ -53,7 +56,8 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
             if (alive) setRender(sharpened)
           },
           () => !alive,
-          size
+          size,
+          half
         )
 
         if (!alive) return
@@ -77,11 +81,11 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
       alive = false
     }
     // 框變了（直拿↔橫拿）要重跑：超分圖是按框的大小算的。
-  }, [session, index, retryKey, size.width, size.height, size.zoom])
+  }, [session, index, half, retryKey, size.width, size.height, size.zoom])
 
   // 比例：這一頁解碼過就用真值，否則借鄰頁。整個框在 render 期間就決定，不等圖到。
   const aspect = render?.aspect ?? session.aspectOf(index) ?? estimateAspect(session, index)
-  const box = fitBox(size, aspect)
+  const box = fitBox(size, slotAspect(aspect, half))
 
   if (render) {
     return (
@@ -91,8 +95,19 @@ export function ChapterImage({ session, index, size }: ChapterImageProps) {
         opaque={true}
         frame={{ width: box.width, height: box.height }}
         draw={(ctx, canvas) => {
-          // 框本身已經是 contain 後的形狀，這裡只負責填滿。
-          ctx.drawImage({ filePath: render.path }, 0, 0, canvas.width, canvas.height)
+          // 框本身已經是 contain 後的形狀，這裡只負責填滿。切好的半張超分檔也是整張畫。
+          if (!half || render.half) {
+            ctx.drawImage({ filePath: render.path }, 0, 0, canvas.width, canvas.height)
+            return
+          }
+          // 原圖的半張：整張畫成兩個框寬，右半往左移一個框寬；外層裁切只留這一半。
+          ctx.save()
+          ctx.beginPath()
+          ctx.rect(0, 0, canvas.width, canvas.height)
+          ctx.clip()
+          const dx = half === "left" ? 0 : -canvas.width
+          ctx.drawImage({ filePath: render.path }, dx, 0, canvas.width * 2, canvas.height)
+          ctx.restore()
         }}
       />
     )

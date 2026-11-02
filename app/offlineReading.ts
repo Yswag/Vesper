@@ -14,6 +14,7 @@ import {
   writeSharpenedPage,
   type PageFrame,
 } from "../engine/pagefiles"
+import { halfRect, halfSuffix, slotAspect, type SlotHalf } from "../engine/pageslots"
 import { planUpscale, sharpenImage } from "../engine/upscale"
 import { getReaderSettings } from "../library/readerSettings"
 import { log } from "../engine/log"
@@ -59,10 +60,11 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
   // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
   const aspects = createPageAspects()
   // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
-  const renders = new Map<number, PageRender>()
+  // key＝頁索引＋半張尾碼（整張沒有尾碼）。
+  const renders = new Map<string, PageRender>()
   /** 記住這頁的渲染結果再回傳。 */
   const memoRender = (index: number, render: PageRender | null): PageRender | null => {
-    if (render) renders.set(index, render)
+    if (render) renders.set(`${index}${halfSuffix(render.half)}`, render)
     return render
   }
   let disposed = false
@@ -83,7 +85,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
    * 不必先出轉圈、高度也不會從估計值跳成真值。讀不到就略過，由 `loadPage` 報錯。
    */
   const prepare = (index: number): void => {
-    if (index < 0 || index >= imageKeys.length || renders.has(index)) return
+    if (index < 0 || index >= imageKeys.length || renders.has(String(index))) return
     const path = sourcePath(index)
     const bytes = path ? readBytes(path) : null
     if (!path || !bytes || bytes.length === 0) return
@@ -91,7 +93,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     if (!decoded) return
     const aspect = decoded.width / decoded.height
     aspects.set(index, aspect)
-    renders.set(index, { path, aspect })
+    renders.set(String(index), { path, aspect })
   }
 
   return {
@@ -104,16 +106,20 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
     local: true,
     imageKey: imageKeyOf,
     aspectOf: index => aspects.get(index),
-    renderOf: index => renders.get(index) ?? null,
+    subscribeAspects: aspects.subscribe,
+    // 半張先找切好的超分圖，沒有就用整張。
+    renderOf: (index, half) =>
+      (half ? renders.get(`${index}${halfSuffix(half)}`) : undefined) ?? renders.get(String(index)) ?? null,
     pageImage: loadPageBytes,
     loadPage: async (
       index: number,
       onSharpened?: (render: PageRender) => void,
       isCancelled?: () => boolean,
-      frame?: PageFrame
+      frame?: PageFrame,
+      half?: SlotHalf
     ): Promise<PageRender | null> => {
       // 已經備好這頁、又沒有超分要跑（預設）：直接回，不再重讀一次檔。
-      const ready = renders.get(index)
+      const ready = renders.get(String(index))
       if (ready && !hardwareSharpenEnabled) return ready
 
       const bytes = await loadPageBytes(index)
@@ -126,12 +132,12 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       const aspect = decoded.width / decoded.height
       aspects.set(index, aspect)
       const name = `p${index}`
-      // 有放大效益、縮後放得下才超分；輸出按這一頁的顯示框算，檔名帶輸出尺寸。
+      // 有放大效益、縮後放得下才超分；輸出按這一格的顯示框算（半張只算那一半），檔名帶半邊與輸出尺寸。
       const target = hardwareSharpenEnabled && frame
-        ? planUpscale({ width: decoded.width, height: decoded.height }, displayPixels(frame, aspect))
+        ? planUpscale(halfRect(decoded.width, decoded.height, half), displayPixels(frame, slotAspect(aspect, half)))
         : null
-      const sharpenedName = target ? `${name}-${target.outWidth}x${target.outHeight}` : ""
-      const sizes = `${decoded.width}×${decoded.height}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
+      const sharpenedName = target ? `${name}${halfSuffix(half)}-${target.outWidth}x${target.outHeight}` : ""
+      const sizes = `${decoded.width}×${decoded.height}${halfSuffix(half)}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
       if (hardwareSharpenEnabled && frame && !target) {
         log("debug", "upscale", `第 ${index + 1} 頁 (離線) 不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
       }
@@ -139,7 +145,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
       if (target) {
         const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
-        if (cached) return memoRender(index, cached)
+        if (cached) return memoRender(index, { ...cached, half })
       }
 
       // 漸進式超分：離線閱讀同樣享受 ACNet ONNX 超分
@@ -164,8 +170,9 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
             )
             if (sharpened) {
               // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
-              memoRender(index, sharpened)
-              onSharpened(sharpened)
+              const render = { ...sharpened, half }
+              memoRender(index, render)
+              onSharpened(render)
             }
           })
         }

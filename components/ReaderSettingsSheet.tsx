@@ -87,6 +87,8 @@ export function ReaderSettingsSheet({
 }: ReaderSettingsSheetProps) {
   // 縱向連續沒有點擊翻頁（縱向畫廊有，上下分區）。
   const tapZonesUnavailable = settings.direction === "ttb" && settings.mode !== "gallery"
+  // 寬圖切割只在畫廊：連續模式的寬圖本來就整張放得下。
+  const splitUnavailable = settings.mode !== "gallery"
   const tint = useTint()
 
   return (
@@ -176,6 +178,24 @@ export function ReaderSettingsSheet({
               if (!tapZonesUnavailable) onUpdateSettings({ tapZones: value })
             }}
           />
+        </Section>
+
+        <Section footer={splitUnavailable ? <Text>{t("reader.splitWideGalleryOnly")}</Text> : undefined}>
+          <SettingToggle
+            title={t("reader.splitWide")}
+            disabled={splitUnavailable}
+            value={settings.splitWide && !splitUnavailable}
+            onChanged={value => {
+              if (!splitUnavailable) onUpdateSettings({ splitWide: value })
+            }}
+          />
+          {settings.splitWide && !splitUnavailable ? (
+            <SettingToggle
+              title={t("reader.splitSwap")}
+              value={settings.splitSwap}
+              onChanged={value => onUpdateSettings({ splitSwap: value })}
+            />
+          ) : null}
         </Section>
 
         <Section>

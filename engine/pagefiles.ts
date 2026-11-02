@@ -3,13 +3,16 @@
 
 import { appDataRoot, exists, join, listDir, remove, writeBytes } from "./fs"
 import { log } from "./log"
+import type { SlotHalf } from "./pageslots"
 
 /** 一頁「可以直接畫」的東西。畫面只需要這兩個值就能顯示——不必碰 `UIImage`。 */
 export interface PageRender {
   /** 可以直接交給 `Canvas.drawImage({ filePath })` 的路徑。 */
   path: string
-  /** 寬 / 高。 */
+  /** 整張的寬 / 高（半張檔也是整張的比例）。 */
   aspect: number
+  /** 檔案只含這一半（寬圖切割後的超分圖）；沒有＝整張。 */
+  half?: SlotHalf
 }
 
 /**
@@ -45,14 +48,25 @@ export function displayPixels(size: PageFrame, aspect: number): { width: number;
 export interface PageAspects {
   get(index: number): number | null
   set(index: number, aspect: number): void
+  /** 新量到（或變了）的比例。 */
+  subscribe(listener: (index: number, aspect: number) => void): () => void
 }
 
 export function createPageAspects(): PageAspects {
   const aspects = new Map<number, number>()
+  const listeners = new Set<(index: number, aspect: number) => void>()
   return {
     get: index => aspects.get(index) ?? null,
     set: (index, aspect) => {
+      if (aspects.get(index) === aspect) return
       aspects.set(index, aspect)
+      for (const listener of listeners) listener(index, aspect)
+    },
+    subscribe: listener => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
     },
   }
 }
