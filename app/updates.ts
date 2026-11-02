@@ -208,7 +208,7 @@ function checkComic(ref: ComicRef): Promise<ComicUpdateRecord | null> {
  * 沒有連線就整批略過：逐一失敗只會換來每部一小時的退避，沒有任何好處。
  * 量不到（舊系統、權限不足）就當成有網路——與其卡住不動，不如讓請求自己失敗。
  */
-async function offline(): Promise<boolean> {
+export async function offline(): Promise<boolean> {
   try {
     const state = await Promise.race([
       Device.getNetworkState(),

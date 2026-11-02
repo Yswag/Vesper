@@ -11,7 +11,8 @@
 //    （components/SectionMenu）。代價：切分類會重建畫面，各分類的導航歷史與頁面狀態不留。
 //    Scripting 首頁分頁現在是自己的 Mini Hub（home_screen_default_ui.tsx），不再走這個殼。
 //
-// 啟動 2.5 秒後靜默查一次追更（TTL 與讓路都在 app/updates.ts）。
+// 掛載後在背景依序查：先漫畫源更新（app/sourceUpdates.ts，有可更新就在設定 tab 掛紅色數字角標），
+// 查完再查追更（TTL 與讓路都在 app/updates.ts）。
 //
 // toast 掛在殼上：源的 UI.showMessage 需要一個全域出口（見 app/toast.ts）。
 // 載入指示同樣掛殼的 overlay：源的 UI.showLoading 要一張浮動小卡片，不是 modal（見 app/loadingState.ts）。
@@ -28,6 +29,7 @@ import { LoadingHUD } from "./LoadingHUD"
 import { setToastListener } from "./toast"
 import { setTabBarHidden, setTabChangeListener, switchToTab } from "./navigation"
 import { setInstallListener } from "./installLink"
+import { checkSourceUpdates, sourceUpdateCount, subscribeSourceUpdates } from "./sourceUpdates"
 import { updatesScheduler } from "./updates"
 import { addRepository } from "../sources/registry"
 import { BookshelfScreen } from "../screens/bookshelf/BookshelfScreen"
@@ -36,9 +38,6 @@ import { BrowseScreen } from "../screens/browse/BrowseScreen"
 import { HomeScreen } from "../screens/home/HomeScreen"
 import { SearchScreen } from "../screens/search/SearchScreen"
 import { SettingsScreen } from "../screens/settings/SettingsScreen"
-
-/** 啟動後多久才背景查追更。 */
-const STARTUP_UPDATE_DELAY = 2500
 
 /** 分頁編號 → 畫面。順序要跟 app/sections.ts 的 SECTIONS 一致（切換分類的選單照它畫）。 */
 function sectionScreen(index: number): VirtualNode {
@@ -79,14 +78,19 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
     return () => setInstallListener(null)
   }, [])
 
-  // 啟動延遲 2.5 秒後背景查一次追更：不跟首屏搶資源；TTL 沒到期就零連線，
-  // 前台正在讀時排程器自己讓路（見 app/updates.ts）。
+  // 入口在 present 前就把授權、源、書架都裝好了，掛載就是啟動完成。先查源更新再查追更：
+  // 兩者都有 TTL，沒到期就零連線；源那一步不論成敗都接著跑追更。
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void updatesScheduler().checkUpdates({ background: true })
-    }, STARTUP_UPDATE_DELAY)
+    let cancelled = false
+    void (async () => {
+      try {
+        await checkSourceUpdates()
+      } finally {
+        if (!cancelled) void updatesScheduler().checkUpdates({ background: true })
+      }
+    })()
     return () => {
-      if (timer !== null) clearTimeout(timer)
+      cancelled = true
     }
   }, [])
 
@@ -97,7 +101,9 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   // 分頁標題的唯一來源是 app/sections.ts（索引＝分頁編號）；這裡不再抄一份中文。
   const titles = SECTIONS.map(entry => t(entry.titleKey))
   // 換語言要重繪整個殼，不然五個 Tab 的標題會留在舊語言（子畫面自己也有訂閱，但殼不在它們裡面）。
-  useSubscription(subscribeLocale)
+  useSubscription(subscribeLocale, subscribeSourceUpdates)
+  // Tab 的型別沒有 badge，但底層認（實測會畫系統紅色數字；0 時不顯示）。
+  const settingsBadge = { badge: sourceUpdateCount() } as {}
 
   useEffect(() => {
     setToastListener(message => {
@@ -217,7 +223,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
             <BrowseScreen />
           </NavigationStack>
         </Tab>
-        <Tab title={titles[3]} systemImage="gearshape" value={3}>
+        <Tab title={titles[3]} systemImage="gearshape" value={3} {...settingsBadge}>
           <NavigationStack>
             <SettingsScreen />
           </NavigationStack>

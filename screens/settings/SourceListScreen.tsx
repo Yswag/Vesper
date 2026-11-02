@@ -1,11 +1,14 @@
-// 源管理：倉庫入口、手動加入源，以及已安裝的源清單。點一筆源進詳情（啟用/移除），長按拖曳排序，左滑移除。
+// 源管理：倉庫入口、可更新的源、已安裝的源清單。點一筆源進詳情（啟用/移除），長按拖曳排序，左滑移除。
 
 import {
-  Button, ForEach, HStack, Image, List, NavigationLink, Rectangle, Section, Spacer, Text, VStack, ZStack,
+  Button, ForEach, HStack, Image, List, NavigationLink, ProgressView, Rectangle, Section, Spacer, Text, VStack, ZStack,
   useEffect, useObservable, useState,
 } from "scripting"
 
-import { PageBackground } from "../../app/theme"
+import { availableSourceUpdates, checkSourceUpdates, subscribeSourceUpdates, updateSources } from "../../app/sourceUpdates"
+import { PageBackground, useTint } from "../../app/theme"
+import { useSubscription } from "../../app/useSubscription"
+import { Chip } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
 import { GroupHeader } from "../../design/layout"
 import { IconRow } from "../../design/rows"
@@ -30,9 +33,39 @@ function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((key, index) => key === b[index])
 }
 
+/** 一筆可更新的源（畫面只排版，資料由 app/sourceUpdates 算好）。 */
+export interface UpdateRow {
+  key: string
+  source: InstalledSource
+  from: string
+  to: string
+  repositoryName: string
+  busy: boolean
+  error?: string
+}
+
+export interface SourceUpdatesPanel {
+  rows: UpdateRow[]
+  /** 有更新正在跑（單筆或全部）。 */
+  updating: boolean
+  checking: boolean
+  /** 上一次手動檢查失敗的倉庫數。 */
+  checkFailed: number
+  onUpdate: (key: string) => void
+  onUpdateAll: () => void
+  onCheck: () => void
+}
+
 export function SourceListScreen() {
   const rows = useObservable<SourceRow[]>(() => toRows(allSources()))
   const [repositoryCount, setRepositoryCount] = useState(0)
+  const [runningKey, setRunningKey] = useState<string | null>(null)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [checking, setChecking] = useState(false)
+  const [checkFailed, setCheckFailed] = useState(0)
+  // 更新成功那一列會從清單消失：包在 withAnimation 裡才會淡出。
+  useSubscription(notify => subscribeSourceUpdates(() => void withAnimation(notify)))
+  const updates = availableSourceUpdates()
 
   useEffect(() => {
     const refreshSources = () => rows.setValue(toRows(allSources()))
@@ -56,14 +89,55 @@ export function SourceListScreen() {
     }
   }, [])
 
+  async function run(keys: string[]) {
+    if (runningKey !== null) return
+    const targets = availableSourceUpdates().filter(update => keys.includes(update.source.stored.key))
+    if (targets.length === 0) return
+    setErrors(current => omit(current, keys))
+    const failed = await updateSources(targets, setRunningKey)
+    setRunningKey(null)
+    if (failed.size > 0) setErrors(current => ({ ...current, ...Object.fromEntries(failed) }))
+  }
+
+  async function check() {
+    if (checking) return
+    setChecking(true)
+    const result = await checkSourceUpdates({ force: true })
+    setCheckFailed(result.failed.length)
+    setChecking(false)
+  }
+
   return (
     <SourceListView
       rows={rows}
       repositoryCount={repositoryCount}
       fileAccess={hasFileAccess()}
       onRemove={source => uninstallSource(source.stored.key)}
+      updates={{
+        rows: updates.map(update => ({
+          key: update.source.stored.key,
+          source: update.source,
+          from: update.from,
+          to: update.to,
+          repositoryName: update.repository.name,
+          busy: runningKey === update.source.stored.key,
+          error: errors[update.source.stored.key],
+        })),
+        updating: runningKey !== null,
+        checking,
+        checkFailed,
+        onUpdate: key => void run([key]),
+        onUpdateAll: () => void run(updates.map(update => update.source.stored.key)),
+        onCheck: () => void check(),
+      }}
     />
   )
+}
+
+function omit(record: Record<string, string>, keys: string[]): Record<string, string> {
+  const next = { ...record }
+  for (const key of keys) delete next[key]
+  return next
 }
 
 /** 卡片底色：List 的列各自鋪一塊，整個 Section 由系統裁成圓角卡片。 */
@@ -81,13 +155,16 @@ export function SourceListView({
   repositoryCount,
   fileAccess,
   onRemove,
+  updates,
 }: {
   rows: Observable<SourceRow[]>
   repositoryCount: number
   fileAccess: boolean
   onRemove: (source: InstalledSource) => void
+  updates?: SourceUpdatesPanel
 }) {
   const count = rows.value.length
+  const updateRows = updates?.rows ?? []
   /** 正在確認移除的源 key；確認選單掛在那一列上，iOS 26 起會從那一列彈出。 */
   const [pendingKey, setPendingKey] = useState<string | null>(null)
 
@@ -114,6 +191,15 @@ export function SourceListView({
           </Section>
         ) : null}
 
+        {updates && updates.checkFailed > 0 && !updates.checking ? (
+          <Section>
+            <VStack {...bareRow} spacing={8} alignment="leading">
+              <NoticeBanner tone="error" text={t("settings.sources.checkFailed", { n: updates.checkFailed })} />
+              <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={updates.onCheck} />
+            </VStack>
+          </Section>
+        ) : null}
+
         <Section>
           <NavigationLink
             destination={<RepositoryListScreen />}
@@ -128,11 +214,33 @@ export function SourceListView({
           </NavigationLink>
         </Section>
 
+        {updates && updateRows.length > 0 ? (
+          <Section
+            header={
+              <SectionHeader
+                title={t("settings.sources.updatesGroup", { n: updateRows.length })}
+                action={t("settings.sources.updateAll")}
+                disabled={updates.updating}
+                onAction={updates.onUpdateAll}
+              />
+            }
+          >
+            {updateRows.map(row => (
+              <VStack key={row.key} listRowBackground={cardRowBackground}>
+                <SourceUpdateRow row={row} disabled={updates.updating} onUpdate={() => updates.onUpdate(row.key)} />
+              </VStack>
+            ))}
+          </Section>
+        ) : null}
+
         <Section
           header={
-            <VStack padding={{ leading: -16 }}>
-              <GroupHeader title={t("settings.sources.installedGroup", { n: count })} />
-            </VStack>
+            <SectionHeader
+              title={t("settings.sources.installedGroup", { n: count })}
+              action={updates && count > 0 ? t("settings.sources.checkUpdates") : undefined}
+              busy={updates?.checking}
+              onAction={updates?.onCheck}
+            />
           }
         >
           {count === 0 ? (
@@ -189,6 +297,78 @@ export function SourceListView({
         </Section>
       </List>
     </ZStack>
+  )
+}
+
+/** List 的 Section 標題：左邊小標題，右邊可選一個文字按鈕（執行中換成轉圈）。 */
+function SectionHeader({
+  title,
+  action,
+  busy = false,
+  disabled = false,
+  onAction,
+}: {
+  title: string
+  action?: string
+  busy?: boolean
+  disabled?: boolean
+  onAction?: () => void
+}) {
+  const tint = useTint()
+  return (
+    <HStack alignment="center" padding={{ leading: -16, trailing: -12 }}>
+      <GroupHeader title={title} />
+      <Spacer />
+      {busy ? (
+        <ProgressView controlSize="small" />
+      ) : action && onAction ? (
+        <Button buttonStyle="plain" disabled={disabled} action={onAction}>
+          <Text font="footnote" fontWeight="semibold" foregroundStyle={disabled ? "tertiaryLabel" : tint.tint}>
+            {action}
+          </Text>
+        </Button>
+      ) : null}
+    </HStack>
+  )
+}
+
+/** 一筆可更新的源：整列唯一的動作是尾端的更新鈕，不進詳情（下方已安裝那一列才進）。 */
+function SourceUpdateRow({ row, disabled, onUpdate }: { row: UpdateRow; disabled: boolean; onUpdate: () => void }) {
+  const tint = useTint()
+  const name = row.source.meta?.name ?? row.source.stored.name
+
+  return (
+    <HStack spacing={14} alignment="center" frame={{ maxWidth: "infinity" }}>
+      <SourceAvatar
+        sourceKey={row.key}
+        name={name}
+        size={sourceIconSize}
+        instance={row.source.instance}
+        iconUrl={row.source.stored.iconUrl}
+      />
+
+      <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
+          {name}
+        </Text>
+        <Text font="caption2" foregroundStyle={row.error ? toneText.danger : "secondaryLabel"} lineLimit={1}>
+          {row.error ?? t("settings.sources.versionChange", { from: row.from, to: row.to, repository: row.repositoryName })}
+        </Text>
+      </VStack>
+
+      {row.busy ? (
+        <ProgressView controlSize="small" />
+      ) : (
+        <Button
+          title={row.error ? t("common.retry") : t("settings.sources.update")}
+          buttonStyle="bordered"
+          controlSize="small"
+          tint={tint.tint}
+          disabled={disabled}
+          action={onUpdate}
+        />
+      )}
+    </HStack>
   )
 }
 

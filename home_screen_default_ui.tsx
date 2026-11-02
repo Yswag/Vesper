@@ -3,8 +3,8 @@
 //
 // 全螢幕 App 不再塞進來：這裡只有四件事，資料全在本機（不抓 Bangumi）——
 //   續讀 Hero、最新追更、閱讀熱力圖（順序與開關見 app/miniHubLayout.ts），加上導覽列的「開啟完整 App」。
-// 追更檢查是靜默的：首次掛載延遲 2.5 秒、每次切回首頁各觸發一次；TTL 由排程器把關
-// （12 小時內零連線，見 app/updates.ts），所以這裡放心呼叫。
+// 背景檢查是靜默的：資料載入完成、每次切回首頁各跑一輪，先漫畫源更新再追更；
+// TTL 各自把關（見 app/sourceUpdates.ts、app/updates.ts），所以這裡放心呼叫。
 
 import {
   Button,
@@ -35,6 +35,7 @@ import { installLocaleSetting } from "./app/localeSetting"
 import { getMiniHubLayout, type MiniHubSection } from "./app/miniHubLayout"
 import { comicLibrary, installComicLibrary } from "./app/services"
 import { resumeEntry, unreadCountOf, type ResumeEntry } from "./app/shelf"
+import { checkSourceUpdates } from "./app/sourceUpdates"
 import { PageBackground, useTint } from "./app/theme"
 import { parseUpdateTime, updatesScheduler } from "./app/updates"
 import { useSubscription } from "./app/useSubscription"
@@ -67,8 +68,6 @@ import { ComicDetailScreen } from "./screens/shared/ComicDetailScreen"
 import { launchResumeReader } from "./screens/shared/ResumeReaderScreen"
 import { reloadRegistry } from "./sources/registry"
 
-/** 首次進首頁先讓畫面呼吸一下，再背景查追更。 */
-const STARTUP_UPDATE_DELAY = 2500
 /** 追更看板最多幾部（橫向滾動列可多放幾部）。 */
 const UPDATE_LIMIT = 10
 
@@ -120,10 +119,15 @@ async function loadVesperData() {
 }
 
 /**
- * 背景靜默查一輪。排程器自己守 TTL、去重與讓路，這裡不需要再判斷。
+ * 背景靜默查一輪：先漫畫源更新，查完（不論成敗）再查追更。
+ * 兩邊都自己守 TTL 與去重，這裡不需要再判斷。
  */
-function checkUpdatesQuietly() {
-  void updatesScheduler().checkUpdates({ background: true })
+async function checkQuietly(alive: () => boolean) {
+  try {
+    await checkSourceUpdates()
+  } finally {
+    if (alive()) void updatesScheduler().checkUpdates({ background: true })
+  }
 }
 
 /** 完整 App 走 run URL scheme：首頁分頁不能 present，那會再疊一層殼在分頁裡。
@@ -143,13 +147,15 @@ export default function HomeScreenDefaultUI() {
   const refresh = useSubscription(subscribeLibrary, comicLibrary().onChange, subscribeLocale)
 
   useEffect(() => {
+    let mounted = true
+    const alive = () => mounted
+
     // 授權結算後才載得到源與書架。在載入完成前不渲染看板，
-    // 避免續讀卡在源尚未進入記憶體時就判斷成「源失效」。
+    // 避免續讀卡在源尚未進入記憶體時就判斷成「源失效」。載完就開始背景檢查。
     void loadVesperData().finally(() => {
       setDataReady(true)
+      if (mounted) void checkQuietly(alive)
     })
-
-    const timer = setTimeout(checkUpdatesQuietly, STARTUP_UPDATE_DELAY)
 
     // 監聽 Scripting 首頁分頁事件
     const unsubscribeTab = Script.onHomeTabEvent(event => {
@@ -160,7 +166,7 @@ export default function HomeScreenDefaultUI() {
           reloadRegistry()
           reloadLibraryFromDisk()
           refresh()
-          checkUpdatesQuietly()
+          void checkQuietly(alive)
           break
         case "deselected":
           // 切換至其他分頁，將資料落盤
@@ -170,7 +176,7 @@ export default function HomeScreenDefaultUI() {
     })
 
     return () => {
-      if (timer !== null) clearTimeout(timer)
+      mounted = false
       unsubscribeTab()
       void flushLibrary()
     }

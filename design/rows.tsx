@@ -21,7 +21,7 @@ import {
 } from "scripting"
 
 import { useTint, type Tint } from "../app/theme"
-import { badgeOff, badgeShape, badgeSize, rowPadding, toneText } from "./tokens"
+import { badgeOff, badgeShape, badgeSize, capsule, rowPadding, toneText } from "./tokens"
 import { t } from "../i18n"
 
 /** 列上的顏色可以給固定色（`Color`）或跟主題的 `DynamicShapeStyle`。 */
@@ -66,6 +66,26 @@ export function IconBadge({
   )
 }
 
+/** 系統紅的數字角標（跟 tab 角標同色）：最小 16pt 的圓，數字多就橫向撐成膠囊，超過 99 顯示 99+。 */
+export function CountBadge({ count }: { count: number }) {
+  return (
+    <Text
+      font="caption2"
+      fontWeight="bold"
+      foregroundStyle="white"
+      monospacedDigit
+      lineLimit={1}
+      // overlay 只給圖示那麼寬（24pt）；不抱內容寬，兩位數就被截成「…」。
+      fixedSize={{ horizontal: true, vertical: false }}
+      padding={{ horizontal: 5 }}
+      frame={{ minWidth: 16, minHeight: 16 }}
+      background={{ style: "systemRed", shape: capsule("circular") }}
+    >
+      {count > 99 ? "99+" : String(count)}
+    </Text>
+  )
+}
+
 /** 列表右侧的箭頭。只在「會進下一頁」時用。 */
 export function Chevron() {
   return <Image systemName="chevron.right" font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
@@ -81,6 +101,7 @@ export function IconRow({
   detail,
   detailColor = "secondaryLabel",
   chevron = false,
+  badge = 0,
   onTap,
 }: {
   icon: string
@@ -91,6 +112,8 @@ export function IconRow({
   detail?: string
   detailColor?: RowColor
   chevron?: boolean
+  /** 圖示右上角的紅色數字；0 不畫。 */
+  badge?: number
   onTap?: () => void
 }) {
   return (
@@ -102,7 +125,23 @@ export function IconRow({
       contentShape="rect"
       onTapGesture={onTap}
     >
-      <IconBadge icon={icon} color={iconColor} background={iconBackground} />
+      <VStack
+        overlay={
+          badge > 0
+            ? {
+                alignment: "topTrailing",
+                // 圓心對齊圖示右上角。
+                content: (
+                  <VStack offset={{ x: 8, y: -8 }}>
+                    <CountBadge count={badge} />
+                  </VStack>
+                ),
+              }
+            : undefined
+        }
+      >
+        <IconBadge icon={icon} color={iconColor} background={iconBackground} />
+      </VStack>
       <Text font="body" fontWeight="regular" foregroundStyle={titleColor}>
         {title}
       </Text>
