@@ -14,7 +14,7 @@
 
 import { t } from "../i18n"
 
-import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect, useState, type DynamicShapeStyle } from "scripting"
+import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect, useMemo, useState, type DynamicShapeStyle } from "scripting"
 
 import { comicLibrary } from "../app/services"
 import { PALETTES } from "../app/theme"
@@ -137,14 +137,15 @@ export function CoverImage({
   title,
   lifted = false,
 }: CoverImageProps) {
-  const [image, setImage] = useState<UIImage | null>(null)
+  // 解碼後的原圖只跟著網址走；尺寸變了只重裁，不清空重載（不然會閃回佔位）。
+  const [decoded, setDecoded] = useState<UIImage | null>(null)
   // 沒給網址就是「沒有圖」：第一帧直接畫佔位，不要先轉一圈才變成佔位。
   const [failed, setFailed] = useState(!url)
 
   useEffect(() => {
     let alive = true
     setFailed(false)
-    setImage(null)
+    setDecoded(null)
 
     if (!url) {
       setFailed(true)
@@ -155,8 +156,8 @@ export function CoverImage({
       try {
         const path = await comicLibrary().thumbnailPath(sourceKey, url)
         if (!alive) return
-        const decoded = UIImage.fromFile(path)
-        if (decoded) setImage(mode === "fill" ? cropToAspect(decoded, width / height) : decoded)
+        const loaded = UIImage.fromFile(path)
+        if (loaded) setDecoded(loaded)
         else setFailed(true)
       } catch {
         if (alive) setFailed(true)
@@ -166,7 +167,12 @@ export function CoverImage({
     return () => {
       alive = false
     }
-  }, [url, sourceKey, mode, width, height])
+  }, [url, sourceKey])
+
+  const image = useMemo(
+    () => (decoded && mode === "fill" ? cropToAspect(decoded, width / height) : decoded),
+    [decoded, mode, width, height]
+  )
 
   const body = image ? (
     <ZStack frame={{ width, height }}>
