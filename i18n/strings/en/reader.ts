@@ -37,11 +37,10 @@ export default {
   directionLtr: "Left to right",
   directionRtl: "Right to left",
   directionTtb: "Vertical",
-  gestureHint: "(vertical scrolls only)",
   tapZones: "Tap zones",
-  hardwareSharpen: "AI Super Resolution (ACNet ONNX)",
-  requiresPro: "(requires Scripting Pro)",
-  upscaleRequiresPro: "AI Super Resolution needs Scripting Pro",
+  tapZonesVerticalOnly: "Vertical continuous mode turns pages by scrolling only",
+  hardwareSharpen: "Super Resolution",
+  upscaleRequiresPro: "Super Resolution needs Scripting Pro",
   /** Default follows the source's viewer (then global); on saves settings for this title only. */
   perComic: "Remember for this title",
 

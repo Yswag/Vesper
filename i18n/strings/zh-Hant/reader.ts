@@ -46,7 +46,7 @@ export default {
   /** 開章時蓋在畫布上的遮罩。載入中那句話沿用 `common.loading`。 */
   noImages: "這一章沒有圖片",
 
-  /** 設定選單（右上角齒輪的 `Menu`）。 */
+  /** 閱讀設定面板（右上角齒輪）。 */
   mode: "閱讀模式",
   modeGallery: "畫廊",
   modeContinuous: "連續",
@@ -54,12 +54,12 @@ export default {
   directionLtr: "左至右",
   directionRtl: "右至左",
   directionTtb: "縱向",
-  gestureHint: "（縱向僅滑動）",
   tapZones: "三分區翻頁",
-  hardwareSharpen: "AI 超解析度 (ACNet ONNX)",
-  /** 超分開關的後綴與錯誤訊息：沒有 Scripting Pro 就按不下去。 */
-  requiresPro: "（需要 Scripting Pro）",
-  upscaleRequiresPro: "AI 超解析度需要 Scripting Pro",
+  /** 縱向連續停用點擊翻頁時，開關下方的說明。 */
+  tapZonesVerticalOnly: "縱向連續模式只能滑動翻頁",
+  hardwareSharpen: "超解析度",
+  /** 超分開關下方的說明與錯誤訊息：沒有 Scripting Pro 就按不下去。 */
+  upscaleRequiresPro: "超解析度需要 Scripting Pro",
   /** 預設跟隨源宣告的閱讀方式（沒有就退全域）；打開就存成這本的獨立設定。 */
   perComic: "記住這本的設定",
 

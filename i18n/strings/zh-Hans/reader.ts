@@ -37,11 +37,10 @@ export default {
   directionLtr: "左至右",
   directionRtl: "右至左",
   directionTtb: "纵向",
-  gestureHint: "（纵向仅滑动）",
   tapZones: "三分区翻页",
-  hardwareSharpen: "AI 超分辨率 (ACNet ONNX)",
-  requiresPro: "（需要 Scripting Pro）",
-  upscaleRequiresPro: "AI 超分辨率需要 Scripting Pro",
+  tapZonesVerticalOnly: "纵向连续模式只能滑动翻页",
+  hardwareSharpen: "超分辨率",
+  upscaleRequiresPro: "超分辨率需要 Scripting Pro",
   /** 預設跟随源宣告的阅读方式（没有就退全域）；打开就存成这部的独立设置。 */
   perComic: "记住这部的设置",
 

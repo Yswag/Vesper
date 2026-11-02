@@ -2,12 +2,9 @@ import {
   Button,
   HStack,
   Image,
-  Menu,
-  Picker,
   Slider,
   Spacer,
   Text,
-  Toggle,
   VStack,
   ZStack,
   useEffect,
@@ -21,6 +18,7 @@ type Observable<T> = ReturnType<typeof useObservable<T>>
 import { t } from "../i18n"
 import { glass } from "../design/glass"
 import { usePageSignal, type PageSignal } from "./pageSignal"
+import { ReaderSettingsSheet } from "./ReaderSettingsSheet"
 import { capsule, fill, radius, rect, toneText } from "../design/tokens"
 import type { ReaderSettings } from "../library/readerSettings"
 
@@ -122,7 +120,7 @@ export interface ReaderHUDProps {
 }
 
 /**
- * 閱讀器 HUD 覆蓋層：包含全螢幕點擊遮罩、頂部工具列（返回、標題、目錄按鈕、閱讀設定 Menu）與底部工具列（前後話切換、頁碼拖曳 Slider、收藏）。
+ * 閱讀器 HUD 覆蓋層：包含全螢幕點擊遮罩、頂部工具列（返回、標題、目錄按鈕、閱讀設定面板）與底部工具列（前後話切換、頁碼拖曳 Slider、收藏）。
  */
 export function ReaderHUD({
   hudVisible,
@@ -148,7 +146,7 @@ export function ReaderHUD({
   leadingPage,
   onScrubCommit,
 }: ReaderHUDProps) {
-  const tapZonesUnavailable = settings.direction === "ttb" && settings.mode !== "gallery"
+  const [showSettings, setShowSettings] = useState(false)
 
   return (
     <ZStack
@@ -242,82 +240,32 @@ export function ReaderHUD({
                     />
                   </Button>
 
-                  <Menu
+                  <Button
+                    buttonStyle="plain"
                     accessibilityLabel={t("reader.readingSettings")}
-                    label={
-                      <Image
-                        frame={{ width: 44, height: 44 }}
-                        systemName="gearshape"
-                        font="subheadline"
-                        fontWeight="medium"
-                        foregroundStyle="label"
-                      />
-                    }
+                    action={() => setShowSettings(true)}
+                    sheet={{
+                      isPresented: showSettings,
+                      onChanged: setShowSettings,
+                      content: (
+                        <ReaderSettingsSheet
+                          settings={settings}
+                          onUpdateSettings={onUpdateSettings}
+                          canUpscale={canUpscale}
+                          perComic={perComic}
+                          onTogglePerComic={onTogglePerComic}
+                        />
+                      ),
+                    }}
                   >
-                    {/* 預設跟隨源宣告（再退全域）；打開才把這本記成獨立設定。 */}
-                    <Toggle
-                      title={t("reader.perComic")}
-                      systemImage="pin"
-                      value={perComic}
-                      onChanged={onTogglePerComic}
+                    <Image
+                      frame={{ width: 44, height: 44 }}
+                      systemName="gearshape"
+                      font="subheadline"
+                      fontWeight="medium"
+                      foregroundStyle="label"
                     />
-
-                    <Picker
-                      title={t("reader.mode")}
-                      value={settings.mode}
-                      pickerStyle="segmented"
-                      onChanged={(mode: string | number) =>
-                        onUpdateSettings({ mode: mode === "gallery" ? "gallery" : "continuous" })
-                      }
-                    >
-                      <Text tag="gallery">{t("reader.modeGallery")}</Text>
-                      <Text tag="continuous">{t("reader.modeContinuous")}</Text>
-                    </Picker>
-
-                    <Picker
-                      title={t("reader.direction")}
-                      value={settings.direction}
-                      pickerStyle="menu"
-                      onChanged={(direction: string | number) =>
-                        onUpdateSettings({
-                          direction: direction === "ltr" || direction === "rtl" ? direction : "ttb",
-                        })
-                      }
-                    >
-                      <Text tag="ltr">{t("reader.directionLtr")}</Text>
-                      <Text tag="rtl">{t("reader.directionRtl")}</Text>
-                      <Text tag="ttb">{t("reader.directionTtb")}</Text>
-                    </Picker>
-
-                    {/* 縱向連續沒有點擊翻頁（縱向畫廊有，上下分區）；選單列沒有第二行放提示，就接在標題後面。 */}
-                    <Toggle
-                      title={
-                        tapZonesUnavailable
-                          ? `${t("reader.tapZones")}${t("reader.gestureHint")}`
-                          : t("reader.tapZones")
-                      }
-                      systemImage="hand.tap"
-                      disabled={tapZonesUnavailable}
-                      value={settings.tapZones && !tapZonesUnavailable}
-                      onChanged={value => {
-                        if (!tapZonesUnavailable) onUpdateSettings({ tapZones: value })
-                      }}
-                    />
-
-                    <Toggle
-                      title={
-                        canUpscale
-                          ? t("reader.hardwareSharpen")
-                          : `${t("reader.hardwareSharpen")}${t("reader.requiresPro")}`
-                      }
-                      systemImage="sparkles"
-                      disabled={!canUpscale}
-                      value={settings.hardwareSharpen}
-                      onChanged={value => {
-                        if (canUpscale) onUpdateSettings({ hardwareSharpen: value })
-                      }}
-                    />
-                  </Menu>
+                  </Button>
                 </HStack>
               </HStack>
             </ZStack>
