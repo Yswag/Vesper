@@ -24,6 +24,9 @@ import {
 /** 兩下點擊判定為雙擊的時間窗（ms）。 */
 const DOUBLE_TAP_WINDOW = 330
 
+/** 雙擊放大／還原的過場。 */
+const DOUBLE_TAP_ANIMATION = Animation.snappy({ duration: 0.3 })
+
 /** 量到尺寸就回報。 */
 function SizeReporter({
   size,
@@ -218,7 +221,7 @@ export function ZoomableView({
   const toggleAt = (location: { x: number; y: number }) => {
     if (latest.current.zoom > 1.001) {
       clearStart()
-      commit(1, { x: 0, y: 0 })
+      void withAnimation(DOUBLE_TAP_ANIMATION, () => commit(1, { x: 0, y: 0 }))
       notify()
       return
     }
@@ -227,7 +230,8 @@ export function ZoomableView({
     const qy = location.y - latest.current.box.height / 2
     const target = doubleTapZoom
     clearStart()
-    commit(target, clampPan({ x: qx * (1 - target), y: qy * (1 - target) }, target))
+    const nextPan = clampPan({ x: qx * (1 - target), y: qy * (1 - target) }, target)
+    void withAnimation(DOUBLE_TAP_ANIMATION, () => commit(target, nextPan))
     notify()
   }
 
