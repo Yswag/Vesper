@@ -86,8 +86,9 @@ function normalizeOptions(raw: unknown, translate: (text: string) => string): Se
     }
     if (!entry || typeof entry !== "object") continue
     const obj = entry as Record<string, unknown>
-    const value = String(obj.value ?? "")
-    if (!value) continue
+    // 空字串是合法的值（包子的「原图」「默认」），只有沒寫 value 才略過。
+    if (obj.value === undefined || obj.value === null) continue
+    const value = String(obj.value)
     out.push({ value, text: translate(String(obj.text ?? obj.label ?? value)) })
   }
   return out
