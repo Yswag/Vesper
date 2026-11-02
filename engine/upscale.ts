@@ -393,7 +393,7 @@ async function ensureServer(): Promise<number> {
 
   const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
   // 採 .txt 副檔名避免大體積 minified JS 觸發型別服務解析異常，執行時以 text/javascript 提供
-  const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js.txt")
+  const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
   const wasmThreadedPath = join(Script.directory, "assets/acnet/ort-wasm-simd-threaded.wasm")
   const wasmFallbackPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
 

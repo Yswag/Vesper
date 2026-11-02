@@ -551,9 +551,9 @@ async function waitForHostReady(target: WebViewController): Promise<void> {
   throw new Error("aidoku host page did not become ready")
 }
 
-// 大檔的 minified JS 存成 .js.txt（同 engines/upscale）：避免型別服務去解析它。
+// 對外服務的檔名 → 磁碟上的檔名（目前同名，大檔也直接放 .js）。
 const RUNTIME_FILES: Record<string, string> = {
-  "runtime.bundle.js": "runtime.bundle.js.txt",
+  "runtime.bundle.js": "runtime.bundle.js",
   "canvas.js": "canvas.js",
   "postcard.js": "postcard.js",
   "types.js": "types.js",

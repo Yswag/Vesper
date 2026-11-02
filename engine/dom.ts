@@ -7,8 +7,8 @@
 
 import { Script } from "scripting"
 
-/** 內建的單檔 cheerio：`assets/vendor/cheerio.js.txt`（全域 `createCheerio()`），讀檔＋eval 約 13ms。 */
-const CHEERIO_BUNDLE = "/assets/vendor/cheerio.js.txt"
+/** 內建的單檔 cheerio：`assets/vendor/cheerio.js`（全域 `createCheerio()`），讀檔＋eval 約 13ms。 */
+const CHEERIO_BUNDLE = "/assets/vendor/cheerio.js"
 
 let _cheerio: any = null
 function getCheerio(): any {
