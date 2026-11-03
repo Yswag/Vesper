@@ -5,6 +5,7 @@
 import type { AbortSignal } from "scripting"
 
 import { Convert } from "./convert"
+import { clearDisplayCache } from "./displaycache"
 import { appDataRoot, ensureDir, exists, join, readBytes, remove, writeBytes } from "./fs"
 import { fetchImageBytes } from "./http"
 import { readImageSize } from "./imagesize"
@@ -15,8 +16,26 @@ import { kv } from "./storage"
 import { getMaxAgeDays, getMaxSizeBytes } from "../app/cacheSetting"
 
 const inflight = new Map<string, Promise<string>>()
-/** 寫入計數器：每累積 50 次寫入觸發一次非同步清理檢查。 */
-let writeCounter = 0
+/**
+ * 快取目前佔用的位元組（-1＝還沒量過）。寫入時累加，只有超標或到期才真的掃目錄——
+ * 每 N 次寫入就 `statSync` 整個資料夾，書架幾千張時那一下會卡住主執行緒。
+ * 上次量到的值存在 KV，重開 App 也不必先掃一遍。
+ */
+const CACHE_BYTES_KEY = "vesper.imagecache.bytes"
+function storedBytes(): number {
+  const raw = kv.get(CACHE_BYTES_KEY)
+  return typeof raw === "number" && raw >= 0 ? raw : -1
+}
+let cacheBytes = storedBytes()
+const LAST_SCAN_KEY = "vesper.imagecache.scan"
+function storedScanAt(): number {
+  const raw = kv.get(LAST_SCAN_KEY)
+  return typeof raw === "number" && raw > 0 ? raw : 0
+}
+let lastScanAt = storedScanAt()
+/** 天數策略最多這麼久掃一次。 */
+const CLEAN_INTERVAL = 60 * 60 * 1000
+let cleaning = false
 
 let compositor: ImageCompositor | null = null
 
@@ -148,11 +167,8 @@ export function cachedImagePath(spec: ImageRequestSpec, sourceKey: string): Prom
           log("warning", "image", "縮圖降採樣失敗，先顯示原圖", error)
         }
 
-        writeCounter++
-        if (writeCounter >= 50) {
-          writeCounter = 0
-          void autoCleanImageCache()
-        }
+        noteWritten(bytes.byteLength)
+        scheduleCleanup()
         return path
       } catch (error) {
         if (retryLimit < 0 || !onLoadFailed) throw error
@@ -244,7 +260,10 @@ function makeThumbnail(fullPath: string, spec: ImageRequestSpec): string | null 
   if (!bytesOut) return null
 
   const path = thumbBase(spec) + (png ? ".thumb.png" : ".thumb.jpg")
-  return writeBytes(path, bytesOut) ? path : null
+  if (!writeBytes(path, bytesOut)) return null
+  noteWritten(bytesOut.byteLength)
+  scheduleCleanup()
+  return path
 }
 
 /**
@@ -279,6 +298,11 @@ export function cachedThumbnailPath(spec: ImageRequestSpec, sourceKey: string): 
 
 export function clearImageCache() {
   remove(cacheDir())
+  clearDisplayCache()
+  cacheBytes = 0
+  lastScanAt = Date.now()
+  kv.set(CACHE_BYTES_KEY, 0)
+  kv.set(LAST_SCAN_KEY, lastScanAt)
 }
 
 /**
@@ -309,6 +333,27 @@ export async function getCacheStats(): Promise<{ count: number; totalBytes: numb
   }
 }
 
+/** 寫入之後累加帳面（還沒量過就不知道總量，等掃描過再說）。 */
+function noteWritten(size: number) {
+  if (cacheBytes >= 0) cacheBytes += size
+}
+
+/**
+ * 寫入之後問一次「該不該掃」：沒有任何策略就不管；量過且沒超標、也還沒到掃描間隔就跳過。
+ * 真正的掃描在背景做，不卡寫入路徑。
+ */
+function scheduleCleanup() {
+  const maxBytes = getMaxSizeBytes()
+  const maxAgeDays = getMaxAgeDays()
+  if (maxBytes === 0 && maxAgeDays === 0) return
+  const now = Date.now()
+  const unknown = cacheBytes < 0
+  const overLimit = maxBytes > 0 && cacheBytes >= maxBytes
+  const ageDue = maxAgeDays > 0 && now - lastScanAt >= CLEAN_INTERVAL
+  if (!unknown && !overLimit && !ageDue) return
+  void autoCleanImageCache()
+}
+
 /**
  * 依據設定的策略（保留天數與容量上限）執行自動清理。
  * - 過期天數：刪除 modificationDate 超過 maxAgeDays 的檔案。
@@ -316,9 +361,15 @@ export async function getCacheStats(): Promise<{ count: number; totalBytes: numb
  * 安全機制：跳過 .part 檔與 inflight 中的路徑。
  */
 export async function autoCleanImageCache(): Promise<{ removedCount: number; freedBytes: number }> {
+  if (cleaning) return { removedCount: 0, freedBytes: 0 }
+  cleaning = true
   try {
     const dir = cacheDir()
-    if (!exists(dir)) return { removedCount: 0, freedBytes: 0 }
+    if (!exists(dir)) {
+      cacheBytes = 0
+      lastScanAt = Date.now()
+      return { removedCount: 0, freedBytes: 0 }
+    }
 
     const maxAgeDays = getMaxAgeDays()
     const maxSizeBytes = getMaxSizeBytes()
@@ -383,10 +434,18 @@ export async function autoCleanImageCache(): Promise<{ removedCount: number; fre
       log("info", "cache", `縮圖自動清理完成：刪除 ${removedCount} 個檔案，釋放 ${Math.round(freedBytes / (1024 * 1024))} MB`)
     }
 
+    // 記帳：以後就靠這個數字決定要不要再掃。
+    cacheBytes = totalSize
+    lastScanAt = Date.now()
+    kv.set(CACHE_BYTES_KEY, totalSize)
+    kv.set(LAST_SCAN_KEY, lastScanAt)
+
     return { removedCount, freedBytes }
   } catch (error) {
     log("warning", "cache", "縮圖自動清理過程發生錯誤", error)
     return { removedCount: 0, freedBytes: 0 }
+  } finally {
+    cleaning = false
   }
 }
 

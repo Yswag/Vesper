@@ -20,6 +20,7 @@ import { comicLibrary } from "../app/services"
 import { PALETTES } from "../app/theme"
 import { CoverShadow } from "../design/CoverShadow"
 import { coverStroke, fill, radius, rect } from "../design/tokens"
+import { getDisplayImage, putDisplayImage } from "../engine/displaycache"
 
 export interface CoverImageProps {
   /** 哪個來源的圖（快取鍵與 Referer 都由它決定）。 */
@@ -177,13 +178,22 @@ export function CoverImage({
       try {
         const path = await comicLibrary().thumbnailDisplayPath(sourceKey, url)
         if (!alive) return
+        // 同一個檔案、同一個格子尺寸就重用：滑回來不必再解一次、也不必再裁一次。
+        const key = `${path}|${Math.round(width)}x${Math.round(height)}|${mode}`
+        const cached = getDisplayImage(key)
+        if (cached) {
+          setImage(cached)
+          return
+        }
         const decoded = UIImage.fromFile(path)
         if (!decoded) {
           setFailed(true)
           return
         }
         const shaped = mode === "fill" ? cropToAspect(decoded, width / height) : decoded
-        setImage(fitForFrame(shaped, width, height))
+        const fitted = fitForFrame(shaped, width, height)
+        putDisplayImage(key, fitted)
+        setImage(fitted)
       } catch {
         if (alive) setFailed(true)
       }
