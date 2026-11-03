@@ -177,6 +177,7 @@ export interface ComicPage {
 
 export interface ChapterSession {
   readonly ref: ChapterRef
+  /** 這一話的標題。線上 session 不為此抓詳情（標題在呼叫端的清單裡），就是 `epId`。 */
   readonly title: string
   readonly comicTitle: string
   readonly cover?: string
@@ -760,15 +761,11 @@ export function createComicLibrary(): ComicLibrary {
       // 先查本機：這一話在手機上就讀離線 manifest，整條路不碰源（源被移除也開得起來）。
       if (isOfflineReadable(key)) return createOfflineSession(key)
 
-      const { source, handle } = handleOf(ref.sourceKey)
-      // 詳情補全標題；只下載了一部分的章（state=partial）若詳情網路失敗，退回以 epId 呈現。
-      const offlineBefore = statusOf(key)
-      const detailPromise = handle.detail(ref.comicId)
-      const [detail, imageKeys] = await Promise.all([
-        offlineBefore.state === "none" ? detailPromise : detailPromise.catch(() => undefined),
-        handle.chapter(ref.comicId, ref.epId),
-      ])
-      const chapter = detail?.chapters.find(entry => entry.id === ref.epId)
+      const { handle } = handleOf(ref.sourceKey)
+      // 只拿這一話的頁面清單。詳情不在這裡抓：每個入口進來之前都已經抓過一輪
+      // （詳情頁的 `comic()`、續讀的 `resumePlan()`），擋在這裡等它只會把首圖往後推一個往返；
+      // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
+      const imageKeys = await handle.chapter(ref.comicId, ref.epId)
       // 一個 session 包含獨立取消範圍、預取佇列與正文記憶體快取，生命週期隨 session dispose 釋放。
       const controller = new AbortController()
       const pageCache = createPageCache()
@@ -905,9 +902,8 @@ export function createComicLibrary(): ComicLibrary {
 
       return {
         ref,
-        title: chapter?.title ?? ref.epId,
-        comicTitle: detail?.title ?? "",
-        cover: detail?.cover,
+        title: ref.epId,
+        comicTitle: "",
         pageCount: imageKeys.length,
         offline: statusOf(key),
         local: false,
