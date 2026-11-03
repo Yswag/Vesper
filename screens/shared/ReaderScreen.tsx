@@ -172,6 +172,8 @@ function ReaderPageTracker({
   ready,
   progress,
   cornerVisible,
+  cornerPage,
+  cornerTime,
   safeAreaInsets,
 }: {
   leadingPage: PageSignal
@@ -187,6 +189,8 @@ function ReaderPageTracker({
     epTitle: string
   }
   cornerVisible: boolean
+  cornerPage: boolean
+  cornerTime: boolean
   safeAreaInsets: { top: number; bottom: number; leading: number; trailing: number }
 }) {
   const value = usePageSignal(leadingPage)
@@ -209,6 +213,8 @@ function ReaderPageTracker({
   return (
     <ReaderCornerInfo
       visible={cornerVisible}
+      showPage={cornerPage}
+      showTime={cornerTime}
       currentPage={Math.min(page + 1, Math.max(pageCount, 1))}
       pageCount={pageCount}
       safeAreaInsets={safeAreaInsets}
@@ -1171,7 +1177,7 @@ function ReaderContent({
           )
         ) : null}
 
-        {/* 1.2 HUD 收起時的頁碼與時間；順便跑頁碼副作用（只有這一小塊隨翻頁重繪） */}
+        {/* 1.2 HUD 收起時的頁碼與時間、電量（設定開哪個就顯示哪個）；順便跑頁碼副作用（只有這一小塊隨翻頁重繪） */}
         <ReaderPageTracker
           leadingPage={leadingPage}
           session={session}
@@ -1186,6 +1192,8 @@ function ReaderContent({
             epTitle: title,
           }}
           cornerVisible={!hudVisible.value && status === null}
+          cornerPage={settings.cornerPage}
+          cornerTime={settings.cornerTime}
           safeAreaInsets={safeAreaInsets}
         />
 

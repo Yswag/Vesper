@@ -195,6 +195,20 @@ export function ReaderSettingsSheet({
           ) : null}
         </Section>
 
+        {/* 畫面上的角落資訊：HUD 收起時右下角的頁碼與時間、電量，預設不顯示。 */}
+        <Section>
+          <SettingToggle
+            title={t("reader.cornerPage")}
+            value={settings.cornerPage}
+            onChanged={value => onUpdateSettings({ cornerPage: value })}
+          />
+          <SettingToggle
+            title={t("reader.cornerTime")}
+            value={settings.cornerTime}
+            onChanged={value => onUpdateSettings({ cornerTime: value })}
+          />
+        </Section>
+
         {/* 圖片載入與畫質一組。 */}
         <Section footer={canUpscale ? undefined : <Text>{t("reader.upscaleRequiresPro")}</Text>}>
           <PrefetchStepper />

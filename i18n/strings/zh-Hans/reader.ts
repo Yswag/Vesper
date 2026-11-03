@@ -42,6 +42,8 @@ export default {
   hardwareSharpen: "超分辨率",
   splitWide: "切割宽图",
   splitSwap: "交换切割顺序",
+  cornerPage: "显示页码",
+  cornerTime: "显示时间、电量",
   upscaleRequiresPro: "超分辨率需要 Scripting Pro",
   prefetch: "图片预加载",
   prefetchPages: { one: "{n} 页", other: "{n} 页" },

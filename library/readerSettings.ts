@@ -32,9 +32,13 @@ export interface ReaderSettings {
   splitWide: boolean
   /** 交換切割順序：預設右到左右半先、其他方向左半先。 */
   splitSwap: boolean
+  /** HUD 收起時右下角的頁碼。 */
+  cornerPage: boolean
+  /** HUD 收起時右下角的時間與電量。 */
+  cornerTime: boolean
 }
 
-/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁 ＋ 銳化開啟。 */
+/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁；銳化與角落資訊關。 */
 const DEFAULT: ReaderSettings = {
   mode: "continuous",
   direction: "ttb",
@@ -42,6 +46,8 @@ const DEFAULT: ReaderSettings = {
   hardwareSharpen: false,
   splitWide: false,
   splitSwap: false,
+  cornerPage: false,
+  cornerTime: false,
 }
 const KEY = "venera:readerSettings"
 /** 每本漫畫的獨立設定（per-comic 開關打開時才會寫）。 */
@@ -54,7 +60,8 @@ function perComicKey(scope: ReaderScope): string {
 /** 把存下來的東西收成合法設定；不是物件就回 null（沒存過）。 */
 function readSettings(raw: unknown): ReaderSettings | null {
   if (!raw || typeof raw !== "object") return null
-  const { mode, direction, tapZones, hardwareSharpen, splitWide, splitSwap } = raw as Partial<ReaderSettings>
+  const { mode, direction, tapZones, hardwareSharpen, splitWide, splitSwap, cornerPage, cornerTime } =
+    raw as Partial<ReaderSettings>
   return {
     mode: mode === "gallery" || mode === "continuous" ? mode : DEFAULT.mode,
     direction:
@@ -67,6 +74,8 @@ function readSettings(raw: unknown): ReaderSettings | null {
       typeof hardwareSharpen === "boolean" ? hardwareSharpen : DEFAULT.hardwareSharpen,
     splitWide: typeof splitWide === "boolean" ? splitWide : DEFAULT.splitWide,
     splitSwap: typeof splitSwap === "boolean" ? splitSwap : DEFAULT.splitSwap,
+    cornerPage: typeof cornerPage === "boolean" ? cornerPage : DEFAULT.cornerPage,
+    cornerTime: typeof cornerTime === "boolean" ? cornerTime : DEFAULT.cornerTime,
   }
 }
 

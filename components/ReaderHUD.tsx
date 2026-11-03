@@ -31,30 +31,81 @@ export const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
 export const HUD_SLIDE_TOP = 130
 export const HUD_SLIDE_BOTTOM = 145
 
-/** HUD 收起時右下角的「頁碼 · 時間」；時鐘自己走，不讓閱讀頁每分鐘重繪。 */
+/** 角落資訊的字：同一行要用同一組字型屬性，才不會各自飄。 */
+function CornerText({ children }: { children: string }) {
+  return (
+    <Text font="caption2" fontWeight="medium" monospacedDigit={true} foregroundStyle="label">
+      {children}
+    </Text>
+  )
+}
+
+/** 電量讀不到時是負數（模擬器、或系統沒開監控）。 */
+function batteryPercent(level: number): string | null {
+  return level < 0 ? null : `${Math.round(level * 100)}%`
+}
+
+/**
+ * HUD 收起時右下角的頁碼、時間與電量，兩個開關各自決定要不要出現。
+ * 時鐘自己走、電量跟系統通知走，不讓閱讀頁為此重繪。
+ */
 export function ReaderCornerInfo({
   visible,
+  showPage,
+  showTime,
   currentPage,
   pageCount,
   safeAreaInsets,
 }: {
   visible: boolean
+  showPage: boolean
+  showTime: boolean
   currentPage: number
   pageCount: number
   safeAreaInsets: { bottom: number; trailing: number }
 }) {
   const [now, setNow] = useState(() => new Date())
+  const [battery, setBattery] = useState(() => ({
+    level: Device.batteryLevel,
+    state: Device.batteryState,
+  }))
+
+  // 對齊整分跳一次；剛打開（或被收起很久才顯示）時先補到現在。
   useEffect(() => {
+    if (!showTime) return
+    if (Date.now() - now.getTime() > 1000) {
+      setNow(new Date())
+      return
+    }
     const untilNextMinute = 60_000 - (now.getSeconds() * 1000 + now.getMilliseconds())
     const timer = setTimeout(() => setNow(new Date()), untilNextMinute)
     return () => {
       if (timer !== null) clearTimeout(timer)
     }
-  }, [now])
+  }, [now, showTime])
 
-  if (pageCount === 0) return null
+  // 電量：只訂閱變化，不輪詢；每次重新顯示也重讀一次（監聽不一定每格都來）。
+  useEffect(() => {
+    if (!showTime) return
+    const sync = () => setBattery({ level: Device.batteryLevel, state: Device.batteryState })
+    const onLevel = (level: number) => setBattery(current => ({ ...current, level }))
+    const onState = (state: Device.BatteryState) => setBattery(current => ({ ...current, state }))
+    sync()
+    Device.addBatteryLevelListener(onLevel)
+    Device.addBatteryStateListener(onState)
+    return () => {
+      Device.removeBatteryLevelListener(onLevel)
+      Device.removeBatteryStateListener(onState)
+    }
+  }, [showTime, visible])
+
+  const pageText = showPage && pageCount > 0 ? `${currentPage}/${pageCount}` : null
+  if (!pageText && !showTime) return null
+
   const pad = (value: number) => String(value).padStart(2, "0")
   const time = `${pad(now.getHours())}:${pad(now.getMinutes())}`
+  const percent = showTime ? batteryPercent(battery.level) : null
+  const charging = percent !== null && (battery.state === "charging" || battery.state === "full")
 
   return (
     <VStack
@@ -64,16 +115,22 @@ export function ReaderCornerInfo({
       opacity={visible ? 1 : 0}
       animation={{ animation: HUD_ANIM, value: visible }}
     >
-      <Text
-        font="caption2"
-        fontWeight="medium"
-        monospacedDigit={true}
-        foregroundStyle="label"
+      <HStack
+        spacing={0}
         padding={{ horizontal: 8, vertical: 3 }}
         background={{ style: fill.coverScrim, shape: capsule() }}
       >
-        {`${currentPage}/${pageCount} · ${time}`}
-      </Text>
+        {pageText ? <CornerText>{pageText}</CornerText> : null}
+        {pageText && showTime ? <CornerText>{" · "}</CornerText> : null}
+        {showTime ? <CornerText>{time}</CornerText> : null}
+        {percent ? <CornerText>{" · "}</CornerText> : null}
+        {percent ? (
+          <HStack spacing={2}>
+            {charging ? <Image systemName="bolt.fill" font="caption2" fontWeight="semibold" foregroundStyle="label" /> : null}
+            <CornerText>{percent}</CornerText>
+          </HStack>
+        ) : null}
+      </HStack>
     </VStack>
   )
 }
