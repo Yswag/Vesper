@@ -6,7 +6,7 @@ import { AbortController, type AbortSignal } from "scripting"
 import { getPageCacheBytes, getPageCacheChapters } from "./cacheSetting"
 
 import type { ComicListItem, ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
-import { cachedImagePath, toCacheSpec } from "../engine/imagecache"
+import { cachedImagePath, cachedThumbnailPath, toCacheSpec } from "../engine/imagecache"
 import {
   cacheChapterList,
   cachedChapterList,
@@ -471,6 +471,11 @@ export interface ComicLibrary {
    * onLoadFailed 一次性重試）＋圖片磁碟快取。畫面拿到的是可以直接餵給 `UIImage.fromFile` 的路徑。
    */
   thumbnailPath(sourceKey: string, url: string): Promise<string>
+  /**
+   * 同上，但回降採樣後的小圖（長邊 1024）：網格、列、詳情頁封面用這條；
+   * 要看原圖（例如封面檢視）才用 `thumbnailPath`。
+   */
+  thumbnailDisplayPath(sourceKey: string, url: string): Promise<string>
   /**
    * 送出下載。已下載的章節由下載管理員跳過；排程與 partial／failed／done 語意都在那裡，
    * 這裡只負責把「哪些章、叫什麼名字」翻成下載管理員收得下的說法。
@@ -989,6 +994,12 @@ export function createComicLibrary(): ComicLibrary {
       // 封面、頭像、留言內文圖都是同一條路，不再各自拼一次。
       const request = await handle.thumbnailRequest(url)
       return cachedImagePath(toCacheSpec(request), sourceKey)
+    },
+
+    thumbnailDisplayPath: async (sourceKey, url) => {
+      const { handle } = handleOf(sourceKey)
+      const request = await handle.thumbnailRequest(url)
+      return cachedThumbnailPath(toCacheSpec(request), sourceKey)
     },
 
     download: async (chapters, meta) => {

@@ -14,7 +14,7 @@
 
 import { t } from "../i18n"
 
-import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect, useMemo, useState, type DynamicShapeStyle } from "scripting"
+import { Image, ProgressView, RoundedRectangle, Text, VStack, ZStack, useEffect, useRef, useState, type DynamicShapeStyle } from "scripting"
 
 import { comicLibrary } from "../app/services"
 import { PALETTES } from "../app/theme"
@@ -34,6 +34,21 @@ export interface CoverImageProps {
   title?: string
   /** 加上投影。只留在圖片這層：加到含角標的容器上，角標也會被投一份影。 */
   lifted?: boolean
+}
+
+/** 顯示層最多留 3× 點數的點陣（對齊 @3x）；留一點餘裕，尺寸微調時不重算。 */
+const DISPLAY_SCALE = 3
+
+/**
+ * 把圖降到格子實際會用到的解析度。磁碟上的縮圖長邊 1024，格子通常只有 100–400pt，
+ * 不降的話每一格都拖著一張 1024 寬的點陣，滑動時記憶體會一直被推高。
+ */
+function fitForFrame(image: UIImage, width: number, height: number): UIImage {
+  if (!(width > 0 && height > 0)) return image
+  const targetWidth = Math.ceil(width * DISPLAY_SCALE)
+  const targetHeight = Math.ceil(height * DISPLAY_SCALE)
+  if (image.width <= targetWidth * 1.2 && image.height <= targetHeight * 1.2) return image
+  return image.preparingThumbnail({ width: targetWidth, height: targetHeight }) ?? image
 }
 
 /** 把圖**中心裁**成目標寬高比：填滿格子唯一的正確做法（用 aspectRatio(fill) 會外溢去搶鄰居的點擊）。 */
@@ -137,28 +152,38 @@ export function CoverImage({
   title,
   lifted = false,
 }: CoverImageProps) {
-  // 解碼後的原圖只跟著網址走；尺寸變了只重裁，不清空重載（不然會閃回佔位）。
-  const [decoded, setDecoded] = useState<UIImage | null>(null)
+  // 只留「這個格子尺寸要用的點陣」；原圖／1024 縮圖在管線與磁碟那邊，不進 state。
+  const [image, setImage] = useState<UIImage | null>(null)
   // 沒給網址就是「沒有圖」：第一帧直接畫佔位，不要先轉一圈才變成佔位。
   const [failed, setFailed] = useState(!url)
+  /** 換了網址才清掉舊圖；只是尺寸變（旋轉、版面重排）就讓舊圖頂著，不要閃回佔位。 */
+  const lastUrl = useRef<string | undefined>(url)
 
   useEffect(() => {
     let alive = true
     setFailed(false)
-    setDecoded(null)
+    if (lastUrl.current !== url) {
+      lastUrl.current = url
+      setImage(null)
+    }
 
     if (!url) {
+      setImage(null)
       setFailed(true)
       return
     }
 
     void (async () => {
       try {
-        const path = await comicLibrary().thumbnailPath(sourceKey, url)
+        const path = await comicLibrary().thumbnailDisplayPath(sourceKey, url)
         if (!alive) return
-        const loaded = UIImage.fromFile(path)
-        if (loaded) setDecoded(loaded)
-        else setFailed(true)
+        const decoded = UIImage.fromFile(path)
+        if (!decoded) {
+          setFailed(true)
+          return
+        }
+        const shaped = mode === "fill" ? cropToAspect(decoded, width / height) : decoded
+        setImage(fitForFrame(shaped, width, height))
       } catch {
         if (alive) setFailed(true)
       }
@@ -167,12 +192,7 @@ export function CoverImage({
     return () => {
       alive = false
     }
-  }, [url, sourceKey])
-
-  const image = useMemo(
-    () => (decoded && mode === "fill" ? cropToAspect(decoded, width / height) : decoded),
-    [decoded, mode, width, height]
-  )
+  }, [url, sourceKey, width, height, mode])
 
   const body = image ? (
     <ZStack frame={{ width, height }}>

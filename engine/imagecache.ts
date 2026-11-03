@@ -5,8 +5,9 @@
 import type { AbortSignal } from "scripting"
 
 import { Convert } from "./convert"
-import { appDataRoot, ensureDir, exists, join, remove } from "./fs"
+import { appDataRoot, ensureDir, exists, join, readBytes, remove, writeBytes } from "./fs"
 import { fetchImageBytes } from "./http"
+import { readImageSize } from "./imagesize"
 import { runModifyImage, type ImageCompositor } from "./imageprocess"
 import { absoluteUrl, normalizeImageConfig, type ImageRequest, type ImageResponseInfo } from "./images"
 import { log } from "./log"
@@ -140,6 +141,12 @@ export function cachedImagePath(spec: ImageRequestSpec, sourceKey: string): Prom
         FileManager.writeAsBytesSync(temp, bytes)
         if (exists(path)) remove(path)
         FileManager.renameSync(temp, path)
+        // 原圖落地後順手做一份顯示用小圖，之後整格網格都讀小的。
+        try {
+          makeThumbnail(path, spec)
+        } catch (error) {
+          log("warning", "image", "縮圖降採樣失敗，先顯示原圖", error)
+        }
 
         writeCounter++
         if (writeCounter >= 50) {
@@ -167,6 +174,105 @@ export function cachedImagePath(spec: ImageRequestSpec, sourceKey: string): Prom
     })
     .finally(() => {
       inflight.delete(path)
+    })
+  return task
+}
+
+// ------------------------------------------------------------------ 縮圖降採樣
+/**
+ * 縮圖長邊上限（像素）：3 欄網格一格約 330px、詳情頁封面約 1050px，1024 兩邊都夠。
+ * 原圖 1500×2100 解成點陣約 12MB，降到 1024 寬只剩約 1 MB。
+ */
+const THUMB_MAX_EDGE = 1024
+const THUMB_QUALITY = 0.82
+const THUMB_EXTS = [".thumb.jpg", ".thumb.png"]
+const thumbInflight = new Map<string, Promise<string>>()
+
+function thumbBase(spec: ImageRequestSpec): string {
+  return join(cacheDir(), hashKey(spec.url + "\n" + (spec.modifyImage ?? "")))
+}
+
+/** 已存在的縮圖（PNG／JPEG 兩種副檔名都要找）。 */
+function existingThumb(spec: ImageRequestSpec): string | null {
+  const base = thumbBase(spec)
+  for (const ext of THUMB_EXTS) {
+    if (exists(base + ext)) return base + ext
+  }
+  return null
+}
+
+function isPng(bytes: Uint8Array | null): boolean {
+  return (
+    !!bytes &&
+    bytes.length > 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  )
+}
+
+/**
+ * 由已快取的原圖做一份降採樣小圖；原本就比上限小就什麼都不做（回 null）。
+ * 先讀檔頭判斷尺寸，夠小就不必把整張解開。
+ */
+function makeThumbnail(fullPath: string, spec: ImageRequestSpec): string | null {
+  const bytes = readBytes(fullPath)
+  if (!bytes) return null
+
+  const size = readImageSize(bytes)
+  if (size && Math.max(size.width, size.height) <= THUMB_MAX_EDGE) return null
+
+  const image = UIImage.fromFile(fullPath)
+  if (!image) return null
+  const longEdge = Math.max(image.width, image.height)
+  if (!(longEdge > THUMB_MAX_EDGE)) return null
+
+  const ratio = THUMB_MAX_EDGE / longEdge
+  const thumb = image.preparingThumbnail({
+    width: Math.max(1, Math.round(image.width * ratio)),
+    height: Math.max(1, Math.round(image.height * ratio)),
+  })
+  if (!thumb) return null
+
+  // 透明來源（PNG 頭像、留言圖）存 PNG，其餘存 JPEG。
+  const png = isPng(bytes)
+  const data = png ? thumb.toPNGData() : thumb.toJPEGData(THUMB_QUALITY)
+  if (!data) return null
+
+  const bytesOut = data.toUint8Array()
+  if (!bytesOut) return null
+
+  const path = thumbBase(spec) + (png ? ".thumb.png" : ".thumb.jpg")
+  return writeBytes(path, bytesOut) ? path : null
+}
+
+/**
+ * 顯示用小圖的本地路徑：原圖（`cachedImagePath`）＋降採樣縮圖。
+ * 舊快取沒有縮圖時當場補一份（每張圖只做一次），做不出來就退回原圖。
+ */
+export function cachedThumbnailPath(spec: ImageRequestSpec, sourceKey: string): Promise<string> {
+  const base = thumbBase(spec)
+  const pending = thumbInflight.get(base)
+  if (pending) return pending
+
+  const task = (async () => {
+    const full = await cachedImagePath(spec, sourceKey)
+    const cached = existingThumb(spec)
+    if (cached) return cached
+    try {
+      return makeThumbnail(full, spec) ?? full
+    } catch (error) {
+      log("warning", "image", "縮圖降採樣失敗，改用原圖", error)
+      return full
+    }
+  })()
+
+  thumbInflight.set(base, task)
+  void task
+    .catch(() => {})
+    .finally(() => {
+      if (thumbInflight.get(base) === task) thumbInflight.delete(base)
     })
   return task
 }
