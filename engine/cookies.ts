@@ -124,4 +124,13 @@ export function absorbResponseCookies(sourceKey: string, url: string, response: 
 
 export function clearCookies(sourceKey: string) {
   save(sourceKey, [])
+  // 登入態變了：GET 快取鍵帶著這個版號，舊的登入／登出前回應不會再被回。
+  authEpoch.set(sourceKey, authEpochOf(sourceKey) + 1)
+}
+
+/** 登入態的版號（登出就 +1）；`engine/http` 的快取鍵帶著它。 */
+const authEpoch = new Map<string, number>()
+
+export function authEpochOf(sourceKey: string): number {
+  return authEpoch.get(sourceKey) ?? 0
 }

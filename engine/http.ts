@@ -3,7 +3,7 @@
 
 import { fetch, type AbortSignal } from "scripting"
 
-import { absorbResponseCookies, cookieHeader, mergeCookieHeader } from "./cookies"
+import { absorbResponseCookies, authEpochOf, cookieHeader, mergeCookieHeader } from "./cookies"
 import { isCloudflareChallenge, solveCloudflare } from "./cloudflare"
 import { log } from "./log"
 
@@ -171,6 +171,110 @@ function encodeBody(data: unknown, headers: Record<string, string>): any {
   return String(data)
 }
 
+// ------------------------------------------------------------------ GET 回應快取
+//
+// 源用 `cache-time` 告訴我們這個 GET 能重用多久（`long`＝6 小時，其餘 5 秒），
+// `prevent-parallel` 則要求同一個網址排隊（站方限流時很有用）。語意照 Venera 的
+// `NetworkCacheManager`／`AppDio.request`。
+
+const RESPONSE_CACHE_MAX_BYTES = 10 * 1024 * 1024
+const CACHE_TTL_SHORT = 5000
+const CACHE_TTL_LONG = 6 * 60 * 60 * 1000
+/** 這兩個 header 每次都可能不一樣（登入、過盾），不能進快取鍵，否則永遠對不上。 */
+const VOLATILE_HEADERS = new Set(["cookie", "authorization"])
+
+interface CachedResponse {
+  status: number
+  headers: Record<string, string>
+  body: string
+  time: number
+  size: number
+}
+
+/** Map 的插入順序就是 LRU：命中時搬到最後。 */
+const responseCache = new Map<string, CachedResponse>()
+let responseCacheBytes = 0
+
+function responseKey(sourceKey: string, url: string, headers: Record<string, string>): string {
+  const stable = Object.keys(headers)
+    .filter(name => !VOLATILE_HEADERS.has(name.toLowerCase()))
+    .sort()
+    .map(name => `${name.toLowerCase()}:${headers[name]}`)
+    .join("\n")
+  return `${sourceKey}#${authEpochOf(sourceKey)}\n${url}\n${stable}`
+}
+
+function dropCached(key: string) {
+  const hit = responseCache.get(key)
+  if (!hit) return
+  responseCache.delete(key)
+  responseCacheBytes -= hit.size
+}
+
+function readCached(key: string, cacheTime: string | null, url: string): HttpResponse | null {
+  const hit = responseCache.get(key)
+  if (!hit) return null
+  const ttl = cacheTime === "long" ? CACHE_TTL_LONG : CACHE_TTL_SHORT
+  if (Date.now() - hit.time >= ttl) return null
+  responseCache.delete(key)
+  responseCache.set(key, hit)
+  log("debug", "http", `GET 快取命中 ${shortUrl(url)}`)
+  return { status: hit.status, headers: { ...hit.headers }, body: hit.body }
+}
+
+function storeCached(key: string, response: { status: number; headers: Record<string, string>; body: string }) {
+  if (response.status < 200 || response.status >= 300) return
+  const size = response.body.length
+  dropCached(key)
+  if (size > RESPONSE_CACHE_MAX_BYTES) return
+  while (responseCacheBytes + size > RESPONSE_CACHE_MAX_BYTES && responseCache.size > 0) {
+    const oldest = responseCache.keys().next().value
+    if (oldest === undefined) break
+    dropCached(oldest)
+  }
+  responseCache.set(key, {
+    status: response.status,
+    headers: response.headers,
+    body: response.body,
+    time: Date.now(),
+    size,
+  })
+  responseCacheBytes += size
+}
+
+/** 探針用：這條路徑的狀態不能流到下一次測試。 */
+export function clearResponseCache() {
+  responseCache.clear()
+  responseCacheBytes = 0
+}
+
+// ------------------------------------------------------------------ prevent-parallel
+const serialTails = new Map<string, Promise<void>>()
+
+/**
+ * 排到同一個網址的隊尾；回傳的函式要在請求結束時呼叫（成功失敗都要）。
+ * 新的隊尾要在 `await` **之前**就掛上去，否則同時進來的那幾個會一起排在前一個後面。
+ */
+function acquireSerial(slot: string): Promise<() => void> {
+  const previous = serialTails.get(slot)
+  let release!: () => void
+  const gate = new Promise<void>(resolve => (release = resolve))
+  serialTails.set(slot, gate)
+  return (async () => {
+    if (previous) {
+      try {
+        await previous
+      } catch {
+        // 前一個失敗不影響這一個
+      }
+    }
+    return () => {
+      if (serialTails.get(slot) === gate) serialTails.delete(slot)
+      release()
+    }
+  })()
+}
+
 async function perform(
   sourceKey: string,
   url: string,
@@ -179,7 +283,6 @@ async function perform(
   signal?: AbortSignal,
   fromSource = true
 ): Promise<any> {
-  const undo = fromSource ? guardRunaway(sourceKey, url) : null
   if (!url || typeof url !== "string") {
     // fetch("") 會永久 hang，必須在這裡擋掉。
     throw new Error(`Network: 空的 URL（${options.method ?? "GET"}）`)
@@ -198,6 +301,21 @@ async function perform(
   }
 
   const body = method === "GET" || method === "HEAD" ? undefined : encodeBody(extra.data, headers)
+
+  // `cache-time` / `prevent-parallel` 是源的選項（不是 header），語意照 Venera。
+  const cacheTime = typeof extra["cache-time"] === "string" ? (extra["cache-time"] as string) : null
+  const serial = extra["prevent-parallel"] === true || extra["prevent-parallel"] === "true"
+  const cacheKey = fromSource && !asBytes && method === "GET" ? responseKey(sourceKey, url, headers) : ""
+  if (cacheKey) {
+    if (cacheTime === "no") dropCached(cacheKey)
+    else {
+      const cached = readCached(cacheKey, cacheTime, url)
+      if (cached) return cached
+    }
+  }
+
+  const undo = fromSource ? guardRunaway(sourceKey, url) : null
+  const release = serial ? await acquireSerial(`${sourceKey}\n${url}`) : null
 
   const started = Date.now()
   try {
@@ -240,13 +358,17 @@ async function perform(
         signal,
       })
       absorbResponseCookies(sourceKey, url, retryResponse as any)
-      return {
+      const retried = {
         status: retryResponse.status,
         headers: lowerCaseKeys(headersToObject(retryResponse.headers)),
         body: await retryResponse.text(),
       }
+      if (cacheKey) storeCached(cacheKey, retried)
+      return retried
     }
 
+    // 只有文字請求會進快取（`cacheKey` 在 `asBytes` 時是空的），這裡再窄一次型別。
+    if (cacheKey && typeof result.body === "string") storeCached(cacheKey, { ...result, body: result.body })
     return result
   } catch (error) {
     if (isAbortError(error)) {
@@ -255,6 +377,8 @@ async function perform(
       undo?.()
     }
     throw error
+  } finally {
+    release?.()
   }
 }
 
