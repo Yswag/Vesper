@@ -230,6 +230,11 @@ export interface ChapterSession {
    */
   warm(page: number): void
   /**
+   * 把前 `pages` 頁先抓到磁碟（不解碼、不渲染）；跨章預取用。
+   * 換到那一話時磁碟已經有檔，第一頁不必等一輪往返。
+   */
+  warmAhead(pages: number): Promise<void>
+  /**
    * 換話或離開閱讀器：取消請求、清空預取佇列並釋放快取與暫存檔案。
    */
   dispose(): void
@@ -454,6 +459,11 @@ export interface ComicLibrary {
    * 源被移除或飛航模式也開得起來），否則走線上。
    */
   chapter(ref: ChapterRef): Promise<ChapterSession>
+  /**
+   * 跨章預取：開一份用完就丟的 session，把那一話的前 `pages` 頁抓進磁碟快取。
+   * 預取是加分項，失敗不抲。
+   */
+  prefetchChapter(ref: ChapterRef, pages: number): Promise<void>
   /**
    * 取得續讀進度點（未讀回傳 null，越界自動 clamp）。
    */
@@ -716,7 +726,7 @@ export function createComicLibrary(): ComicLibrary {
     }
   }
 
-  return {
+  const api: ComicLibrary = {
     sources: () => enabledSources().map(infoOf),
 
     source: key => {
@@ -964,6 +974,23 @@ export function createComicLibrary(): ComicLibrary {
           hardwareSharpenEnabled = enabled && hasPro()
         },
         warm: page => prefetch.focus(page),
+        // 跨章預取用：從第一頁往下數 `pages` 頁寫進這一話的磁碟快取，完成才 resolve。
+        // 要走 `loadPage` 而不是 `loadPageBytes`：只有前者會寫檔，記憶體快取隨 dispose 就沒了。
+        warmAhead: async pages => {
+          const count = Math.min(Math.max(pages, 0), imageKeys.length)
+          let next = 0
+          const workers = Array.from({ length: Math.min(2, count) }, async () => {
+            while (next < count) {
+              const index = next++
+              try {
+                await loadPage(index)
+              } catch (error) {
+                if (!disposed) log("debug", "reader", `${ref.epId} 預取第 ${index + 1} 頁失敗`, error)
+              }
+            }
+          })
+          await Promise.all(workers)
+        },
         dispose: () => {
           disposed = true
           prefetch.clear()
@@ -972,6 +999,18 @@ export function createComicLibrary(): ComicLibrary {
           // 檔案不刪：那是這一話的跨 session 快取，下次進來直接命中；
           // 何時收掉由開章時的 sweepPageCache 決定（保留話數與容量）。
         },
+      }
+    },
+
+    prefetchChapter: async (ref, pages) => {
+      let session: ChapterSession | undefined
+      try {
+        session = await api.chapter(ref)
+        await session.warmAhead(pages)
+      } catch (error) {
+        log("debug", "reader", `${ref.epId} 跨章預取失敗`, error)
+      } finally {
+        session?.dispose()
       }
     },
 
@@ -1066,4 +1105,6 @@ export function createComicLibrary(): ComicLibrary {
 
     listDownloads: () => listDownloads(),
   }
+
+  return api
 }

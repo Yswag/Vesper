@@ -35,7 +35,7 @@ import {
   type ScrollViewProxy,
 } from "scripting"
 
-import type { ChapterSession, ReaderChapter } from "../../app/comic"
+import type { ChapterRef as LibraryChapterRef, ChapterSession, ReaderChapter } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { describeError } from "../../engine/errors"
@@ -66,6 +66,11 @@ import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
 /** 單擊翻頁的滑動動畫（需以 withAnimation 包覆捲動指令）。 */
 const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
+
+/** 距末頁還剩幾頁就開始把下一話前幾頁抓到磁碟（太早會跟當前話的預取搶頻寬、多耗流量）。 */
+const NEXT_CHAPTER_TRIGGER = 3
+/** 下一話先抓幾頁。 */
+const NEXT_CHAPTER_PAGES = 3
 
 /** 量到就回報（放在 `background` 的 `GeometryReader` 裡，不影響版面）。 */
 function BoxReporter({
@@ -171,6 +176,7 @@ function ReaderPageTracker({
   pageCount,
   ready,
   progress,
+  nextChapter,
   cornerVisible,
   cornerPage,
   cornerTime,
@@ -180,6 +186,8 @@ function ReaderPageTracker({
   session: ChapterSession | undefined
   pageCount: number
   ready: boolean
+  /** 下一話（跳過鎖定章）；接近末頁時先把它的前幾頁抓到磁碟。 */
+  nextChapter?: LibraryChapterRef
   progress: {
     sourceKey: string
     comicId: string
@@ -202,6 +210,17 @@ function ReaderPageTracker({
     if (!session || pageCount === 0) return
     session.warm(page)
   }, [session, page, pageCount])
+
+  // 接近末頁 → 下一話前幾頁先下來，換話的第一頁不必等一輪往返。
+  // 一話只觸發一次（快取已經在磁碟上，換回來也不用再做）。
+  const prefetchedEpId = useRef<string | null>(null)
+  useEffect(() => {
+    if (!nextChapter || pageCount === 0) return
+    if (page < pageCount - NEXT_CHAPTER_TRIGGER) return
+    if (prefetchedEpId.current === nextChapter.epId) return
+    prefetchedEpId.current = nextChapter.epId
+    void comicLibrary().prefetchChapter(nextChapter, NEXT_CHAPTER_PAGES)
+  }, [nextChapter, page, pageCount])
 
   // 進度：還沒回報時當成第 1 頁（單張圖不會有可見集合回呼）。
   useEffect(() => {
@@ -419,6 +438,11 @@ function ReaderContent({
   // 章節預設標題在 render 時求值以支援語言切換
   const title = (index >= 0 ? currentGroupChapters[index]?.title : chapters.find(c => c.id === currentEpId)?.title) || t("reader.chapterFallback", { n: Math.max(1, index + 1) })
   const pageCount = session?.pageCount ?? 0
+  // 下一話的「資料層」身分（閱讀器自己的 ChapterRef 只有 id／title）。
+  const nextRef = useMemo<LibraryChapterRef | undefined>(
+    () => (next ? { sourceKey, comicId, epId: next.id } : undefined),
+    [next?.id, sourceKey, comicId]
+  )
 
   useEffect(() => {
     let alive = true
@@ -1195,6 +1219,7 @@ function ReaderContent({
           cornerPage={settings.cornerPage}
           cornerTime={settings.cornerTime}
           safeAreaInsets={safeAreaInsets}
+          nextChapter={nextRef}
         />
 
         {/* 2. 全螢幕 HUD Overlay */}

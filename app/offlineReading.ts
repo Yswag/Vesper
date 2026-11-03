@@ -190,6 +190,11 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       for (let i = page; i <= page + WARM_AHEAD; i++) prepare(i)
       for (let i = page - 1; i >= page - WARM_BEHIND; i--) prepare(i)
     },
+    // 跨章預取：離線章節本來就在本機，量好前幾頁的比例就好（同步、一頁約 1ms）。
+    warmAhead: async pages => {
+      const count = Math.min(Math.max(pages, 0), imageKeys.length)
+      for (let i = 0; i < count; i++) prepare(i)
+    },
     // 超分圖的暫存檔要收掉。
     dispose: () => {
       disposed = true
