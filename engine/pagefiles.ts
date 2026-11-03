@@ -1,6 +1,7 @@
 // 閱讀器正文渲染管線落地層。
 // 將圖片位元組寫入專屬 session 暫存目錄，供 Canvas.drawImage 讀取以避免 UIImage 點陣記憶體累積。
 
+import { Convert } from "./convert"
 import { appDataRoot, exists, join, listDir, remove, writeBytes } from "./fs"
 import { log } from "./log"
 import type { SlotHalf } from "./pageslots"
@@ -109,6 +110,23 @@ function sniffImageExtension(bytes: Uint8Array): ImageExtension {
   return "bin"
 }
 
+/**
+ * 快取檔名：頁索引＋圖片鍵的短雜湊。
+ * 圖片鍵變了（源換圖）就對不上舊檔，不會拿到過期的圖。
+ */
+export function pageName(index: number, imageKey: string): string {
+  const digest = Convert.hexEncode(Convert.md5(Convert.encodeUtf8(imageKey))).slice(0, 8)
+  return `p${index}-${digest}`
+}
+
+/** 目錄裡這一頁的原圖檔；沒有就 null。超分圖不匹配（名字多一段 `-hi-`），寫到一半的 `.part` 也不算。 */
+export function findPage(dir: string, name: string): string | null {
+  const hit = listDir(dir).find(entry => entry.startsWith(`${name}.`) && !entry.endsWith(".part"))
+  if (!hit) return null
+  const path = join(dir, hit)
+  return exists(path) ? path : null
+}
+
 /** 將原圖寫入 session 暫存檔（已存在則跳過寫入）。 */
 export function writePage(dir: string, name: string, bytes: Uint8Array, aspect: number): PageRender | null {
   return writeInto(dir, name, "", bytes, aspect)
@@ -129,7 +147,7 @@ export function writeSharpenedPage(
 
 /** 查詢目錄中是否已有處理完畢的超分圖檔案（等比 2×，aspect 不變）。 */
 export function findSharpenedPage(dir: string, name: string, aspect: number): PageRender | null {
-  const hit = listDir(dir).find(entry => entry.startsWith(`${name}-hi.`))
+  const hit = listDir(dir).find(entry => entry.startsWith(`${name}-hi.`) && !entry.endsWith(".part"))
   if (!hit) return null
   const path = join(dir, hit)
   return exists(path) ? { path, aspect } : null
@@ -148,7 +166,17 @@ function writeInto(
   if (extension === "bin") {
     log("warning", "reader", `${name}${suffix} 的格式認不出來（落 .bin），可能畫不出來`)
   }
-  return writeBytes(path, bytes) ? { path, aspect } : null
+  // 先寫半成品再改名：這些檔會跨 session 存活，不能讓「寫到一半」被下一次當成好檔。
+  const temp = `${path}.part`
+  if (!writeBytes(temp, bytes)) return null
+  try {
+    if (exists(path)) remove(path)
+    FileManager.renameSync(temp, path)
+  } catch {
+    remove(temp)
+    return null
+  }
+  return { path, aspect }
 }
 
 /** 這一刻還在使用中的目錄（開場清理不碰它們）。App 被殺時整個 Set 隨 process 消失。 */

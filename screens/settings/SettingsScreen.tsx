@@ -21,6 +21,7 @@ import { CardGroup, PageScroll } from "../../design/layout"
 import { IconRow, SelectRow, rowSeparatorInset } from "../../design/rows"
 import { palette } from "../../design/tokens"
 import { clearImageCache, getCacheStats } from "../../engine/imagecache"
+import { pageCacheUsage } from "../../engine/pagecache"
 import { clearSourceIconCache } from "../../engine/sourceicons"
 import { formatBytes } from "../../engine/format"
 import { LOCALE_IDS, subscribe as subscribeLocale, t } from "../../i18n"
@@ -42,12 +43,14 @@ export function SettingsScreen() {
   const comp = findComposition(choice.composition)
   const pal = findPalette(choice.palette)
   const [cacheStats, setCacheStats] = useState<{ count: number; totalBytes: number } | null>(null)
+  const [pageStats, setPageStats] = useState<{ chapters: number; bytes: number } | null>(null)
 
-  // 進這一頁先從盤上重載一次源，並非同步取得縮圖快取統計。
+  // 進這一頁先從盤上重載一次源，並非同步取得兩個快取池的統計。
   useEffect(() => {
     reloadRegistry()
     refresh()
     void getCacheStats().then(setCacheStats)
+    void pageCacheUsage().then(setPageStats)
   }, [])
 
   const installed = allSources().length
@@ -61,12 +64,9 @@ export function SettingsScreen() {
       : undefined
 
   const cacheDetail =
-    cacheStats === null
+    cacheStats === null || pageStats === null
       ? undefined
-      : t("settings.root.thumbCacheDetail", {
-          files: t("settings.root.thumbCacheFiles", { n: cacheStats.count }),
-          size: formatBytes(cacheStats.totalBytes),
-        })
+      : formatBytes(cacheStats.totalBytes + pageStats.bytes)
 
   return (
     <PageScroll title={t("settings.root.title")} leading={LeadingToolbar}>
@@ -110,7 +110,7 @@ export function SettingsScreen() {
         <NavigationLink destination={<ImageCacheSettingsScreen />}>
           <IconRow
             icon="internaldrive"
-            title={t("settings.root.thumbCache")}
+            title={t("settings.root.cache")}
             detail={cacheDetail}
             chevron
           />
