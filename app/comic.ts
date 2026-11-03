@@ -460,10 +460,12 @@ export interface ComicLibrary {
    */
   chapter(ref: ChapterRef): Promise<ChapterSession>
   /**
-   * 跨章預取：開一份用完就丟的 session，把那一話的前 `pages` 頁抓進磁碟快取。
-   * 預取是加分項，失敗不抲。
+   * 跨章預取：先開好那一話的 session，把前 `pages` 頁抓進磁碟快取，留著給下一次 `chapter()` 接手。
+   * 同時只留一份；預取是加分項，失敗不抛。
    */
   prefetchChapter(ref: ChapterRef, pages: number): Promise<void>
+  /** 放掉沒被接手的預取 session（離開閱讀器時）。 */
+  releasePrefetched(): void
   /**
    * 取得續讀進度點（未讀回傳 null，越界自動 clamp）。
    */
@@ -726,6 +728,242 @@ export function createComicLibrary(): ComicLibrary {
     }
   }
 
+  async function openChapter(ref: ChapterRef): Promise<ChapterSession> {
+    const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
+    // 先查本機：這一話在手機上就讀離線 manifest，整條路不碰源（源被移除也開得起來）。
+    if (isOfflineReadable(key)) return createOfflineSession(key)
+
+    const { handle } = handleOf(ref.sourceKey)
+    // 只拿這一話的頁面清單。詳情不在這裡抓：每個入口進來之前都已經抓過一輪
+    // （詳情頁的 `comic()`、續讀的 `resumePlan()`），擋在這裡等它只會把首圖往後推一個往返；
+    // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
+    const imageKeys = await handle.chapter(ref.comicId, ref.epId)
+    // 這一話的跨 session 快取目錄：同一話重開就是這個目錄，命中就不必問源、不必下載。
+    // 開章順手淘汰一次（背景），保留話數與容量都在設定裡。
+    const chapterCache = openChapterCache(key, imageKeys)
+    const renderDir = chapterCache.dir
+    void sweepPageCache(renderDir, {
+      chapters: getPageCacheChapters(),
+      bytes: getPageCacheBytes(),
+    })
+    // 一個 session 包含獨立取消範圍、預取佇列與正文記憶體快取，生命週期隨 session dispose 釋放。
+    const controller = new AbortController()
+    const pageCache = createPageCache()
+    /** 這一頁的圖片鍵；越界就拋（`imageKey` 與 `pageImage` 共用同一個守衛）。 */
+    const imageKeyOf = (index: number): string => {
+      const imageKey = imageKeys[index]
+      if (imageKey === undefined) throw new Error(t("common.pageMissing", { n: index + 1, total: imageKeys.length }))
+      return imageKey
+    }
+    // 解析源的圖片請求本身也可能卡住（有的源在 onImageLoad 裡連網），所以重試的閉包也要帶 scope。
+    const retry = handle.imageRetry({ signal: controller.signal })
+    const loadPageBytes = async (index: number) => {
+      // 磁碟命中就不必問源、不必下載。放在這一層而不是 `loadPage`：預取也吃這條路，
+      // 不然重開同一話時 ahead 的預取還是會全部重抓一次。
+      const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
+      const cached = hit ? readBytes(hit) : null
+      if (cached) {
+        log("debug", "image", `正文命中磁碟（第 ${index + 1} 頁）`)
+        return cached
+      }
+      return readerImageBytes(
+        {
+          ...key,
+          pageIndex: index,
+          imageKey: imageKeyOf(index),
+          comicModule: handle.comicModule,
+          retry,
+        },
+        pageCache,
+        controller.signal
+      )
+    }
+    // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
+    const aspects = createPageAspects()
+    const prefetch = createPrefetchQueue({
+      total: imageKeys.length,
+      signal: controller.signal,
+      // 預取到的頁先讀檔頭記比例：畫廊切寬圖要在翻到之前就知道。
+      load: async page => {
+        const size = readImageSize(await loadPageBytes(page))
+        if (size && aspects.get(page) === null) aspects.set(page, size.width / size.height)
+      },
+      ahead: getPrefetchPages,
+      // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
+      onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
+    })
+
+    // 沒有 Scripting Pro 就沒有本機 HttpServer，超分根本跑不起來：不要每頁白試兩次再降級。
+    let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen && hasPro()
+
+    // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
+    // key＝頁索引＋半張尾碼（整張沒有尾碼）。
+    const renders = new Map<string, PageRender>()
+    /** 記住這頁的渲染結果再回傳（所有成功路徑都要經過）。 */
+    const memoRender = (index: number, render: PageRender | null): PageRender | null => {
+      if (render) renders.set(`${index}${halfSuffix(render.half)}`, render)
+      return render
+    }
+    /** 半張先找切好的超分圖，沒有就用整張。 */
+    const renderOf = (index: number, half?: SlotHalf): PageRender | null =>
+      (half ? renders.get(`${index}${halfSuffix(half)}`) : undefined) ?? renders.get(String(index)) ?? null
+    let disposed = false
+
+    /** 檔案寬高比；只讀檔頭（`fromFile` 是惰性的），讀不出來回 null。 */
+    const aspectOfFile = (path: string): number | null => {
+      const decoded = UIImage.fromFile(path)
+      if (!decoded || !decoded.width || !decoded.height) return null
+      return decoded.width / decoded.height
+    }
+
+    const loadPage = async (
+      index: number,
+      onSharpened?: (render: PageRender) => void,
+      isCancelled?: () => boolean,
+      frame?: PageFrame,
+      half?: SlotHalf
+    ): Promise<PageRender | null> => {
+      // 沒有超分要跑（預設）時，磁碟命中就是最終結果：session 記過的直接回；
+      // 沒記過（跨 session 重開）就用檔案量比例——`fromFile` 只讀檔頭，
+      // 不必把整張讀回來再 `fromData` 解一次。
+      if (!hardwareSharpenEnabled) {
+        const ready = renders.get(String(index))
+        if (ready) return ready
+        const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
+        const aspect = hit ? aspectOfFile(hit) : null
+        if (hit && aspect !== null) {
+          aspects.set(index, aspect)
+          return memoRender(index, { path: hit, aspect })
+        }
+      }
+
+      const bytes = await loadPageBytes(index)
+      if (isCancelled && isCancelled()) return null
+
+      // 解碼只是為了量長寬（惰性，幾乎免費），而且只做這一次：寫檔與超分都沿用這個比例。
+      const data = Data.fromUint8Array(bytes)
+      if (!data) return null
+      const decoded = UIImage.fromData(data)
+      if (!decoded) return null
+      const aspect = decoded.width / decoded.height
+      aspects.set(index, aspect)
+
+      const name = pageName(index, imageKeyOf(index))
+      // 有放大效益、縮後放得下才超分；輸出按這一格的顯示框算（半張只算那一半）。
+      const target = hardwareSharpenEnabled && frame
+        ? planUpscale(halfRect(decoded.width, decoded.height, half), displayPixels(frame, slotAspect(aspect, half)))
+        : null
+      // 檔名帶半邊與輸出尺寸：框變了不拿舊的小圖。
+      const sharpenedName = target ? `${name}${halfSuffix(half)}-${target.outWidth}x${target.outHeight}` : ""
+      const sizes = `${decoded.width}×${decoded.height}${halfSuffix(half)}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
+      if (hardwareSharpenEnabled && frame && !target) {
+        log("debug", "upscale", `第 ${index + 1} 頁不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
+      }
+      // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
+      if (target) {
+        const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
+        if (cached) return memoRender(index, { ...cached, half })
+      }
+
+      if (disposed) return null
+      // 已經在磁碟上就不必再寫（命中時走的就是這條路），只有新寫入的才算進這一話的用量。
+      const existed = findPage(renderDir, name) !== null
+      const render = writePage(renderDir, name, bytes, aspect)
+      if (!render) return null
+      if (!existed) chapterCache.account(bytes.byteLength)
+
+      // 漸進式超分：在背景排入超分推論並透過 callback 回傳
+      if (target) {
+        if (onSharpened) {
+          const pageKey = `${ref.epId}_p${index}`
+          const t0 = Date.now()
+          void sharpenImage(pageKey, data, isCancelled, target).then(result => {
+            // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
+            if (!result || disposed || (isCancelled && isCancelled())) return
+            const costMs = Date.now() - t0
+            if (result.fromCache) {
+              log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+            } else {
+              log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
+            }
+            const payload = new Uint8Array(result.data.toArrayBuffer())
+            const limit = getPageCacheBytes()
+            // 單章自己就把上限吃滿時，超分圖不落地（這就是「一話超過 1GB」的保命符）：
+            // 原圖照留，重開同一話仍然零網路，只是超分要重算。
+            if (limit > 0 && chapterCache.bytes() + payload.byteLength > limit) {
+              log("debug", "cache", `第 ${index + 1} 頁超分圖不落地（這一話已達正文快取上限）`)
+              return
+            }
+            const hadSharpened = findSharpenedPage(renderDir, sharpenedName, aspect) !== null
+            const sharpened = writeSharpenedPage(renderDir, sharpenedName, payload, aspect)
+            if (sharpened) {
+              if (!hadSharpened) chapterCache.account(payload.byteLength)
+              // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
+              const render = { ...sharpened, half }
+              memoRender(index, render)
+              onSharpened(render)
+            }
+          })
+        }
+      }
+
+      return memoRender(index, render)
+    }
+
+    return {
+      ref,
+      title: ref.epId,
+      comicTitle: "",
+      pageCount: imageKeys.length,
+      offline: statusOf(key),
+      local: false,
+      imageKey: index => imageKeyOf(index),
+      aspectOf: index => aspects.get(index),
+      subscribeAspects: aspects.subscribe,
+      renderOf,
+      pageImage: loadPageBytes,
+      loadPage,
+      setHardwareSharpen: enabled => {
+        hardwareSharpenEnabled = enabled && hasPro()
+      },
+      warm: page => prefetch.focus(page),
+      // 跨章預取用：從第一頁往下數 `pages` 頁寫進這一話的磁碟快取，完成才 resolve。
+      // 要走 `loadPage` 而不是 `loadPageBytes`：只有前者會寫檔，記憶體快取隨 dispose 就沒了。
+      warmAhead: async pages => {
+        const count = Math.min(Math.max(pages, 0), imageKeys.length)
+        let next = 0
+        const workers = Array.from({ length: Math.min(2, count) }, async () => {
+          while (next < count) {
+            const index = next++
+            try {
+              await loadPage(index)
+            } catch (error) {
+              if (!disposed) log("debug", "reader", `${ref.epId} 預取第 ${index + 1} 頁失敗`, error)
+            }
+          }
+        })
+        await Promise.all(workers)
+      },
+      dispose: () => {
+        disposed = true
+        prefetch.clear()
+        controller.abort()
+        pageCache.clear()
+        // 檔案不刪：那是這一話的跨 session 快取，下次進來直接命中；
+        // 何時收掉由開章時的 sweepPageCache 決定（保留話數與容量）。
+      },
+    }
+  }
+
+  /** 跨章預取開好、等著被 `chapter()` 接手的那一話；同時只留一份。 */
+  let handoff: { id: string; session: Promise<ChapterSession | null> } | null = null
+  const chapterIdOf = (ref: ChapterRef): string => `${ref.sourceKey}\n${ref.comicId}\n${ref.epId}`
+  function releasePrefetched(): void {
+    const pending = handoff
+    handoff = null
+    void pending?.session.then(session => session?.dispose())
+  }
+
   const api: ComicLibrary = {
     sources: () => enabledSources().map(infoOf),
 
@@ -776,243 +1014,36 @@ export function createComicLibrary(): ComicLibrary {
     readerChapters: page => readerChaptersOf(page.chapters),
 
     chapter: async ref => {
-      const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
-      // 先查本機：這一話在手機上就讀離線 manifest，整條路不碰源（源被移除也開得起來）。
-      if (isOfflineReadable(key)) return createOfflineSession(key)
-
-      const { handle } = handleOf(ref.sourceKey)
-      // 只拿這一話的頁面清單。詳情不在這裡抓：每個入口進來之前都已經抓過一輪
-      // （詳情頁的 `comic()`、續讀的 `resumePlan()`），擋在這裡等它只會把首圖往後推一個往返；
-      // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
-      const imageKeys = await handle.chapter(ref.comicId, ref.epId)
-      // 這一話的跨 session 快取目錄：同一話重開就是這個目錄，命中就不必問源、不必下載。
-      // 開章順手淘汰一次（背景），保留話數與容量都在設定裡。
-      const chapterCache = openChapterCache(key, imageKeys)
-      const renderDir = chapterCache.dir
-      void sweepPageCache(renderDir, {
-        chapters: getPageCacheChapters(),
-        bytes: getPageCacheBytes(),
-      })
-      // 一個 session 包含獨立取消範圍、預取佇列與正文記憶體快取，生命週期隨 session dispose 釋放。
-      const controller = new AbortController()
-      const pageCache = createPageCache()
-      /** 這一頁的圖片鍵；越界就拋（`imageKey` 與 `pageImage` 共用同一個守衛）。 */
-      const imageKeyOf = (index: number): string => {
-        const imageKey = imageKeys[index]
-        if (imageKey === undefined) throw new Error(t("common.pageMissing", { n: index + 1, total: imageKeys.length }))
-        return imageKey
+      // 跨章預取已經開好這一話：直接接手（頁面清單、比例、已備好的頁都在），不再問源一次。
+      if (handoff && handoff.id === chapterIdOf(ref)) {
+        const pending = handoff.session
+        handoff = null
+        const taken = await pending
+        if (taken) return taken
       }
-      // 解析源的圖片請求本身也可能卡住（有的源在 onImageLoad 裡連網），所以重試的閉包也要帶 scope。
-      const retry = handle.imageRetry({ signal: controller.signal })
-      const loadPageBytes = async (index: number) => {
-        // 磁碟命中就不必問源、不必下載。放在這一層而不是 `loadPage`：預取也吃這條路，
-        // 不然重開同一話時 ahead 的預取還是會全部重抓一次。
-        const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
-        const cached = hit ? readBytes(hit) : null
-        if (cached) {
-          log("debug", "image", `正文命中磁碟（第 ${index + 1} 頁）`)
-          return cached
-        }
-        return readerImageBytes(
-          {
-            ...key,
-            pageIndex: index,
-            imageKey: imageKeyOf(index),
-            comicModule: handle.comicModule,
-            retry,
-          },
-          pageCache,
-          controller.signal
-        )
-      }
-      // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
-      const aspects = createPageAspects()
-      const prefetch = createPrefetchQueue({
-        total: imageKeys.length,
-        signal: controller.signal,
-        // 預取到的頁先讀檔頭記比例：畫廊切寬圖要在翻到之前就知道。
-        load: async page => {
-          const size = readImageSize(await loadPageBytes(page))
-          if (size && aspects.get(page) === null) aspects.set(page, size.width / size.height)
-        },
-        ahead: getPrefetchPages,
-        // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
-        onError: (page, error) => log("debug", "reader", `${ref.epId} 預取第 ${page + 1} 頁失敗`, error),
-      })
-
-      // 沒有 Scripting Pro 就沒有本機 HttpServer，超分根本跑不起來：不要每頁白試兩次再降級。
-      let hardwareSharpenEnabled = getReaderSettings().hardwareSharpen && hasPro()
-
-      // 已經備好的頁：重掛時直接拿來當初始值（省掉一次 loadPage 與佔位→圖的交換）。
-      // key＝頁索引＋半張尾碼（整張沒有尾碼）。
-      const renders = new Map<string, PageRender>()
-      /** 記住這頁的渲染結果再回傳（所有成功路徑都要經過）。 */
-      const memoRender = (index: number, render: PageRender | null): PageRender | null => {
-        if (render) renders.set(`${index}${halfSuffix(render.half)}`, render)
-        return render
-      }
-      /** 半張先找切好的超分圖，沒有就用整張。 */
-      const renderOf = (index: number, half?: SlotHalf): PageRender | null =>
-        (half ? renders.get(`${index}${halfSuffix(half)}`) : undefined) ?? renders.get(String(index)) ?? null
-      let disposed = false
-
-      /** 檔案寬高比；只讀檔頭（`fromFile` 是惰性的），讀不出來回 null。 */
-      const aspectOfFile = (path: string): number | null => {
-        const decoded = UIImage.fromFile(path)
-        if (!decoded || !decoded.width || !decoded.height) return null
-        return decoded.width / decoded.height
-      }
-
-      const loadPage = async (
-        index: number,
-        onSharpened?: (render: PageRender) => void,
-        isCancelled?: () => boolean,
-        frame?: PageFrame,
-        half?: SlotHalf
-      ): Promise<PageRender | null> => {
-        // 沒有超分要跑（預設）時，磁碟命中就是最終結果：session 記過的直接回；
-        // 沒記過（跨 session 重開）就用檔案量比例——`fromFile` 只讀檔頭，
-        // 不必把整張讀回來再 `fromData` 解一次。
-        if (!hardwareSharpenEnabled) {
-          const ready = renders.get(String(index))
-          if (ready) return ready
-          const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
-          const aspect = hit ? aspectOfFile(hit) : null
-          if (hit && aspect !== null) {
-            aspects.set(index, aspect)
-            return memoRender(index, { path: hit, aspect })
-          }
-        }
-
-        const bytes = await loadPageBytes(index)
-        if (isCancelled && isCancelled()) return null
-
-        // 解碼只是為了量長寬（惰性，幾乎免費），而且只做這一次：寫檔與超分都沿用這個比例。
-        const data = Data.fromUint8Array(bytes)
-        if (!data) return null
-        const decoded = UIImage.fromData(data)
-        if (!decoded) return null
-        const aspect = decoded.width / decoded.height
-        aspects.set(index, aspect)
-
-        const name = pageName(index, imageKeyOf(index))
-        // 有放大效益、縮後放得下才超分；輸出按這一格的顯示框算（半張只算那一半）。
-        const target = hardwareSharpenEnabled && frame
-          ? planUpscale(halfRect(decoded.width, decoded.height, half), displayPixels(frame, slotAspect(aspect, half)))
-          : null
-        // 檔名帶半邊與輸出尺寸：框變了不拿舊的小圖。
-        const sharpenedName = target ? `${name}${halfSuffix(half)}-${target.outWidth}x${target.outHeight}` : ""
-        const sizes = `${decoded.width}×${decoded.height}${halfSuffix(half)}→${target ? `${target.outWidth}×${target.outHeight}` : ""}`
-        if (hardwareSharpenEnabled && frame && !target) {
-          log("debug", "upscale", `第 ${index + 1} 頁不超分（${decoded.width}×${decoded.height}，沒有放大效益或縮後超過上限）`)
-        }
-        // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
-        if (target) {
-          const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
-          if (cached) return memoRender(index, { ...cached, half })
-        }
-
-        if (disposed) return null
-        // 已經在磁碟上就不必再寫（命中時走的就是這條路），只有新寫入的才算進這一話的用量。
-        const existed = findPage(renderDir, name) !== null
-        const render = writePage(renderDir, name, bytes, aspect)
-        if (!render) return null
-        if (!existed) chapterCache.account(bytes.byteLength)
-
-        // 漸進式超分：在背景排入超分推論並透過 callback 回傳
-        if (target) {
-          if (onSharpened) {
-            const pageKey = `${ref.epId}_p${index}`
-            const t0 = Date.now()
-            void sharpenImage(pageKey, data, isCancelled, target).then(result => {
-              // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
-              if (!result || disposed || (isCancelled && isCancelled())) return
-              const costMs = Date.now() - t0
-              if (result.fromCache) {
-                log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
-              } else {
-                log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
-              }
-              const payload = new Uint8Array(result.data.toArrayBuffer())
-              const limit = getPageCacheBytes()
-              // 單章自己就把上限吃滿時，超分圖不落地（這就是「一話超過 1GB」的保命符）：
-              // 原圖照留，重開同一話仍然零網路，只是超分要重算。
-              if (limit > 0 && chapterCache.bytes() + payload.byteLength > limit) {
-                log("debug", "cache", `第 ${index + 1} 頁超分圖不落地（這一話已達正文快取上限）`)
-                return
-              }
-              const hadSharpened = findSharpenedPage(renderDir, sharpenedName, aspect) !== null
-              const sharpened = writeSharpenedPage(renderDir, sharpenedName, payload, aspect)
-              if (sharpened) {
-                if (!hadSharpened) chapterCache.account(payload.byteLength)
-                // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
-                const render = { ...sharpened, half }
-                memoRender(index, render)
-                onSharpened(render)
-              }
-            })
-          }
-        }
-
-        return memoRender(index, render)
-      }
-
-      return {
-        ref,
-        title: ref.epId,
-        comicTitle: "",
-        pageCount: imageKeys.length,
-        offline: statusOf(key),
-        local: false,
-        imageKey: index => imageKeyOf(index),
-        aspectOf: index => aspects.get(index),
-        subscribeAspects: aspects.subscribe,
-        renderOf,
-        pageImage: loadPageBytes,
-        loadPage,
-        setHardwareSharpen: enabled => {
-          hardwareSharpenEnabled = enabled && hasPro()
-        },
-        warm: page => prefetch.focus(page),
-        // 跨章預取用：從第一頁往下數 `pages` 頁寫進這一話的磁碟快取，完成才 resolve。
-        // 要走 `loadPage` 而不是 `loadPageBytes`：只有前者會寫檔，記憶體快取隨 dispose 就沒了。
-        warmAhead: async pages => {
-          const count = Math.min(Math.max(pages, 0), imageKeys.length)
-          let next = 0
-          const workers = Array.from({ length: Math.min(2, count) }, async () => {
-            while (next < count) {
-              const index = next++
-              try {
-                await loadPage(index)
-              } catch (error) {
-                if (!disposed) log("debug", "reader", `${ref.epId} 預取第 ${index + 1} 頁失敗`, error)
-              }
-            }
-          })
-          await Promise.all(workers)
-        },
-        dispose: () => {
-          disposed = true
-          prefetch.clear()
-          controller.abort()
-          pageCache.clear()
-          // 檔案不刪：那是這一話的跨 session 快取，下次進來直接命中；
-          // 何時收掉由開章時的 sweepPageCache 決定（保留話數與容量）。
-        },
-      }
+      return openChapter(ref)
     },
 
     prefetchChapter: async (ref, pages) => {
-      let session: ChapterSession | undefined
-      try {
-        session = await api.chapter(ref)
-        await session.warmAhead(pages)
-      } catch (error) {
+      const id = chapterIdOf(ref)
+      if (handoff?.id === id) return
+      releasePrefetched()
+      const session = openChapter(ref).catch(error => {
         log("debug", "reader", `${ref.epId} 跨章預取失敗`, error)
-      } finally {
-        session?.dispose()
+        return null
+      })
+      const entry = { id, session }
+      handoff = entry
+      const opened = await session
+      if (!opened) {
+        if (handoff === entry) handoff = null
+        return
       }
+      // 被接手之後照跑：剩下的頁寫進同一個 session；接手方 dispose 時這裡會跟著被取消。
+      await opened.warmAhead(pages)
     },
+
+    releasePrefetched,
 
     resume: resumePointOf,
 

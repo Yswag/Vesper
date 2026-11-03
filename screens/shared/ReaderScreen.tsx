@@ -520,6 +520,7 @@ function ReaderContent({
   useEffect(() => {
     return () => {
       disposeUpscaleEngine()
+      comicLibrary().releasePrefetched()
       // 閱讀中的進度都是靜默寫入，離開時通知一次讓書架／首頁跟上。
       notifyLibrary()
     }
