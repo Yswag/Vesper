@@ -417,7 +417,7 @@ function MagazineSectionRow({
   section: ComicSection
   initialMore: MoreSource
 }) {
-  // 卡片寬照這條 carousel 的**捲動視窗**寬算（不是螢幕、也不是卡片自己的寬），見 dev/probe-carousel-width.tsx。
+  // 卡片寬照這條 carousel 的**捲動視窗**寬算（不是螢幕、也不是卡片自己的寬）。
   const [carouselWidth, setCarouselWidth] = useState(0)
   const card = exploreCardSize(carouselWidth)
 

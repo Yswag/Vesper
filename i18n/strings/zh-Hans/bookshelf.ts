@@ -6,10 +6,8 @@ export default {
   comicCount: { one: "{n} 本", other: "{n} 本" },
   downloadingCount: { one: "下载中 {n} 话", other: "下载中 {n} 话" },
 
-  menu: "排序与筛选",
   sortGroup: "排序",
   filterGroup: "显示范围",
-  sortMenu: "排序",
   sortRecent: "最近阅读",
   sortAdded: "最近收藏",
   sortTitle: "标题",
@@ -45,7 +43,6 @@ export default {
     other: "{done}/{total} 章 · {size}",
   },
   downloadedStats: { one: "{n} 页 · {size}", other: "{n} 页 · {size}" },
-  incompleteStats: "未完成 {done}/{total}",
 
   noDownloadedChapter: "还没有下载完的章节",
   downloadFailed: "下载失败",

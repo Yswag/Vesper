@@ -12,7 +12,8 @@ import { Caption, Footnote } from "../../design/text"
 import { radius, rect, rowPadding } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { hasPro } from "../../engine/pro"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
   installRepositoryEntry,
@@ -24,6 +25,7 @@ import {
 import { getRepository, kindOf, subscribeRepositories, type StoredRepository } from "../../sources/repository"
 
 export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: string }) {
+  useSubscription(subscribeLocale)
   const tint = useTint()
   const [repository, setRepository] = useState<StoredRepository | undefined>(undefined)
   const [entries, setEntries] = useState<RepositoryEntryStatus[]>([])

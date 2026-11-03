@@ -53,8 +53,7 @@ export function createEmitter(options: EmitterOptions = {}): Emitter {
         fire()
         return
       }
-      // ⚠️ 一定要比 `null`，不能只寫 `if (timer)`：Scripting 的 setTimeout 回傳 number，
-      // 而**第一個**排程拿到的是 `0`——falsy，於是那一個永遠取消不掉（實測見 dev/probe-emitter.ts）。
+      // 比 `null` 而不寫 `if (timer)`：Scripting 的 setTimeout 回傳 number，舊版第一個 handle 是 falsy 的 0。
       if (timer !== null) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = null

@@ -14,7 +14,8 @@ import { SkeletonCardGroups } from "../../design/skeleton"
 import { toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import {
   findSource,
   reloadRegistry,
@@ -37,6 +38,7 @@ function specStyle(type: string): { icon: string } {
 }
 
 export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
+  useSubscription(subscribeLocale)
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
   const [draft, setDraft] = useState<Record<string, string>>({})

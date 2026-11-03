@@ -154,7 +154,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
       <PageBackground />
 
       {/* 頂部封面 Ambient Glow 氛圍漫射光暈（寬一定要量：`maxWidth: "infinity"` 會讓橫式封面
-          用自己的寬高比當理想寬度，變成整頁寬度把版面推歪。見 dev/probe-cover-overflow.tsx）。 */}
+          用自己的寬高比當理想寬度，變成整頁寬度把版面推歪）。 */}
       {ambientUrl ? (
         <GeometryReader>
           {geometry => (
@@ -379,7 +379,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                 <ScrollView
                   axes="horizontal"
                   scrollIndicator="hidden"
-                  // 卡片都在橫向捲動列裡，量的是捲動視窗自己的寬（見 dev/probe-carousel-width.tsx）。
+                  // 卡片都在橫向捲動列裡，量的是捲動視窗自己的寬。
                   background={
                     <GeometryReader>
                       {geometry => (

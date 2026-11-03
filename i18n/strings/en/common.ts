@@ -28,7 +28,6 @@ export default {
   offlineTag: "Offline",
 
   pageMissing: "Page {n} does not exist ({total} pages in all)",
-  pages: { one: "{n} page", other: "{n} pages" },
 
   tabs: {
     home: "Home",

@@ -15,9 +15,11 @@ import { IconRow, SelectRow, rowSeparatorInset } from "../../design/rows"
 import { toneText } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import { clearImageCache, getCacheStats } from "../../engine/imagecache"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 
 export function ImageCacheSettingsScreen() {
+  useSubscription(subscribeLocale)
   const [stats, setStats] = useState<{ count: number; totalBytes: number } | null>(null)
   const [maxAgeDays, setDays] = useState<number>(() => getMaxAgeDays())
   const [maxSizeBytes, setBytes] = useState<number>(() => getMaxSizeBytes())

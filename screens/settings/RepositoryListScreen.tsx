@@ -22,7 +22,8 @@ import { Card, GroupHeader, PageScroll } from "../../design/layout"
 import { Chevron } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { rowPadding, toneText } from "../../design/tokens"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import { addRepository, refreshRepository } from "../../sources/registry"
 import {
   listRepositories,
@@ -34,7 +35,9 @@ import {
 } from "../../sources/repository"
 import { RepositoryDetailScreen } from "./RepositoryDetailScreen"
 
-export function RepositoryListScreen() {  const [repositories, setRepositories] = useState<StoredRepository[]>([])
+export function RepositoryListScreen() {
+  useSubscription(subscribeLocale)
+  const [repositories, setRepositories] = useState<StoredRepository[]>([])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
   const [refreshProgress, setRefreshProgress] = useState<{ current: number; total: number } | null>(null)

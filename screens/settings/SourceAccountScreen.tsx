@@ -12,10 +12,12 @@ import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../d
 import { SkeletonCardGroups } from "../../design/skeleton"
 import { radius, rect } from "../../design/tokens"
 import { useTint } from "../../app/theme"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import { accountSpec, findSource, loginWithCookies, loginWithPassword, loginWithWebview, logoutSource, reloadRegistry, type AccountSpec, type InstalledSource } from "../../sources/registry"
 
 export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
+  useSubscription(subscribeLocale)
   const tint = useTint()
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [spec, setSpec] = useState<AccountSpec | null>(null)

@@ -117,7 +117,7 @@ function ratingText(rating: NonNullable<ComicPage["contentRating"]>): string {
   return rating === "nsfw" ? t("detail.ratingNsfw") : t("detail.ratingSuggestive")
 }
 
-/** hero 右欄顯示的資訊；抽出來是為了讓 `dev/preview-hero.tsx` 用假資料預覽同一份版面。 */
+/** hero 右欄顯示的資訊；抽出來是為了讓預覽用假資料畫同一份版面。 */
 export type ComicHeroData = Pick<
   ComicPage,
   | "title"
@@ -553,7 +553,7 @@ export function ComicDetailScreen({
       {/* 頂部封面 Ambient Glow 氛圍漫射光暈。
           氛圍圖一定要用「量到的容器寬」：`maxWidth: "infinity"` 會讓圖片拿自己的寬高比
           （380 × 寬/高）當理想寬度，橫式封面就變成整頁寬度，把整頁推歪（內容偏左、標題切到右緣）。
-          見 dev/probe-cover-overflow.tsx：同一個橫式封面，量寬前 798、量寬後 402。 */}
+          實測：同一個橫式封面，量寬前 798、量寬後 402。 */}
       {ambientImage ? (
         <GeometryReader>
           {geometry => (
@@ -665,7 +665,7 @@ export function ComicDetailScreen({
           }}
           // 量到的容器寬（hero 封面尺寸用）。`maxWidth: "infinity"` 會讓圖片拿自己的寬高比
           // （380 × 寬/高）當理想寬度，橫式封面就變成整頁寬度，把整頁推歪
-          // （見 dev/probe-cover-overflow.tsx：同一個橫式封面，量寬前 798、量寬後 402）。
+          // （實測：同一個橫式封面，量寬前 798、量寬後 402）。
           background={
             <GeometryReader>
               {geometry => (

@@ -29,7 +29,8 @@ import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../d
 import { SkeletonCardGroups } from "../../design/skeleton"
 import { rowPadding } from "../../design/tokens"
 import { hostOf } from "../../engine/cookies"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingControl, AidokuSettingGroup, AidokuSettingItem, AidokuSettingsSpec } from "../../sources/aidoku"
 import { isWebLoginMethod } from "../../sources/aidoku"
 import {
@@ -87,6 +88,7 @@ function languageDetail(spec: AidokuSettingsSpec, overrides: Record<string, unkn
 }
 
 export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
+  useSubscription(subscribeLocale)
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)

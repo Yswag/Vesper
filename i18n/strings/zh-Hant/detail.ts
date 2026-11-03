@@ -55,8 +55,6 @@ export default {
   /** 選取模式的下載鈕；`{n}` 是還沒下載的章節數。 */
   downloadSelected: "下載 ({n})",
   downloadAll: "下載全部",
-  /** 選取模式的已讀鈕；`{n}` 是已選章節數。 */
-  markSelectedRead: "已讀 ({n})",
   /** 章節工具列選單：一次把當前分組全部標成已讀。 */
   markAllRead: "全部標為已讀",
   /** 全選與取消全選 */

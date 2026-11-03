@@ -16,7 +16,7 @@ import { EmptyState, NoticeBanner } from "../../design/status"
 import { cardBackground, pageSpacing, palette, sourceIconSize, toneText } from "../../design/tokens"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { appDataRoot, hasFileAccess } from "../../engine/fs"
-import { t } from "../../i18n"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import { allSources, reloadRegistry, reorderSources, subscribeSources, uninstallSource, type InstalledSource } from "../../sources/registry"
 import { listRepositories, subscribeRepositories } from "../../sources/repository"
 import { RepositoryListScreen } from "./RepositoryListScreen"
@@ -64,7 +64,7 @@ export function SourceListScreen() {
   const [checking, setChecking] = useState(false)
   const [checkFailed, setCheckFailed] = useState(0)
   // 更新成功那一列會從清單消失：包在 withAnimation 裡才會淡出。
-  useSubscription(notify => subscribeSourceUpdates(() => void withAnimation(notify)))
+  useSubscription(notify => subscribeSourceUpdates(() => void withAnimation(notify)), subscribeLocale)
   const updates = availableSourceUpdates()
 
   useEffect(() => {
@@ -275,7 +275,7 @@ export function SourceListView({
                       />
                     ),
                   }}
-                  // 別給 role="destructive"：它搭 Dialog.confirm 事後才刪列會閃退（dev/probe-swipe-remove-crash.tsx）。
+                  // 別給 role="destructive"：它搭 Dialog.confirm 事後才刪列會閃退。
                   trailingSwipeActions={{
                     allowsFullSwipe: false,
                     actions: [

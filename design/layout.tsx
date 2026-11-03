@@ -14,7 +14,6 @@ import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpa
  * 要放導覽列按鈕請傳「元件」而不是節點（`leading={LeadingToolbar}`）：
  * 把 toolbar 這種 modifier prop 的 VirtualNode 傳過元件邊界，這個 runtime 會把裡面的 view render 兩次
  * （實測：設定頁左上角出現兩個 X；同一個節點寫在頁面自己的 JSX 裡就正常）。
- * dev/probe-toolbar-x.tsx 有 9 個變體可以重跑。
  */
 export function PageScroll({
   title,

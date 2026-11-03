@@ -95,7 +95,7 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
     <ZStack>
       <PageBackground />
       {/* maxHeight infinity 只是「摸滿」，內容短時還是會被置中——載入中那塊要有
-          alignment top 才會貼頂。見 dev/probe-top-align.tsx。 */}
+          alignment top 才會貼頂。 */}
       <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}>
       {/* chip 列當捲動區頂部的 bar：貼在導覽列下面，內容從它後面捲過去；
           頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。 */}

@@ -69,7 +69,7 @@ export function clearUpscaleCache(): void {
   )
 }
 
-/** 塊邊長與上下文寬度（`dev/probe-acnet-tiling.ts`：pad 16 與整張推論逐像素相同、塊 512 只比整張慢 13%）。 */
+/** 塊邊長與上下文寬度（實測：pad 16 與整張推論逐像素相同、塊 512 只比整張慢 13%）。 */
 const TILE = 512
 const PAD = 16
 /** 來源範圍在這個像素數以內就整張一次算（舊版的安全範圍），省掉切塊的 13%。 */

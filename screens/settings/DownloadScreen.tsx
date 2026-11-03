@@ -27,7 +27,7 @@ import { fill, rowPadding, toneText } from "../../design/tokens"
 import { useTint } from "../../app/theme"
 import { formatBytes } from "../../engine/format"
 import { hasPro } from "../../engine/pro"
-import { t } from "../../i18n"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ReaderScreen } from "../shared/ReaderScreen"
 import {
   getBackgroundDownloads,
@@ -38,7 +38,7 @@ import {
 export function DownloadScreen() {
   const library = comicLibrary()
   // 下載、取消、刪除都會讓這裡重繪（去抖在管理員那邊）；背景開關也可能從別的地方被改（或還原）。
-  useSubscription(library.onChange, subscribeBackgroundDownloads)
+  useSubscription(library.onChange, subscribeBackgroundDownloads, subscribeLocale)
 
   // 背景續傳是 Scripting Pro 的功能；沒有 Pro 時開關看得見但按不下去。
   const canUseBackground = hasPro()
@@ -96,7 +96,7 @@ function groupDownloadsByComic(records: DownloadRecord[]): ComicDownloadGroup[] 
 }
 
 /**
- * 版面本體。資料與動作都用參數進來（`dev/preview-download.tsx` 餵假資料看版面），
+ * 版面本體。資料與動作都用參數進來（預覽可以餵假資料看版面），
  * 所以在預覽裡也不會碰到磁碟。
  */
 export function DownloadSections({

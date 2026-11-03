@@ -41,7 +41,6 @@ export default {
   sortDescending: "章节改为倒序",
   downloadSelected: "下载 ({n})",
   downloadAll: "全部下载",
-  markSelectedRead: "已读 ({n})",
   markAllRead: "全部标为已读",
   selectAll: "全选",
   deselectAll: "取消全选",

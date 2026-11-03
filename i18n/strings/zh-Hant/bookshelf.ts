@@ -15,7 +15,6 @@ export default {
   downloadingCount: { one: "下載中 {n} 話", other: "下載中 {n} 話" },
 
   /** 導覽列右上的排序與篩選選單。 */
-  menu: "排序與篩選",
   sortGroup: "排序",
   filterGroup: "顯示範圍",
   sortRecent: "最近閱讀",
@@ -68,8 +67,6 @@ export default {
   },
   /** 離線章節列：已下載完，`{n}` 頁與佔用空間。 */
   downloadedStats: { one: "{n} 頁 · {size}", other: "{n} 頁 · {size}" },
-  /** 離線章節列：沒下載完的頁數。 */
-  incompleteStats: "未完成 {done}/{total}",
 
   /** 離線漫畫頁：一章都沒下載完，繼續閱讀按鈕的位置顯示這一句（按鈕按不下去）。 */
   noDownloadedChapter: "還沒有下載完的章節",

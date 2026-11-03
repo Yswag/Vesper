@@ -8,7 +8,8 @@ import { IconRow, InfoRow, ToggleRow, rowSeparatorInset } from "../../design/row
 import { EmptyState, NoticeBanner } from "../../design/status"
 import { SkeletonCardGroups } from "../../design/skeleton"
 import { toneText } from "../../design/tokens"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 import {
   accountSpec,
   findSource,
@@ -25,6 +26,7 @@ import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
 
 export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
+  useSubscription(subscribeLocale)
   const dismiss = Navigation.useDismiss()
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)

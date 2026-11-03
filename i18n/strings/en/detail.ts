@@ -41,7 +41,6 @@ export default {
   sortDescending: "Sort chapters newest first",
   downloadSelected: "Download ({n})",
   downloadAll: "Download all",
-  markSelectedRead: "Read ({n})",
   markAllRead: "Mark all read",
   selectAll: "Select all",
   deselectAll: "Deselect all",

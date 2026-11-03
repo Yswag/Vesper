@@ -27,7 +27,6 @@ export default {
   offlineTag: "离线",
 
   pageMissing: "第 {n} 页不存在（共 {total} 页）",
-  pages: { one: "{n} 页", other: "{n} 页" },
 
   tabs: {
     home: "首页",

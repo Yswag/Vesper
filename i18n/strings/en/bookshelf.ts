@@ -6,10 +6,8 @@ export default {
   comicCount: { one: "{n} title", other: "{n} titles" },
   downloadingCount: { one: "{n} chapter downloading", other: "{n} chapters downloading" },
 
-  menu: "Sort & Filter",
   sortGroup: "Sort by",
   filterGroup: "Filter",
-  sortMenu: "Sort",
   sortRecent: "Recently read",
   sortAdded: "Recently added",
   sortTitle: "Title",
@@ -45,7 +43,6 @@ export default {
     other: "{done}/{total} chapters · {size}",
   },
   downloadedStats: { one: "{n} page · {size}", other: "{n} pages · {size}" },
-  incompleteStats: "Incomplete {done}/{total}",
 
   noDownloadedChapter: "No finished chapters yet",
   downloadFailed: "Download failed",

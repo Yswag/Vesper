@@ -331,7 +331,7 @@ export function findPalette(id: string): Palette {
 
 // ── 互動色（tint）──────────────────────────────────────────────
 // 背景由色盤決定，互動色就跟著色盤推導：取 accent 的色相，把亮度夾到「當文字也讀得到」的區間。
-// 驗收標準是對比度（見 dev/dev-tint.ts），不是特定數值。
+// 驗收標準是對比度，不是特定數值。
 
 /** 一個色盤推導出來的互動色角色，每個都是 light/dark 兩份。 */
 export interface Tint {

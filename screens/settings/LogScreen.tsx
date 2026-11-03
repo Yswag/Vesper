@@ -11,7 +11,7 @@ import { EmptyState, StatusLine } from "../../design/status"
 import { Caption, Footnote } from "../../design/text"
 import { denseRowPadding } from "../../design/tokens"
 import { clearLog, logEntries, subscribeLog, type LogEntry, type LogLevel } from "../../engine/log"
-import { t } from "../../i18n"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 
 const LEVELS: Array<{ id: LogLevel | "all"; label: string }> = [
   { id: "all", label: "ALL" },
@@ -24,7 +24,7 @@ const LEVELS: Array<{ id: LogLevel | "all"; label: string }> = [
 export function LogScreen() {
   const [level, setLevel] = useState<LogLevel | "all">("info")
 
-  useSubscription(subscribeLog)
+  useSubscription(subscribeLog, subscribeLocale)
 
   const entries = [...logEntries()].reverse()
   const shown = level === "all" ? entries : entries.filter(entry => entry.level === level)

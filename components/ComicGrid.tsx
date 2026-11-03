@@ -214,7 +214,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                   // 寬度要用**已知的 cellWidth 釘死**，不要用 `maxWidth: "infinity"`：
                   // 那個在本引擎是「抱內容的天然寬」，一格就可能比欄寬還寬，
                   // 內容比螢幕寬時引擎的命中表會跟畫面錯開（點一格卻開別格）。
-                  // 見 dev/probe-cover-overflow.tsx 的 `mode:"wide"`（一排 6 張 765pt 會壞、3 張 378pt 正常）。
+                  // 實測：一排 6 張 765pt 會壞、3 張 378pt 正常。
                   frame={{ width: cellWidth, maxHeight: "infinity", alignment: "top" }}
                   // 退場的三件套一起換，動畫短到看不出是三個獨立屬性。
                   opacity={entry.removing ? 0 : 1}
@@ -239,7 +239,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       // 預設的 fill 會由 CoverImage 先把圖中心裁成格子比例（裁完再 fit）。
                       // 不能用 aspectRatio(fill)：橫式封面會被畫成比格子寬很多（1000×395 → 440pt），
                       // 外溢的區塊會蓋到鄰格、把第一格的點擊搶走（點第一本會開第二本）。
-                      // 對照：dev/probe-nav-image.tsx（fill 壞、fit 正常、割好的 fill 正常）。
+                      // 實測：aspectRatio fill 壞、fit 正常、先裁好再 fill 正常。
                       cornerRadius={radius.md}
                     />
                     {entry.comic.pageCount ? (
@@ -263,7 +263,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                     {entry.comic.updateTime ? (
                       // 跟探索頁同一個修法：外層撑滿、內層夾在 `cellWidth - 12` 內。
                       // `updateTime` 是源的原始字串，不夾的話膠囊會比格子寬（超出封面）。
-                      // 對照：dev/preview-badge-clamp.tsx（同一個字串，夾與不夾並排）。
                       <HStack
                         offset={{ x: -6, y: -6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}

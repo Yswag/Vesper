@@ -27,7 +27,7 @@ export function currentSourceSignal(sourceKey: string): AbortSignal | undefined 
  * 已知限制（誠實寫在這裡，不要假裝萬能）：
  * - 源如果在第一次 `Network` 呼叫之前先 `await` 別的東西，等到它真的呼叫時，疊層頂端可能
  *   已經是**同一源另一個並行呼叫**的 signal → 它會拿到別人的 signal。2026-10-08 探針實測：
- *   取消 A 對 A 自己的請求無效，取消 B 反而把 A 的請求一起取消（`dev/probe-cancel.ts`）。
+ *   取消 A 對 A 自己的請求無效，取消 B 反而把 A 的請求一起取消。
  * - 只能「不再等」，不能真的殺掉已經在跑的源程式碼（例如每源共用的 `init()`）。
  */
 export async function withSourceScope<T>(

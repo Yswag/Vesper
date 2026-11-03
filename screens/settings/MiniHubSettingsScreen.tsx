@@ -19,7 +19,8 @@ import { scrollTopBar } from "../../design/glass"
 import { GroupHeader } from "../../design/layout"
 import { IconRow, rowSeparatorInset } from "../../design/rows"
 import { cardBackground, cardGap, pageSpacing, radius } from "../../design/tokens"
-import { t } from "../../i18n"
+import { useSubscription } from "../../app/useSubscription"
+import { subscribe as subscribeLocale, t } from "../../i18n"
 
 const DIVIDER = "divider"
 
@@ -57,6 +58,7 @@ function toLayout(rows: MiniHubRow[]): MiniHubLayout {
 }
 
 export function MiniHubSettingsScreen() {
+  useSubscription(subscribeLocale)
   const rows = useObservable<MiniHubRow[]>(() => toRows(getMiniHubLayout()))
 
   useEffect(() => {
