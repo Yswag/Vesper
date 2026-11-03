@@ -56,9 +56,10 @@ async function run() {
   // 下載的背景時間與「下載中按退出＝縮小」都由它接手（會註冊退出關卡）。
   installOfflineSession()
 
+  // 根層自己畫整頁底色，底下不需要留任何東西：`fullScreen` 會把宿主那一層從 window 移除。
   await Navigation.present({
     element: <App pendingInstall={pendingInstall} />,
-    modalPresentationStyle: "overFullScreen",
+    modalPresentationStyle: "fullScreen",
   })
   // present 的 promise 在畫面被關閉後才 resolve；不 exit 會留下殭屍實例。
   Script.exit()
