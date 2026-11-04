@@ -328,26 +328,21 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     }
     if (!filters) return <VStack spacing={0} />
     const count = activeFilterCount(filters.rows, filters.values)
-    const touched = new Set(encodedFilters.map(descriptor => descriptor.name))
+    // 照源給的順序、不把改過的提到前面：chip 一換位置就會把開著的 Menu 收掉，多選沒辦法連續勾。
     const entries = filters.rows
       .map((row, index) => ({ row, index }))
       .filter(entry => entry.row.kind !== "text")
-    const ordered = [
-      ...entries.filter(entry => touched.has(entry.row.name)),
-      ...entries.filter(entry => !touched.has(entry.row.name)),
-    ]
 
     return (
       <ScrollView axes="horizontal" scrollIndicator="hidden">
         <HStack spacing={6} padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}>
-          {/* 改過的排前面（Aidoku 的 `sortedFilters`）。 */}
           <Chip
             icon="line.3.horizontal.decrease"
             detail={count > 0 ? String(count) : undefined}
             onTap={() => void openFilters()}
             accessibilityLabel={t("search.filterTitle")}
           />
-          {ordered.map(entry => (
+          {entries.map(entry => (
             <VStack key={`chip:${entry.index}`} spacing={0}>
               {chip(entry.row, entry.index)}
             </VStack>
