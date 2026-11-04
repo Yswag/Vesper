@@ -1,9 +1,10 @@
 // 單一源的頁面外殼：導覽列右上一個下拉切「探索 / 分類 / 排行」，內容是一整棵子樹。
 //
-// 搜尋歸這裡：導覽列上的放大鏡展開系統搜尋框，送出才真的打源，結果換成整頁的搜尋結果。
+// 搜尋歸這裡：導覽列上的放大鏡才掛上系統搜尋框，取消就卸下；送出才真的打源，結果換成整頁的搜尋結果。
 // 三邊的狀態各自獨立（載入、錯誤、翻頁都不共用），這裡只負責切換與標題。
 
 import {
+  Button,
   DefaultToolbarItem,
   Image,
   Menu,
@@ -41,6 +42,8 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const searchOpen = useObservable(false)
   /** Aidoku 源一展開就顯示空查詢的預設結果。只在開關時更新，手勢過程不碰版面。 */
   const [searchActive, setSearchActive] = useState(false)
+  /** 搜尋框掛載與否：平常不掛 searchable，點放大鏡才掛，取消就拿掉。 */
+  const [searchMounted, setSearchMounted] = useState(false)
   // 選單標籤與導覽列替代標題都在 render 時取自 `t()`：換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
@@ -48,10 +51,19 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   useEffect(() => {
     setKeyword("")
     setSubmitted(null)
+    setSearchMounted(false)
   }, [sourceKey])
 
   useEffect(() => {
-    const listener = (open: boolean) => setSearchActive(open)
+    const listener = (open: boolean) => {
+      setSearchActive(open)
+      // 取消（系統把 presented 設回 false）：清掉搜尋並卸下搜尋框。
+      if (!open) {
+        setKeyword("")
+        setSubmitted(null)
+        setSearchMounted(false)
+      }
+    }
     searchOpen.subscribe(listener)
     return () => searchOpen.unsubscribe(listener)
   }, [searchOpen])
@@ -93,18 +105,37 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
       spacing={0}
       navigationTitle={title}
       navigationBarTitleDisplayMode="inline"
-      searchable={{
-        placement: "toolbar",
-        prompt: t("browse.searchInSource", { name: title }),
-        value: keyword,
-        onChanged: handleKeywordChange,
-        presented: searchOpen,
-      }}
+      searchable={
+        searchMounted
+          ? {
+              placement: "toolbar",
+              prompt: t("browse.searchInSource", { name: title }),
+              value: keyword,
+              onChanged: handleKeywordChange,
+              presented: searchOpen,
+            }
+          : undefined
+      }
       //searchToolbarBehavior="minimize"
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}
       toolbar={
         <Toolbar>
-          {liquidGlass ? <DefaultToolbarItem kind="search" placement="topBarTrailing" /> : null}
+          {searchMounted ? (
+            liquidGlass ? <DefaultToolbarItem kind="search" placement="topBarTrailing" /> : null
+          ) : (
+            <ToolbarItem placement="topBarTrailing">
+              <Button
+                buttonStyle="plain"
+                action={() => {
+                  setSearchMounted(true)
+                  // 先掛上 searchable，下一拍再展開。
+                  setTimeout(() => searchOpen.setValue(true), 50)
+                }}
+              >
+                <Image systemName="magnifyingglass" font="body" fontWeight="medium" foregroundStyle="label" />
+              </Button>
+            </ToolbarItem>
+          )}
           {pages.length > 1 && (
             <ToolbarItem placement="topBarTrailing">
               <Menu
@@ -117,6 +148,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
                     }
                     font="body"
                     fontWeight="medium"
+                    foregroundStyle="label"
                   />
                 }
               >
