@@ -18,8 +18,7 @@ import {
   Section,
   Spacer,
   Text,
-  Toolbar,
-  ToolbarItem,
+  Toolbar,  ToolbarItem,
   ToolbarSpacer,
   VStack,
   ZStack,
@@ -1268,12 +1267,16 @@ export function DetailSkeleton({ cover }: { cover: { width: number; height: numb
           </HStack>
           <VStack spacing={8} frame={{ maxWidth: "infinity" }}>
             {Array.from({ length: 6 }, (_, index) => (
-              <Card key={index} background={cardBackground}>
-                <HStack padding={rowPadding} frame={{ maxWidth: "infinity" }}>
-                  <SkeletonText font="subheadline" length={3} />
-                  <Spacer />
-                </HStack>
-              </Card>
+              // 外面要包一層 clipShape：`Card` 的底色不會被它自己的 clipShape 裁圓，
+              // 包在外層才會裁（跟上面真正的章節列同一個寫法，不然圓角外會露出方框）。
+              <VStack key={index} spacing={0} clipShape={cardShape}>
+                <Card background={cardBackground}>
+                  <HStack padding={rowPadding} frame={{ maxWidth: "infinity" }}>
+                    <SkeletonText font="subheadline" length={3} />
+                    <Spacer />
+                  </HStack>
+                </Card>
+              </VStack>
             ))}
           </VStack>
         </VStack>

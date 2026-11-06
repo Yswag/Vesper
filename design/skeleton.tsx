@@ -43,7 +43,7 @@ const SHIMMER_GLOW: Record<"light" | "dark", { peak: Color; soft: Color; clear: 
   dark: { peak: "rgba(255,255,255,0.14)", soft: "rgba(255,255,255,0.05)", clear: "rgba(255,255,255,0)" },
 }
 
-/** 這塊的螢幕中心點：掛上那一刻量到的，之後不跟著變（中途改起訖點會打亂重播）。 */
+/** 這塊的螢幕中心點（每次量到就用新的）。 */
 interface Anchor {
   x: number
   y: number
@@ -51,7 +51,6 @@ interface Anchor {
 
 function ShimmerLight({ width, height, anchor }: { width: number; height: number; anchor: Anchor }) {
   const scheme = useColorScheme()
-  const [origin] = useState(anchor)
   const [moving, setMoving] = useState(false)
   useEffect(() => {
     const timer = setTimeout(() => setMoving(true), SHIMMER_DELAY_MS)
@@ -64,7 +63,7 @@ function ShimmerLight({ width, height, anchor }: { width: number; height: number
   const halfBand = SHIMMER_BAND / 2 / Math.cos(radians)
   const start = -halfBand
   const end = Device.screen.width + Device.screen.height * tan + halfBand + SHIMMER_REST
-  const shift = origin.x + origin.y * tan
+  const shift = anchor.x + anchor.y * tan
   const glow = SHIMMER_GLOW[scheme === "dark" ? "dark" : "light"]
   return (
     <ZStack frame={{ width, height }}>
@@ -93,7 +92,13 @@ function ShimmerLight({ width, height, anchor }: { width: number; height: number
   )
 }
 
-/** 疊在骨架上的掃光，用骨架同一個形狀裁切。尺寸變了就重建。 */
+/**
+ * 疊在骨架上的掃光，用骨架同一個形狀裁切。
+ *
+ * 不要在尺寸或位置變了就重建（不要下 `key`）：重建等於讓這塊從自己那一刻重新起跑，
+ * 而灰塊是分幾幀才量到尺寸的，各自起跑就會變成「每塊速度不一樣」。位置每次重新算就好，
+ * 光帯在初始那一幀還在畫面外，換算値只會影響它接下來掃過哪。
+ */
 function ShimmerOverlay({ shape }: { shape: Shape }) {
   return (
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} clipShape={shape} clipped={true}>
@@ -102,7 +107,6 @@ function ShimmerOverlay({ shape }: { shape: Shape }) {
           const frame = geometry.frame("global")
           return (
             <ShimmerLight
-              key={`${geometry.size.width}x${geometry.size.height}`}
               width={geometry.size.width}
               height={geometry.size.height}
               anchor={{ x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 }}
