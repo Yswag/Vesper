@@ -1207,8 +1207,15 @@ export function ComicDetailScreen({
 }
 
 /** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
-/** 詳情載入中：hero（封面＋標題＋標籤）、閱讀按鈕、章節卡片，跟載入後同一個間距。 */
-function DetailSkeleton({ cover }: { cover: { width: number; height: number } }) {
+/** 詳情頁動作列：兩顆方形按鈕 54×64，中間間距 10；剩下的寬是「開始閱讀」。 */
+const ACTION_BUTTON = 54
+const ACTION_HEIGHT = 64
+const ACTION_GAP = 10
+/**
+ * 詳情載入中：照載入後的排法一區一區搭——hero（封面＋標題／來源 chip／星等／作者）、
+ * 閱讀列、標籤膠囊、簡介、章節工具列與一話一張卡。區塊少一個或多一個，內容一來就會抽。
+ */
+export function DetailSkeleton({ cover }: { cover: { width: number; height: number } }) {
   return (
     <ScrollView scrollDisabled={true} scrollContentBackground="hidden">
       <VStack spacing={pageSpacing} padding={pageInsets} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("common.loading")}>
@@ -1216,21 +1223,59 @@ function DetailSkeleton({ cover }: { cover: { width: number; height: number } })
           <SkeletonBlock width={cover.width} height={cover.height} />
           <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
             <SkeletonText font="title3" fontWeight="bold" lineLimit={2} length={6} />
-            <SkeletonText font="footnote" length={2} />
-            <HStack spacing={6}>
-              <SkeletonBlock width={48} height={22} />
-              <SkeletonBlock width={64} height={22} />
+            {/* 來源 chip（compact）：caption2 加上下 5 */}
+            <SkeletonBlock width={78} height={24} shape="capsule" />
+            {/* 星等與喜愛數（Tag：caption2 加上下 4） */}
+            <HStack spacing={8}>
+              <SkeletonBlock width={46} height={21} />
+              <SkeletonBlock width={54} height={21} />
             </HStack>
+            {/* 連載狀態、作者、時間：三行，跟真的同字級 */}
+            <SkeletonBlock width={52} height={21} />
+            <SkeletonText font="footnote" length={2} />
+            <SkeletonText font="caption2" length={3} />
           </VStack>
         </HStack>
-        <SkeletonBlock height={64} />
-        <VStack spacing={0} frame={{ maxWidth: "infinity" }} background={cardBackground} clipShape={cardShape}>
-          {Array.from({ length: 6 }, (_, index) => (
-            <HStack key={index} padding={rowPadding} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-              <SkeletonText font="subheadline" length={3} />
-              <Spacer />
-            </HStack>
-          ))}
+
+        {/* 開始閱讀（撐滿）＋收藏 54＋留言 54，都是 64 高 */}
+        <HStack spacing={ACTION_GAP} alignment="center" frame={{ maxWidth: "infinity" }}>
+          <SkeletonBlock height={ACTION_HEIGHT} />
+          <SkeletonBlock width={ACTION_BUTTON} height={ACTION_HEIGHT} />
+          <SkeletonBlock width={ACTION_BUTTON} height={ACTION_HEIGHT} />
+        </HStack>
+
+        {/* 標籤膠囊列（真的那排靠左） */}
+        <HStack spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <SkeletonBlock width={52} height={21} shape="capsule" />
+          <SkeletonBlock width={68} height={21} shape="capsule" />
+          <SkeletonBlock width={60} height={21} shape="capsule" />
+        </HStack>
+
+        {/* 簡介：標題＋收合時的三行 */}
+        <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <SkeletonText font="headline" fontWeight="bold" length={2} />
+          <SkeletonText font="footnote" lineLimit={3} length={14} />
+        </VStack>
+
+        {/* 章節：工具列（標題＋兩顆圖示膠囊）＋一話一張卡 */}
+        <VStack spacing={12} frame={{ maxWidth: "infinity" }}>
+          <HStack spacing={6} alignment="center" frame={{ maxWidth: "infinity" }}>
+            <SkeletonText font="title3" fontWeight="bold" length={2} />
+            <SkeletonText font="subheadline" length={1} />
+            <Spacer />
+            <SkeletonBlock width={28} height={28} shape="capsule" />
+            <SkeletonBlock width={28} height={28} shape="capsule" />
+          </HStack>
+          <VStack spacing={8} frame={{ maxWidth: "infinity" }}>
+            {Array.from({ length: 6 }, (_, index) => (
+              <Card key={index} background={cardBackground}>
+                <HStack padding={rowPadding} frame={{ maxWidth: "infinity" }}>
+                  <SkeletonText font="subheadline" length={3} />
+                  <Spacer />
+                </HStack>
+              </Card>
+            ))}
+          </VStack>
         </VStack>
       </VStack>
     </ScrollView>

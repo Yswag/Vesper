@@ -114,7 +114,11 @@ function ShimmerOverlay({ shape }: { shape: Shape }) {
   )
 }
 
-/** 一塊灰底。`shape` 預設跟封面同一級圓角；`bar` 是字條（小圓角、比封面亮一階）。 */
+/**
+ * 一塊灰底。`shape` 預設跟封面同一級圓角；`bar` 是字條（小圓角、比封面亮一階）。
+ * 畫在 `Rectangle` 上：容器（VStack）在 HStack 裡的 `maxWidth: "infinity"` 會塌成 0 寬，
+ * Rectangle 才會真的分到剩下的寬。
+ */
 export function SkeletonBlock({
   width,
   height,
@@ -126,9 +130,9 @@ export function SkeletonBlock({
 }) {
   const clip = shape === "capsule" ? capsule("circular") : rect(shape === "bar" ? radius.sm : radius.md)
   return (
-    <VStack
+    <Rectangle
+      fill={shape === "bar" ? fill.chip : fill.surface}
       frame={width === undefined ? { maxWidth: "infinity", height } : { width, height }}
-      background={shape === "bar" ? fill.chip : fill.surface}
       clipShape={clip}
       overlay={<ShimmerOverlay shape={clip} />}
     />
@@ -193,15 +197,16 @@ export function SkeletonText({
   )
 }
 
-/** 橫向卡片排：封面塊＋一行書名，跟真的卡片同尺寸。 */
+/** 橫向卡片排：封面塊＋封面下的幾行字，跟真的卡片同尺寸。 */
 export function SkeletonCardRow({
   size,
-  titleFont = "caption",
+  lines = ["caption"],
   count = 4,
   accessibilityLabel = t("common.loading"),
 }: {
   size: { width: number; height: number }
-  titleFont?: Font
+  /** 封面下幾行字、各自的字級；行數要跟真的卡片一樣，資料來了才不會跳。 */
+  lines?: Font[]
   count?: number
   accessibilityLabel?: string
 }) {
@@ -211,7 +216,16 @@ export function SkeletonCardRow({
         {Array.from({ length: count }, (_, index) => (
           <VStack key={index} alignment="leading" spacing={6} frame={{ width: size.width }}>
             <SkeletonBlock width={size.width} height={size.height} />
-            <SkeletonText font={titleFont} fontWeight="medium" length={2} />
+            <VStack alignment="leading" spacing={1} frame={{ width: size.width, alignment: "leading" }}>
+              {lines.map((font, line) => (
+                <SkeletonText
+                  key={line}
+                  font={font}
+                  fontWeight={line === 0 ? "medium" : undefined}
+                  length={line === 0 ? 2 : 1}
+                />
+              ))}
+            </VStack>
           </VStack>
         ))}
       </HStack>

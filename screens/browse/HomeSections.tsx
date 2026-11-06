@@ -816,7 +816,7 @@ export function HomeSkeleton() {
             <SkeletonText font="title3" fontWeight="semibold" />
             <Spacer />
           </HStack>
-          <SkeletonCardRow size={SCROLLER_COVER} titleFont="footnote" />
+          <SkeletonCardRow size={SCROLLER_COVER} lines={["footnote", "caption2"]} />
         </VStack>
       ))}
 

@@ -703,7 +703,10 @@ function BangumiCard({
   )
 }
 
-/** hero 輪播的骨架：同樣 207 高的主體＋16 高的分頁點那一列。 */
+/**
+ * hero 輪播的骨架：同樣 207 高的主體＋16 高的分頁點那一列。
+ * 右欄照真的排法：評分／榜單角標、兩行標題、標籤·作者、兩行簡介——少一列，資料來的時候整欄會往下抽。
+ */
 function HeroSkeleton() {
   return (
     <VStack spacing={8} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("home.feedLoading")}>
@@ -715,9 +718,13 @@ function HeroSkeleton() {
       >
         <SkeletonBlock width={124} height={179} />
         <VStack alignment="leading" spacing={6} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <SkeletonText font="title3" fontWeight="bold" />
-          <SkeletonText font="caption2" />
-          <SkeletonText font="caption2" lineLimit={2} length={12} />
+          <HStack spacing={6}>
+            <SkeletonBlock width={38} height={21} shape="capsule" />
+            <SkeletonBlock width={46} height={21} shape="capsule" />
+          </HStack>
+          <SkeletonText font="title3" fontWeight="bold" lineLimit={2} length={6} />
+          <SkeletonText font="caption2" length={4} />
+          <SkeletonText font="caption2" lineLimit={2} length={14} />
         </VStack>
       </HStack>
       <HStack frame={{ height: 16 }} />
