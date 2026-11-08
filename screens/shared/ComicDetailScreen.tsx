@@ -48,6 +48,7 @@ import {
   toggleFavorite,
 } from "../../library/bookshelf"
 import { formatStars } from "../../design/rating"
+import { sourcesRevision } from "../../sources/registry"
 import { CommentScreen } from "./CommentScreen"
 import { SourceSwitchSheet } from "./SourceSwitchSheet"
 import {
@@ -229,6 +230,36 @@ export function ComicHeroMeta({
   )
 }
 
+/**
+ * 詳情頁的「第一幀」快取：只在記憶體、跟著 app 一起消失。
+ *
+ * 用途只有一個——退回詳情頁時不要閃骨架：重掛時先畫上次的內容，背景照樣重抓一次最新。
+ * 刻意**不**做 TTL、也**不**跳過重抓：詳情頁的職責是顯示最新話，跳過只會讓新章晚到。
+ * 源變過（安裝／移除／更新）就靠 revision 換 key，舊資料自然淘汰。
+ */
+const DETAIL_CACHE_LIMIT = 8
+const detailCache = new Map<string, ComicPage>()
+
+function detailCacheKey(sourceKey: string, comicId: string): string {
+  return `${sourcesRevision()}\n${sourceKey}\n${comicId}`
+}
+
+function readDetailCache(sourceKey: string, comicId: string): ComicPage | undefined {
+  return detailCache.get(detailCacheKey(sourceKey, comicId))
+}
+
+function writeDetailCache(sourceKey: string, comicId: string, page: ComicPage): void {
+  const key = detailCacheKey(sourceKey, comicId)
+  // 重新寫入要排到最後：Map 的插入序就是我們的 LRU。
+  detailCache.delete(key)
+  detailCache.set(key, page)
+  while (detailCache.size > DETAIL_CACHE_LIMIT) {
+    const oldest = detailCache.keys().next().value
+    if (oldest === undefined) break
+    detailCache.delete(oldest)
+  }
+}
+
 export function ComicDetailScreen({
   sourceKey: initialSourceKey,
   comicId: initialComicId,
@@ -253,7 +284,7 @@ export function ComicDetailScreen({
   // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
   const tintColor = String(tint.tint[useColorScheme()]) as Color
-  const [detail, setDetail] = useState<ComicPage | null>(null)
+  const [detail, setDetail] = useState<ComicPage | null>(() => readDetailCache(initialSourceKey, initialComicId) ?? null)
   // 載入失敗的原因；null＝沒話要說（載入中也算，那一句在 render 時才算）。
   const [status, setStatus] = useState<string | null>(null)
   const [reverseOrder, setReverseOrder] = useState(false)
@@ -283,7 +314,8 @@ export function ComicDetailScreen({
   useEffect(() => {
     let alive = true
     // 換源時先把舊作品收掉：留著會短暫顯示上一個來源的封面與章節。
-    setDetail(null)
+    // 有快取就直接當第一幀（退回來不閃骨架），背景照樣重抓最新。
+    setDetail(readDetailCache(sourceKey, comicId) ?? null)
     setStatus(null)
     // 詳情走 ComicLibrary：這一頁不再自己 loadDetail，也不必知道源回傳的原始形狀。
     // 找不到源／沒載入成功都在庫的邊界變成可讀的錯誤訊息。
@@ -294,6 +326,7 @@ export function ComicDetailScreen({
           if (!alive) return
           setDetail(result)
           setStatus(null)
+          writeDetailCache(sourceKey, comicId, result)
           // 零成本同步：章節清單已經在手上，不必再為了「有沒有新話」問一次源。
           if (result.chapters.length > 0) setComicUpdate(comicUpdateRecord(result))
         },
