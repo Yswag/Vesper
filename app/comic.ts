@@ -241,6 +241,11 @@ export interface ChapterSession {
    */
   warmAhead(pages: number): Promise<void>
   /**
+   * 放掉記憶體裡的正文快取，session 仍然可用：畫面上的圖不動，回捲時從磁碟重讀一次。
+   * 連續模式接了很多話時用來壓記憶體（`dispose` 會讓 session 失效，不能用在這）。
+   */
+  dropCache(): void
+  /**
    * 換話或離開閱讀器：取消請求、清空預取佇列並釋放快取與暫存檔案。
    */
   dispose(): void
@@ -1007,6 +1012,7 @@ export function createComicLibrary(): ComicLibrary {
         // 檔案不刪：那是這一話的跨 session 快取，下次進來直接命中；
         // 何時收掉由開章時的 sweepPageCache 決定（保留話數與容量）。
       },
+      dropCache: () => pageCache.dropBytes(),
     }
   }
 

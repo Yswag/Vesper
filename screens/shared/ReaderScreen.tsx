@@ -76,6 +76,8 @@ const NEXT_CHAPTER_PAGES = 3
 const SHORT_CHAPTER_PAGES = 2
 /** 接上的下一章只在背景先備這幾頁，避免整話解碼把滑動卡住。 */
 const CHAIN_WARM_PAGES = 4
+/** 離 focus 超過幾話就把那一章的記憶體快取放掉（畫面不動，回捲時從磁碟重讀）。 */
+const CHAIN_KEEP_WARM = 2
 
 /** 接在目前這話後面的下一集（同一條捲動，不重開閱讀器）。 */
 interface FollowupChapter {
@@ -876,6 +878,24 @@ function ReaderContent({
       if (loadingNext.current === epIdToLoad) loadingNext.current = null
     }
   }, [chainOn, session, status, focusEpId, followups.length, currentGroupChapters, sourceKey, comicId])
+
+  // 接了很多話之後，離 focus 超過兩話的章就把記憶體快取放掉：元素還在、畫面不動，
+  // 回捲時從磁碟重讀（不是重新下載）。不 dispose、也不從清單移除——移除已排版的頁會讓捲動位置往上跳。
+  // 超分開著時不做：那條 loadPage 路徑不經磁碟快路徑，記憶體 miss 會重新下載原圖。
+  useEffect(() => {
+    if (!chainOn || settings.hardwareSharpen) return
+    const order = [currentEpId, ...followups.map(item => item.epId)]
+    const at = order.indexOf(focusEpId)
+    if (at < 0) return
+    for (let i = 0; i < order.length; i++) {
+      if (Math.abs(i - at) <= CHAIN_KEEP_WARM) continue
+      if (i === 0) {
+        session?.dropCache()
+        continue
+      }
+      followups.find(item => item.epId === order[i])?.session.dropCache()
+    }
+  }, [chainOn, focusEpId, followups, currentEpId, session, settings.hardwareSharpen])
 
   useEffect(() => {
     if (chainOn) return

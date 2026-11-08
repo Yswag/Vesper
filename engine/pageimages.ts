@@ -37,10 +37,15 @@ export interface PageImageRequest {
 
 /** 正文記憶體快取介面（每個閱讀 session 獨立持有實例）。 */
 export interface PageCache {
-  /** 取得一頁正文位元組（記憶體 LRU ➔ 網路）。失敗不存入 LRU，支援 signal 取消。 */
+  /** 放掉一頁正文位元組（記憶體 LRU ➔ 網路）。失敗不存入 LRU，支援 signal 取消。 */
   bytes(request: PageImageRequest, signal?: AbortSignal): Promise<Uint8Array>
   /** 放掉整份（換話／退出）。清掉之後，**在飛的請求完成時不會回寫**。 */
   clear(): void
+  /**
+   * 只放掉位元組，保留「這個 imageKey 解析過」的表。
+   * 回捲重讀時不必再問一次源（那一來一回就是跨頁頓一下的來源）。
+   */
+  dropBytes(): void
 }
 
 export function createPageCache(): PageCache {
@@ -157,6 +162,12 @@ export function createPageCache(): PageCache {
       bytesInCache = 0
       inflight.clear()
       resolved.clear()
+    },
+
+    dropBytes() {
+      generation++
+      pages.clear()
+      bytesInCache = 0
     },
   }
 }

@@ -200,5 +200,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
       disposed = true
       closeRenderDir(renderDir)
     },
+    // 離線章沒有記憶體快取（圖就在本機檔），所以接不掉任何東西：畫面不會因為它而重讀。
+    dropCache: () => {},
   }
 }
