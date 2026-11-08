@@ -36,6 +36,10 @@ export interface ReaderSettings {
   cornerPage: boolean
   /** HUD 收起時右下角的時間與電量。 */
   cornerTime: boolean
+  /**
+   * 無縫接下一話：開章就預載下一話開頭，滑到這一話結尾就直接進入，不用再往上拉。
+   */
+  seamlessNext: boolean
 }
 
 /** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁；銳化與角落資訊關。 */
@@ -48,6 +52,7 @@ const DEFAULT: ReaderSettings = {
   splitSwap: false,
   cornerPage: false,
   cornerTime: false,
+  seamlessNext: true,
 }
 const KEY = "venera:readerSettings"
 /** 每本漫畫的獨立設定（per-comic 開關打開時才會寫）。 */
@@ -60,8 +65,17 @@ function perComicKey(scope: ReaderScope): string {
 /** 把存下來的東西收成合法設定；不是物件就回 null（沒存過）。 */
 function readSettings(raw: unknown): ReaderSettings | null {
   if (!raw || typeof raw !== "object") return null
-  const { mode, direction, tapZones, hardwareSharpen, splitWide, splitSwap, cornerPage, cornerTime } =
-    raw as Partial<ReaderSettings>
+  const {
+    mode,
+    direction,
+    tapZones,
+    hardwareSharpen,
+    splitWide,
+    splitSwap,
+    cornerPage,
+    cornerTime,
+    seamlessNext,
+  } = raw as Partial<ReaderSettings>
   return {
     mode: mode === "gallery" || mode === "continuous" ? mode : DEFAULT.mode,
     direction:
@@ -76,6 +90,8 @@ function readSettings(raw: unknown): ReaderSettings | null {
     splitSwap: typeof splitSwap === "boolean" ? splitSwap : DEFAULT.splitSwap,
     cornerPage: typeof cornerPage === "boolean" ? cornerPage : DEFAULT.cornerPage,
     cornerTime: typeof cornerTime === "boolean" ? cornerTime : DEFAULT.cornerTime,
+    // 舊資料沒有這個欄位 → 開（先載下一話，滑到底直接接上）。
+    seamlessNext: typeof seamlessNext === "boolean" ? seamlessNext : DEFAULT.seamlessNext,
   }
 }
 
@@ -85,6 +101,38 @@ export function getReaderSettings(): ReaderSettings {
 
 export function setReaderSettings(settings: ReaderSettings): void {
   kv.set(KEY, settings)
+}
+
+/**
+ * 記住源宣告的 viewer。續讀的快速路徑不抓詳情就拿不到 `page.viewer`，
+ * 這裡把上次詳情給的值留著，續讀才不會從 RTL 掉回全域方向。
+ */
+const VIEWER_KEY = "venera:sourceViewer"
+
+function viewerKey(scope: ReaderScope): string {
+  return `${scope.sourceKey}\n${scope.comicId}`
+}
+
+function isSourceViewer(value: unknown): value is SourceViewer {
+  return value === "rtl" || value === "ltr" || value === "vertical" || value === "scroll"
+}
+
+export function getSourceViewer(scope: ReaderScope): SourceViewer | undefined {
+  const raw = kv.get(VIEWER_KEY)
+  if (!raw || typeof raw !== "object") return undefined
+  const value = (raw as Record<string, unknown>)[viewerKey(scope)]
+  return isSourceViewer(value) ? value : undefined
+}
+
+export function setSourceViewer(scope: ReaderScope, viewer: SourceViewer | undefined): void {
+  if (!viewer) return
+  const raw = kv.get(VIEWER_KEY)
+  const map: Record<string, SourceViewer> =
+    raw && typeof raw === "object" ? { ...(raw as Record<string, SourceViewer>) } : {}
+  const key = viewerKey(scope)
+  if (map[key] === viewer) return
+  map[key] = viewer
+  kv.set(VIEWER_KEY, map)
 }
 
 /** 這本漫畫的獨立設定；沒開 per-comic（或沒存過）回 null。 */

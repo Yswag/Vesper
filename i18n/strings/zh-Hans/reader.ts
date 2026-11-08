@@ -48,6 +48,8 @@ export default {
   prefetch: "图片预加载",
   prefetchPages: { one: "{n} 页", other: "{n} 页" },
   prefetchOff: "关闭",
+  /** 滑到这一章底部就自动接上下一章，接着往下滑就行。 */
+  seamlessNext: "滑到底自动接下一章",
   /** 預設跟随源宣告的阅读方式（没有就退全域）；打开就存成这部的独立设置。 */
   perComic: "记住这部的设置",
 

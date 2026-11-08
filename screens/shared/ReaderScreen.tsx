@@ -39,6 +39,7 @@ import type { ChapterRef as LibraryChapterRef, ChapterSession, ReaderChapter } f
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { describeError } from "../../engine/errors"
+import { log } from "../../engine/log"
 import { buildPageSlots, isWideAspect, rightHalfFirst } from "../../engine/pageslots"
 import { hasPro } from "../../engine/pro"
 import { subscribe as subscribeLocale, t } from "../../i18n"
@@ -71,6 +72,34 @@ const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
 const NEXT_CHAPTER_TRIGGER = 3
 /** 下一話先抓幾頁。 */
 const NEXT_CHAPTER_PAGES = 3
+/** 少於等於這頁數的章（請假條那種半頁）算短章，後面還要再接一章，不然滑不到底、下一章不會出現。 */
+const SHORT_CHAPTER_PAGES = 2
+/** 接上的下一章只在背景先備這幾頁，避免整話解碼把滑動卡住。 */
+const CHAIN_WARM_PAGES = 4
+
+/** 接在目前這話後面的下一集（同一條捲動，不重開閱讀器）。 */
+interface FollowupChapter {
+  epId: string
+  title: string
+  session: ChapterSession
+}
+
+/** 連續預加載時的捲動目標：話 id 裡的冒號會被編碼，所以用最後一個冒號切頁碼。 */
+function chainKey(epId: string, page: number): string {
+  return `${encodeURIComponent(epId)}:${page}`
+}
+
+function parseChainKey(id: string): { epId: string; page: number } | null {
+  const cut = id.lastIndexOf(":")
+  if (cut <= 0) return null
+  const page = Number(id.slice(cut + 1))
+  if (!Number.isInteger(page) || page < 0) return null
+  try {
+    return { epId: decodeURIComponent(id.slice(0, cut)), page }
+  } catch {
+    return null
+  }
+}
 
 /** 量到就回報（放在 `background` 的 `GeometryReader` 裡，不影響版面）。 */
 function BoxReporter({
@@ -287,6 +316,17 @@ function ReaderContent({
   const [session, setSession] = useState<ChapterSession | undefined>(undefined)
   // session 屬於哪一話：換話那一輪 render 還拿著舊 session，進度不能用它的頁數寫新話。
   const sessionEpId = useRef<string | null>(null)
+  // 預加載接在後面的下一集。捲動不重建，所以不會閃黑、也不會跳回頂端。
+  const [followups, setFollowups] = useState<FollowupChapter[]>([])
+  const followupsRef = useRef<FollowupChapter[]>([])
+  followupsRef.current = followups
+  // 畫面上正在看的那一話。跟 currentEpId（這條捲動的第一話）可以不同。
+  const [focusEpId, setFocusEpId] = useState(epId)
+  const focusEpRef = useRef(epId)
+  focusEpRef.current = focusEpId
+  const loadingNext = useRef<string | null>(null)
+  const failedPreload = useRef<Set<string>>(new Set())
+  const chainOnRef = useRef(false)
   const [status, setStatus] = useState<ReaderStatus>({ kind: "loading" })
   // 重試：把開章流程再跑一次（換 key 讓 effect 重跑，不動翻頁與進度狀態）。
   const [reloadKey, setReloadKey] = useState(0)
@@ -399,6 +439,8 @@ function ReaderContent({
   const isInteractingRef = useRef(false)
   const hasTriggeredFullHapticRef = useRef(false)
   const PULL_THRESHOLD = 65
+  /** 無縫換話冷卻，避免同一次手勢連跳好幾話。 */
+  const seamlessHold = useRef(0)
 
   // 畫廊頁放大中：停用外層捲動，否則平移圖片時會順便翻頁。
   // zoomEpoch 一變就把所有頁的縮放歸零（離開放大的頁時用）。
@@ -424,7 +466,7 @@ function ReaderContent({
     timer.current = null
   }
 
-  const index = currentGroupChapters.findIndex(chapter => chapter.id === currentEpId)
+  const index = currentGroupChapters.findIndex(chapter => chapter.id === focusEpId)
   // 上一話／下一話跳過鎖定章（點了也換不過去）。
   const neighbour = (step: 1 | -1): ChapterRef | undefined => {
     if (index < 0) return undefined
@@ -447,6 +489,7 @@ function ReaderContent({
   useEffect(() => {
     let alive = true
     let opened: ChapterSession | undefined
+    failedPreload.current.clear()
     setSession(undefined)
     setStatus({ kind: "loading" })
     // 換話就當成新的一話從頭讀；還原只發生在「進來的那一話」。
@@ -511,6 +554,9 @@ function ReaderContent({
       clearGate(turnTimer)
       // 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求 + 把正文的記憶體快取放掉。
       opened?.dispose()
+      const extra = followupsRef.current
+      followupsRef.current = []
+      for (const item of extra) item.session.dispose()
     }
   }, [sourceKey, comicId, currentEpId, reloadKey])
 
@@ -532,6 +578,20 @@ function ReaderContent({
 
   /** 放開拖曳列：捲到目標頁，並擋掉捲動落定前的過期可見集合回報。 */
   function commitScrub(page: number) {
+    if (chainOnRef.current) {
+      const focused = followupsRef.current.find(item => item.epId === focusEpRef.current)
+      const count = focused?.session.pageCount ?? session?.pageCount ?? 0
+      const last = Math.max(count - 1, 0)
+      const target = Math.min(Math.max(Math.round(page), 0), last)
+      if (target === (leadingPageRef.current ?? 0)) return
+      releaseZoom()
+      setLeadingPage(target)
+      const id = chainKey(focusEpRef.current, target)
+      void withAnimation(TURN_ANIM, () => {
+        scrollProxy.current?.scrollTo(id, settings.direction === "ttb" ? "top" : "leading")
+      })
+      return
+    }
     const target = clampPage(page)
     if (target === clampPage(leadingPageRef.current ?? 0)) return
     releaseZoom()
@@ -549,12 +609,35 @@ function ReaderContent({
     }, 600)
   }
 
+  /** 丟掉已經接上的下一集。 */
+  function disposeFollowups() {
+    const extra = followupsRef.current
+    if (extra.length === 0) return
+    followupsRef.current = []
+    for (const item of extra) item.session.dispose()
+    setFollowups([])
+  }
+
   /** 換話：只改 state、不推新頁（同一層 route 就地換話）。 */
   function selectChapter(id: string) {
     setShowChapterSheet(false)
-    if (id === currentEpId) return
     // 鎖定的章節只列在目錄裡，點了不換話（也不提示）。
     if (chapters.find(chapter => chapter.id === id)?.locked) return
+    // 下一集已經接在這條捲動裡：只滾過去，不重開（重開會閃一下黑畫面）。
+    if (chainOnRef.current && (id === currentEpId || followupsRef.current.some(item => item.epId === id))) {
+      if (id === focusEpRef.current) return
+      focusEpRef.current = id
+      setFocusEpId(id)
+      setLeadingPage(0)
+      const anchor = settings.direction === "ttb" ? "top" : "leading"
+      scrollProxy.current?.scrollTo(chainKey(id, 0), anchor)
+      return
+    }
+    if (id === currentEpId) return
+    disposeFollowups()
+    failedPreload.current.clear()
+    focusEpRef.current = id
+    setFocusEpId(id)
     entryPending.current = false
     setZoomed(false)
     // 立即清空過期目標與計時器
@@ -575,6 +658,13 @@ function ReaderContent({
     setSession(undefined)
     setStatus({ kind: "loading" })
     setCurrentEpId(id)
+  }
+
+  /** 進入下一話。短時間內只接受一次，免得滑到底的回呼連發。 */
+  function goToNext(id: string) {
+    if (Date.now() < seamlessHold.current) return
+    seamlessHold.current = Date.now() + 900
+    selectChapter(id)
   }
 
   /**
@@ -691,6 +781,101 @@ function ReaderContent({
   const vertical = settings.direction === "ttb"
   const rtl = settings.direction === "rtl"
   const paginated = settings.mode === "gallery"
+  // 連續模式才把下一集接在同一條捲動後面。畫廊仍是一頁一頁。
+  const chainOn = settings.seamlessNext && !paginated
+  chainOnRef.current = chainOn
+  const focusEntry = chainOn ? followups.find(item => item.epId === focusEpId) : undefined
+  const focusSession = focusEntry?.session ?? session
+  const focusPageCount = focusEntry ? focusEntry.session.pageCount : pageCount
+
+  // 看著哪一話，就先把「再下一集」整話載好再接上。不呼叫 selectChapter，所以不會閃黑、不會震動。
+  useEffect(() => {
+    if (!chainOn || !session || status !== null) return
+    const anchor = sessionEpId.current
+    if (!anchor) return
+    const loaded = new Map<string, ChapterSession>()
+    if (session) loaded.set(anchor, session)
+    for (const item of followupsRef.current) loaded.set(item.epId, item.session)
+    const nextUnlocked = (epId: string): ChapterRef | undefined => {
+      const start = currentGroupChapters.findIndex(chapter => chapter.id === epId)
+      if (start < 0) return undefined
+      for (let i = start + 1; i < currentGroupChapters.length; i++) {
+        if (!currentGroupChapters[i].locked) return currentGroupChapters[i]
+      }
+      return undefined
+    }
+    // 從正在看的話往後找：短章（半頁請假條）即使已經接上，也要再載它的下一章，
+    // 不然內容不到一屏，滑不到底，後面的章永遠不會出現。
+    let cursor = loaded.has(focusEpRef.current) ? focusEpRef.current : anchor
+    let nextChapter: ChapterRef | undefined
+    for (let guard = 0; guard < 8; guard++) {
+      const candidate = nextUnlocked(cursor)
+      if (!candidate) return
+      const existing = loaded.get(candidate.id)
+      if (!existing) {
+        nextChapter = candidate
+        break
+      }
+      if (existing.pageCount > SHORT_CHAPTER_PAGES) return
+      cursor = candidate.id
+    }
+    if (!nextChapter) return
+    const epIdToLoad = nextChapter.id
+    if (failedPreload.current.has(epIdToLoad) || loadingNext.current === epIdToLoad) return
+    const epTitle = nextChapter.title ?? ""
+    // 長章晚一點再抓下一章，把頻寬留給現在這頁，開閱讀器與滑動才不會卡。短章（半頁）馬上接。
+    const delay = session.pageCount <= SHORT_CHAPTER_PAGES ? 0 : 700
+    let cancelled = false
+    const timer = setTimeout(() => {
+      if (cancelled || loadingNext.current === epIdToLoad || failedPreload.current.has(epIdToLoad)) return
+      loadingNext.current = epIdToLoad
+      void loadFollowup()
+    }, delay)
+    async function loadFollowup() {
+      try {
+        const opened = await comicLibrary().chapter({ sourceKey, comicId, epId: epIdToLoad })
+        if (cancelled) {
+          opened.dispose()
+          return
+        }
+        opened.setHardwareSharpen(settingsRef.current.hardwareSharpen)
+        if (cancelled) {
+          opened.dispose()
+          return
+        }
+        // 頁面清單一到就接上，短章底下立刻有下一章，不必等圖。圖在背景少量預熱，避免整話解碼把滑動卡住。
+        // 已經接過就不再收：這裡的判斷不放在 setState 的 updater 裡，避免 updater 重入時把 session 誤 dispose。
+        if (followupsRef.current.some(item => item.epId === epIdToLoad)) {
+          opened.dispose()
+          return
+        }
+        followupsRef.current = [...followupsRef.current, { epId: epIdToLoad, title: epTitle, session: opened }]
+        setFollowups(followupsRef.current)
+        const head = Math.min(opened.pageCount, CHAIN_WARM_PAGES)
+        if (head > 0) void opened.warmAhead(head)
+      } catch (error) {
+        failedPreload.current.add(epIdToLoad)
+        log("debug", "reader", `${epIdToLoad} 預加載下一集失敗`, error)
+      } finally {
+        if (loadingNext.current === epIdToLoad) loadingNext.current = null
+      }
+    }
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      if (loadingNext.current === epIdToLoad) loadingNext.current = null
+    }
+  }, [chainOn, session, status, focusEpId, followups.length, currentGroupChapters, sourceKey, comicId])
+
+  useEffect(() => {
+    if (chainOn) return
+    disposeFollowups()
+    if (focusEpRef.current !== currentEpId) {
+      focusEpRef.current = currentEpId
+      setFocusEpId(currentEpId)
+      setLeadingPage(0)
+    }
+  }, [chainOn, currentEpId])
 
   // 畫廊切寬圖：格清單（一格一畫面）。沒開或不是畫廊時一張一格，格號＝頁碼。
   const splitActive = paginated && settings.splitWide
@@ -744,10 +929,12 @@ function ReaderContent({
   const pageSize = canvasBox ?? viewport
   pageSizeRef.current = pageSize
 
-  /** 只在真的變了才換 state（背景的 GeometryReader 每次 render 都會回報）。 */
+  /** 只在真的變了才換 state。取整，避免小數點抖動讓每一頁都拆掉重畫（滑動時閃黑）。 */
   function reportCanvasBox(size: { width: number; height: number }) {
+    const next = { width: Math.round(size.width), height: Math.round(size.height) }
+    if (next.width <= 0 || next.height <= 0) return
     setCanvasBox(previous =>
-      previous && previous.width === size.width && previous.height === size.height ? previous : size
+      previous && previous.width === next.width && previous.height === next.height ? previous : next
     )
   }
 
@@ -783,6 +970,7 @@ function ReaderContent({
     else if (!viewer) setReaderSettings(next)
     if (patch.hardwareSharpen !== undefined && session) {
       session.setHardwareSharpen(patch.hardwareSharpen)
+      for (const item of followupsRef.current) item.session.setHardwareSharpen(patch.hardwareSharpen)
       // 超分開關切換時推動世代序號，觸發當前畫面上所有 ChapterImage 重跑 loadPage 響應開關
       setRenderGeneration(g => g + 1)
     }
@@ -799,7 +987,10 @@ function ReaderContent({
     setPerComic(false)
     const fallback = resolveReaderSettings(scope, viewer).settings
     setSettings(fallback)
-    if (session) session.setHardwareSharpen(fallback.hardwareSharpen)
+    if (session) {
+      session.setHardwareSharpen(fallback.hardwareSharpen)
+      for (const item of followupsRef.current) item.session.setHardwareSharpen(fallback.hardwareSharpen)
+    }
     if (fallback.hardwareSharpen !== settings.hardwareSharpen) setRenderGeneration(g => g + 1)
   }
 
@@ -829,7 +1020,7 @@ function ReaderContent({
               </ZStack>
             ))
           : Array.from({ length: pageCount }, (_, i) => {
-              const id = String(i)
+              const id = chainOn ? chainKey(currentEpId, i) : String(i)
               if (!vertical) {
                 return (
                   <HStack key={id} tag={i} frame={{ height: pageSize.height }} alignment="center">
@@ -855,7 +1046,41 @@ function ReaderContent({
               )
             })
         : [],
-    [session, pageCount, pageSlots, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration, zoomEpoch],
+    [session, pageCount, pageSlots, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration, zoomEpoch, chainOn],
+  )
+
+  const followupPages = useMemo(
+    () =>
+      chainOn
+        ? followups.flatMap(item =>
+            Array.from({ length: item.session.pageCount }, (_, i) => {
+              const id = chainKey(item.epId, i)
+              if (!vertical) {
+                return (
+                  <HStack key={id} frame={{ height: pageSize.height }} alignment="center">
+                    <ChapterImage
+                      key={`${id}:${renderGeneration}`}
+                      session={item.session}
+                      index={i}
+                      size={{ height: pageSize.height }}
+                    />
+                  </HStack>
+                )
+              }
+              return (
+                <VStack key={id} frame={{ maxWidth: "infinity" }}>
+                  <ChapterImage
+                    key={`${id}:${renderGeneration}`}
+                    session={item.session}
+                    index={i}
+                    size={{ width: pageSize.width }}
+                  />
+                </VStack>
+              )
+            })
+          )
+        : [],
+    [chainOn, followups, vertical, pageSize.width, pageSize.height, renderGeneration]
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
@@ -902,7 +1127,7 @@ function ReaderContent({
 
   // 目錄抽屜：章節清單很長（幾百列），但只有拉開抽屜才看得到。
   // 跨頁只是 leadingPage 變，不該讓它每次重建成千上百個元素——元素與 callback 都記住。
-  const onSelectChapter = useCallback((id: string) => selectChapter(id), [chapters, currentEpId])
+  const onSelectChapter = useCallback((id: string) => selectChapter(id), [chapters, currentEpId, settings])
   const onCloseDrawer = useCallback(() => setShowChapterSheet(false), [])
   const isDownloadedChapter = useCallback(
     (epId: string) => isOfflineReadable({ sourceKey, comicId, epId }),
@@ -911,7 +1136,7 @@ function ReaderContent({
   const chapterDrawer = useMemo(
     () => (
       <ChapterDrawer
-        currentEpId={currentEpId}
+        currentEpId={focusEpId}
         chapters={chapters}
         chapterGroups={chapterGroups}
         isGrouped={isGrouped}
@@ -920,7 +1145,7 @@ function ReaderContent({
         onClose={onCloseDrawer}
       />
     ),
-    [currentEpId, chapters, chapterGroups, isGrouped, isDownloadedChapter, onSelectChapter, onCloseDrawer]
+    [focusEpId, chapters, chapterGroups, isGrouped, isDownloadedChapter, onSelectChapter, onCloseDrawer]
   )
 
   return (
@@ -976,6 +1201,38 @@ function ReaderContent({
                   threshold: 0.0,
                   onChanged: ids => {
                     if (!restored.current) return
+                    if (chainOn) {
+                      const visible = (ids as string[])
+                        .map(parseChainKey)
+                        .filter((item): item is { epId: string; page: number } => item !== null)
+                      if (visible.length === 0) return
+                      const rank = (ep: string, page: number) => {
+                        if (ep === currentEpId) return page
+                        let base = pageCount
+                        for (const item of followups) {
+                          if (item.epId === ep) return base + page
+                          base += item.session.pageCount
+                        }
+                        return Number.MAX_SAFE_INTEGER
+                      }
+                      let best = visible[0]
+                      let bestRank = rank(best.epId, best.page)
+                      for (let i = 1; i < visible.length; i++) {
+                        const item = visible[i]
+                        const value = rank(item.epId, item.page)
+                        if (value < bestRank) {
+                          best = item
+                          bestRank = value
+                        }
+                      }
+                      if (bestRank === Number.MAX_SAFE_INTEGER) return
+                      if (focusEpRef.current !== best.epId) {
+                        focusEpRef.current = best.epId
+                        setFocusEpId(best.epId)
+                      }
+                      if (leadingPageRef.current !== best.page) setLeadingPage(best.page)
+                      return
+                    }
                     // id 是格 id（不切時就是頁碼字串）；章末卡找不到格，略過。
                     const indexes = (ids as string[])
                       .map(value => slotsRef.current.indexOf(value))
@@ -1020,16 +1277,21 @@ function ReaderContent({
                     }
 
                     let overscroll = 0
+                    let maxScroll = 0
+                    let offset = 0
                     if (vertical) {
-                      const maxScrollY = Math.max(0, geo.contentSize.height - geo.containerSize.height)
-                      overscroll = geo.contentOffset.y - maxScrollY
+                      maxScroll = Math.max(0, geo.contentSize.height - geo.containerSize.height)
+                      offset = geo.contentOffset.y
+                      overscroll = offset - maxScroll
                     } else if (rtl) {
                       // rightToLeft 下 contentOffset.x 的正負號未實測；取絕對值再扣捲動上界，兩種符號都只在末端拉過頭才為正。
-                      const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
-                      overscroll = Math.abs(geo.contentOffset.x) - maxScrollX
+                      maxScroll = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                      offset = Math.abs(geo.contentOffset.x)
+                      overscroll = offset - maxScroll
                     } else {
-                      const maxScrollX = Math.max(0, geo.contentSize.width - geo.containerSize.width)
-                      overscroll = geo.contentOffset.x - maxScrollX
+                      maxScroll = Math.max(0, geo.contentSize.width - geo.containerSize.width)
+                      offset = geo.contentOffset.x
+                      overscroll = offset - maxScroll
                     }
                     overscrollRef.current = overscroll
 
@@ -1037,7 +1299,7 @@ function ReaderContent({
                       const p = Math.min(1, Math.max(0, (overscroll - 2) / PULL_THRESHOLD))
                       setPullProgress(p)
                       setOverscrollPx(overscroll)
-                      if (p >= 1) {
+                      if (p >= 1 && !chainOn) {
                         if (!hasTriggeredFullHapticRef.current) {
                           hasTriggeredFullHapticRef.current = true
                           HapticFeedback.mediumImpact()
@@ -1067,9 +1329,9 @@ function ReaderContent({
                   ) {
                     isInteractingRef.current = false
                     hasTriggeredFullHapticRef.current = false
-                    if (overscrollRef.current >= PULL_THRESHOLD && next) {
-                      selectChapter(next.id)
-                    }
+                    const pulled = overscrollRef.current
+                    // 預加載下一集時內容已經接在後面，這裡再換話會閃黑畫面，所以不跳。
+                    if (!chainOn && next && pulled >= PULL_THRESHOLD) goToNext(next.id)
                     setPullProgress(0)
                     setOverscrollPx(0)
                     overscrollRef.current = 0
@@ -1085,6 +1347,7 @@ function ReaderContent({
                     frame={{ maxWidth: "infinity" }}
                   >
                     {pages}
+                    {followupPages}
                     {endCard}
                   </LazyVStack>
                 ) : (
@@ -1094,6 +1357,7 @@ function ReaderContent({
                     frame={{ maxHeight: "infinity" }}
                   >
                     {pages}
+                    {followupPages}
                     {endCard}
                   </LazyHStack>
                 )}
@@ -1103,7 +1367,7 @@ function ReaderContent({
         </ScrollViewReader>
 
         {/* 1.1 邊緣拉籤（Pull Tab：位於 overScroll 空隙中，支援畫廊與連續模式） */}
-        {pullProgress > 0 && next ? (
+        {pullProgress > 0 && next && !chainOn ? (
           vertical ? (
             // 縱向（畫廊 / 連續）：底部向上拉出的橫向膠囊
             <VStack
@@ -1202,25 +1466,37 @@ function ReaderContent({
           )
         ) : null}
 
+        {/* 開章時蓋在畫布上。放在捲動外面，第一帧就看得到，不會先黑一整片再出現轉圈。 */}
+        {status?.kind === "loading" ? (
+          <VStack
+            frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+            alignment="center"
+            allowsHitTesting={false}
+            zIndex={40}
+          >
+            <PageLoading />
+          </VStack>
+        ) : null}
+
         {/* 1.2 HUD 收起時的頁碼與時間、電量（設定開哪個就顯示哪個）；順便跑頁碼副作用（只有這一小塊隨翻頁重繪） */}
         <ReaderPageTracker
           leadingPage={leadingPage}
-          session={session}
-          pageCount={pageCount}
-          ready={sessionEpId.current === currentEpId}
+          session={focusSession}
+          pageCount={focusPageCount}
+          ready={focusEntry ? true : sessionEpId.current === currentEpId}
           progress={{
             sourceKey,
             comicId,
             title: comicTitle,
             cover: comicCover,
-            epId: currentEpId,
+            epId: focusEpId,
             epTitle: title,
           }}
           cornerVisible={!hudVisible.value && status === null}
           cornerPage={settings.cornerPage}
           cornerTime={settings.cornerTime}
           safeAreaInsets={safeAreaInsets}
-          nextChapter={nextRef}
+          nextChapter={chainOn ? undefined : nextRef}
         />
 
         {/* 2. 全螢幕 HUD Overlay */}
@@ -1244,7 +1520,7 @@ function ReaderContent({
           chapterIndex={index + 1}
           totalChapters={currentGroupChapters.length}
           onSelectChapter={selectChapter}
-          pageCount={pageCount}
+          pageCount={focusPageCount}
           leadingPage={leadingPage}
           onScrubCommit={commitScrub}
         />

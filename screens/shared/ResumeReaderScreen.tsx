@@ -12,6 +12,7 @@ import { Navigation, useEffect, useState } from "scripting"
 import type { ComicRef } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { showToast } from "../../app/toast"
+import { mergeChapterList } from "../../engine/offline"
 import { t } from "../../i18n"
 import { ReaderScreen, type ReaderProps } from "./ReaderScreen"
 
@@ -28,13 +29,19 @@ function ResumeReader({ chapters: initialChapters, ...props }: ReaderProps) {
     const library = comicLibrary()
     void library
       .comic({ sourceKey, comicId })
-      // `comic()` 成功就把最新清單覆寫進快取（見 app/comic.ts），這裡再從合併清單讀回來：
-      // 清單的形狀只有離線層知道，不重複一份映射。
-      .then(() => {
+      .then(page => {
         if (!alive) return
-        setChapters(library.offline.readerChapters({ sourceKey, comicId }))
+        // 沒下載過的漫畫不會寫章節快取，只看離線清單會是空的。用這次詳情拿到的完整清單，
+        // 再把「源已不列、但本機有下載」的章接回去（跟離線層原本的合併規則一致）。
+        const fresh = mergeChapterList(library.readerChapters(page), sourceKey, comicId)
+        if (fresh.length === 0) return
+        setChapters(previous => {
+          if (fresh.some(chapter => chapter.id === props.epId)) return fresh
+          const current = previous.find(chapter => chapter.id === props.epId)
+          return current ? [current, ...fresh] : fresh
+        })
       })
-      // 背景補清單失敗（沒網路、源被移除）就維持本機那一份。
+      // 背景補清單失敗（沒網路、源被移除）就維持手上那一份。
       .catch(() => {})
     return () => {
       alive = false

@@ -23,7 +23,13 @@ import {
   type ReaderChapter,
 } from "../engine/offline"
 import { clearUpscaleCache, planUpscale, sharpenImage } from "../engine/upscale"
-import { getPrefetchPages, getReaderSettings, type SourceViewer } from "../library/readerSettings"
+import {
+  getPrefetchPages,
+  getReaderSettings,
+  getSourceViewer,
+  setSourceViewer,
+  type SourceViewer,
+} from "../library/readerSettings"
 import { t } from "../i18n"
 import { getProgress, subscribeLibrary } from "../library/bookshelf"
 import { log } from "../engine/log"
@@ -644,6 +650,52 @@ export async function resumePlan(
       refreshChapters: true,
       comicTitle: progress?.title ?? wantedEpId,
       comicCover: progress?.cover,
+      viewer: getSourceViewer(ref),
+    }
+  }
+
+  // 線上續讀也先開：點下去不等整份詳情。有快取清單就用，沒有就先放正在讀的這一話，背景再補。
+  if (wantedEpId !== undefined && progress) {
+    const viewer = getSourceViewer(ref)
+    const cached = cachedChapterList(ref.sourceKey, ref.comicId)
+    if (cached) {
+      const merged = mergeChapterList(cached, ref.sourceKey, ref.comicId)
+      const wanted = merged.find(chapter => chapter.id === wantedEpId)
+      if (wanted && !wanted.locked) {
+        return {
+          epId: wantedEpId,
+          page: resumed?.page,
+          chapters: merged,
+          refreshChapters: true,
+          comicTitle: progress.title || wantedEpId,
+          comicCover: progress.cover,
+          viewer,
+        }
+      }
+      // 上次那一話被鎖了：跟走完詳情那條一樣退第一個沒鎖的章；全鎖就別開。
+      const fallback = merged.find(chapter => !chapter.locked)
+      if (fallback) {
+        return {
+          epId: fallback.id,
+          page: undefined,
+          chapters: merged,
+          refreshChapters: true,
+          comicTitle: progress.title || wantedEpId,
+          comicCover: progress.cover,
+          viewer,
+        }
+      }
+      return { reason: "allLocked" }
+    }
+    // 沒有本機清單（沒下載過的漫畫）就先只放這一話；`ResumeReader` 之後把詳情的完整清單補進來。
+    return {
+      epId: wantedEpId,
+      page: resumed?.page,
+      chapters: [{ id: wantedEpId, title: progress.epTitle || wantedEpId }],
+      refreshChapters: true,
+      comicTitle: progress.title || wantedEpId,
+      comicCover: progress.cover,
+      viewer,
     }
   }
 
@@ -661,6 +713,9 @@ export async function resumePlan(
     ? wantedEpId
     : chapters.find(chapter => !chapter.locked)?.id
   if (target === undefined) return { reason: "allLocked" }
+
+  // 詳情拿到的 viewer 記下來：下次續讀的快速路徑不抓詳情也沿用同一個方向。
+  setSourceViewer(ref, page.viewer)
 
   return {
     epId: target,
@@ -956,7 +1011,13 @@ export function createComicLibrary(): ComicLibrary {
   }
 
   /** 跨章預取開好、等著被 `chapter()` 接手的那一話；同時只留一份。 */
-  let handoff: { id: string; session: Promise<ChapterSession | null> } | null = null
+  let handoff: {
+    id: string
+    session: Promise<ChapterSession | null>
+    /** 這次已經排進去要抓的頁數；後來要求更多頁就接著抓，不把已經開好的 session 丟掉。 */
+    warmed: number
+    tail: Promise<void>
+  } | null = null
   const chapterIdOf = (ref: ChapterRef): string => `${ref.sourceKey}\n${ref.comicId}\n${ref.epId}`
   function releasePrefetched(): void {
     const pending = handoff
@@ -1026,21 +1087,39 @@ export function createComicLibrary(): ComicLibrary {
 
     prefetchChapter: async (ref, pages) => {
       const id = chapterIdOf(ref)
-      if (handoff?.id === id) return
+      const count = Math.max(0, Math.round(pages))
+      // 這一話已經在預載：頁數變多就接在後面抓，不要重開（重開會把抓到一半的圖丟掉）。
+      if (handoff?.id === id) {
+        const pending = handoff
+        if (count <= pending.warmed) return
+        pending.warmed = count
+        pending.tail = pending.tail
+          .then(async () => {
+            const opened = await pending.session
+            if (!opened) return
+            await opened.warmAhead(pending.warmed)
+          })
+          // 抓圖失敗不該把後面的預熱鏈一起毒死。
+          .catch(() => {})
+        return
+      }
       releasePrefetched()
       const session = openChapter(ref).catch(error => {
         log("debug", "reader", `${ref.epId} 跨章預取失敗`, error)
         return null
       })
-      const entry = { id, session }
+      const entry = { id, session, warmed: count, tail: Promise.resolve() }
       handoff = entry
-      const opened = await session
-      if (!opened) {
-        if (handoff === entry) handoff = null
-        return
-      }
       // 被接手之後照跑：剩下的頁寫進同一個 session；接手方 dispose 時這裡會跟著被取消。
-      await opened.warmAhead(pages)
+      entry.tail = session
+        .then(async opened => {
+          if (!opened) {
+            if (handoff === entry) handoff = null
+            return
+          }
+          await opened.warmAhead(entry.warmed)
+        })
+        .catch(() => {})
     },
 
     releasePrefetched,

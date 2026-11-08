@@ -209,8 +209,15 @@ export function ReaderSettingsSheet({
           />
         </Section>
 
-        {/* 圖片載入與畫質一組。 */}
+        {/* 圖片載入與畫質一組。無縫接下一話只在連續模式有意義，切到畫廊時就不列。 */}
         <Section footer={canUpscale ? undefined : <Text>{t("reader.upscaleRequiresPro")}</Text>}>
+          {settings.mode !== "gallery" ? (
+            <SettingToggle
+              title={t("reader.seamlessNext")}
+              value={settings.seamlessNext}
+              onChanged={value => onUpdateSettings({ seamlessNext: value })}
+            />
+          ) : null}
           <PrefetchStepper />
           <SettingToggle
             title={t("reader.hardwareSharpen")}

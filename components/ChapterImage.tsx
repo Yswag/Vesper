@@ -44,8 +44,9 @@ export function ChapterImage({ session, index, size, half }: ChapterImageProps) 
   useEffect(() => {
     let alive = true
     const started = Date.now()
-    // 已經有圖就不要退回佔位（重掛／回捲）；沒有才需要轉圈。
-    if (!session.renderOf(index, half)) setRender(null)
+    // 已經畫出來的圖留著。尺寸微調或重跑時若先清成空白，滑動就會閃一下黑。
+    const cached = session.renderOf(index, half)
+    if (cached) setRender(cached)
     setError("")
 
     void (async () => {
