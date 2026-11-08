@@ -317,9 +317,10 @@ function ReaderContent({
   // session 屬於哪一話：換話那一輪 render 還拿著舊 session，進度不能用它的頁數寫新話。
   const sessionEpId = useRef<string | null>(null)
   // 預加載接在後面的下一集。捲動不重建，所以不會閃黑、也不會跳回頂端。
+  // ref 是「當下的事實」（effect 讀它），state 只負責畫面；兩者一起寫，不能讓 render 用 state 反向蓋回 ref，
+  // 否則清掉 ref 之後下一輪 render 會把已經 dispose 的 session 又放回去。
   const [followups, setFollowups] = useState<FollowupChapter[]>([])
   const followupsRef = useRef<FollowupChapter[]>([])
-  followupsRef.current = followups
   // 畫面上正在看的那一話。跟 currentEpId（這條捲動的第一話）可以不同。
   const [focusEpId, setFocusEpId] = useState(epId)
   const focusEpRef = useRef(epId)
@@ -555,8 +556,12 @@ function ReaderContent({
       // 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求 + 把正文的記憶體快取放掉。
       opened?.dispose()
       const extra = followupsRef.current
-      followupsRef.current = []
-      for (const item of extra) item.session.dispose()
+      if (extra.length > 0) {
+        // state 也要清：只清 ref 的話，下一輪 render 的 state 會把已 dispose 的 session 畫回來。
+        followupsRef.current = []
+        setFollowups([])
+        for (const item of extra) item.session.dispose()
+      }
     }
   }, [sourceKey, comicId, currentEpId, reloadKey])
 
@@ -609,13 +614,18 @@ function ReaderContent({
     }, 600)
   }
 
+  /** 丟掉已經接上的下一集；ref 與 state 一定一起換。 */
+  function replaceFollowups(next: FollowupChapter[]) {
+    followupsRef.current = next
+    setFollowups(next)
+  }
+
   /** 丟掉已經接上的下一集。 */
   function disposeFollowups() {
     const extra = followupsRef.current
     if (extra.length === 0) return
-    followupsRef.current = []
+    replaceFollowups([])
     for (const item of extra) item.session.dispose()
-    setFollowups([])
   }
 
   /** 換話：只改 state、不推新頁（同一層 route 就地換話）。 */
@@ -850,7 +860,7 @@ function ReaderContent({
           return
         }
         followupsRef.current = [...followupsRef.current, { epId: epIdToLoad, title: epTitle, session: opened }]
-        setFollowups(followupsRef.current)
+        replaceFollowups(followupsRef.current)
         const head = Math.min(opened.pageCount, CHAIN_WARM_PAGES)
         if (head > 0) void opened.warmAhead(head)
       } catch (error) {

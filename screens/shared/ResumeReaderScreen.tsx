@@ -7,21 +7,39 @@
 // 挑話、頁碼、清單從哪來（本機／線上）與要不要背景補清單都在 `comicLibrary().resumePlan()`：
 // 這裡只負責開閱讀器，或把「為什麼開不了」講給使用者聽。
 
-import { Navigation, useEffect, useState } from "scripting"
+import { Navigation, useEffect, useRef, useState } from "scripting"
 
 import type { ComicRef } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { showToast } from "../../app/toast"
-import { mergeChapterList } from "../../engine/offline"
+import { mergeChapterList, type ReaderChapter } from "../../engine/offline"
 import { t } from "../../i18n"
 import { ReaderScreen, type ReaderProps } from "./ReaderScreen"
 
 /**
+ * 保底：快速續讀不問源，開的那一話可能已經被鎖或下架。
+ * 背景詳情回來才知道這件事，那就換成第一個沒鎖的章。
+ * 回 null＝不用換（那一話還在且沒被鎖，或整部都鎖住、沒得換）。
+ */
+export function resumeFallbackOf(chapters: ReaderChapter[], epId: string): ReaderChapter | null {
+  const wanted = chapters.find(chapter => chapter.id === epId)
+  if (wanted && !wanted.locked) return null
+  const fallback = chapters.find(chapter => !chapter.locked)
+  if (!fallback || fallback.id === epId) return null
+  return fallback
+}
+
+/**
  * 續讀專用的閱讀器：先用手上的清單開，背景補到最新就換上。
  * 換清單只換 `chapters`（開章 effect 不依賴它），所以正在讀的那一話與頁碼都不動。
+ * 只有那一話消失或被鎖時才整台重開到第一個沒鎖的章（`key` 換了，頁碼不帶過去）。
  */
-function ResumeReader({ chapters: initialChapters, ...props }: ReaderProps) {
+function ResumeReader({ chapters: initialChapters, initialPage, ...props }: ReaderProps) {
   const [chapters, setChapters] = useState(initialChapters)
+  // 畫面上開的是哪一話：保底換話時讀者要看到新章，不能還停在舊章。
+  const [target, setTarget] = useState({ epId: props.epId, page: initialPage })
+  const targetRef = useRef(target)
+  targetRef.current = target
   const { sourceKey, comicId } = props
 
   useEffect(() => {
@@ -35,10 +53,18 @@ function ResumeReader({ chapters: initialChapters, ...props }: ReaderProps) {
         // 再把「源已不列、但本機有下載」的章接回去（跟離線層原本的合併規則一致）。
         const fresh = mergeChapterList(library.readerChapters(page), sourceKey, comicId)
         if (fresh.length === 0) return
+        const current = targetRef.current.epId
+        const fallback = resumeFallbackOf(fresh, current)
+        if (fallback) {
+          setTarget({ epId: fallback.id, page: undefined })
+          setChapters(fresh)
+          return
+        }
         setChapters(previous => {
-          if (fresh.some(chapter => chapter.id === props.epId)) return fresh
-          const current = previous.find(chapter => chapter.id === props.epId)
-          return current ? [current, ...fresh] : fresh
+          if (fresh.some(chapter => chapter.id === current)) return fresh
+          // 這一話源已經不列、又沒得換（全鎖）：留著，不然清單裡找不到正在讀的那一話。
+          const kept = previous.find(chapter => chapter.id === current)
+          return kept ? [kept, ...fresh] : fresh
         })
       })
       // 背景補清單失敗（沒網路、源被移除）就維持手上那一份。
@@ -48,7 +74,15 @@ function ResumeReader({ chapters: initialChapters, ...props }: ReaderProps) {
     }
   }, [sourceKey, comicId])
 
-  return <ReaderScreen {...props} chapters={chapters} />
+  return (
+    <ReaderScreen
+      key={target.epId}
+      {...props}
+      epId={target.epId}
+      initialPage={target.page}
+      chapters={chapters}
+    />
+  )
 }
 
 export interface ReaderLaunch extends ReaderProps {

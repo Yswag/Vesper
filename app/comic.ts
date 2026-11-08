@@ -467,7 +467,7 @@ export interface ComicLibrary {
   chapter(ref: ChapterRef): Promise<ChapterSession>
   /**
    * 跨章預取：先開好那一話的 session，把前 `pages` 頁抓進磁碟快取，留著給下一次 `chapter()` 接手。
-   * 同時只留一份；預取是加分項，失敗不抛。
+   * 同時只留一份；預取是加分項，失敗不抛。**resolve 時這幾頁已經在磁碟上**（呼叫端可以 `void` 掉）。
    */
   prefetchChapter(ref: ChapterRef, pages: number): Promise<void>
   /** 放掉沒被接手的預取 session（離開閱讀器時）。 */
@@ -1068,7 +1068,12 @@ export function createComicLibrary(): ComicLibrary {
 
     onChange,
 
-    comic: loadComic,
+    // 詳情是「源現在怎麼宣告」的最新事實：順手更新，續讀的快速路徑才有新的方向可用。
+    comic: async ref => {
+      const page = await loadComic(ref)
+      setSourceViewer(ref, page.viewer)
+      return page
+    },
 
     resumePlan: ref => resumePlan(ref, loadComic),
 
@@ -1101,7 +1106,8 @@ export function createComicLibrary(): ComicLibrary {
           })
           // 抓圖失敗不該把後面的預熱鏈一起毒死。
           .catch(() => {})
-        return
+        // 呼叫端等的是「這幾頁抓好」；回 tail 才跟原本的契約一致（`void` 的呼叫端不受影響）。
+        return pending.tail
       }
       releasePrefetched()
       const session = openChapter(ref).catch(error => {
@@ -1120,6 +1126,7 @@ export function createComicLibrary(): ComicLibrary {
           await opened.warmAhead(entry.warmed)
         })
         .catch(() => {})
+      return entry.tail
     },
 
     releasePrefetched,

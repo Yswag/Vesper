@@ -42,7 +42,7 @@ export interface ReaderSettings {
   seamlessNext: boolean
 }
 
-/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁；銳化與角落資訊關。 */
+/** 沒設定過時的預設：連續 + 上到下（webtoon）＋ 三分區翻頁；銳化、角落資訊、無縫接章都關。 */
 const DEFAULT: ReaderSettings = {
   mode: "continuous",
   direction: "ttb",
@@ -52,7 +52,7 @@ const DEFAULT: ReaderSettings = {
   splitSwap: false,
   cornerPage: false,
   cornerTime: false,
-  seamlessNext: true,
+  seamlessNext: false,
 }
 const KEY = "venera:readerSettings"
 /** 每本漫畫的獨立設定（per-comic 開關打開時才會寫）。 */
@@ -90,7 +90,7 @@ function readSettings(raw: unknown): ReaderSettings | null {
     splitSwap: typeof splitSwap === "boolean" ? splitSwap : DEFAULT.splitSwap,
     cornerPage: typeof cornerPage === "boolean" ? cornerPage : DEFAULT.cornerPage,
     cornerTime: typeof cornerTime === "boolean" ? cornerTime : DEFAULT.cornerTime,
-    // 舊資料沒有這個欄位 → 開（先載下一話，滑到底直接接上）。
+    // 舊資料沒有這個欄位 → 關（不在使用者沒要求的情況下多抓下一話）。
     seamlessNext: typeof seamlessNext === "boolean" ? seamlessNext : DEFAULT.seamlessNext,
   }
 }
@@ -108,6 +108,8 @@ export function setReaderSettings(settings: ReaderSettings): void {
  * 這裡把上次詳情給的值留著，續讀才不會從 RTL 掉回全域方向。
  */
 const VIEWER_KEY = "venera:sourceViewer"
+/** 最多記這麼多部；超過就丟最舊寫入的（跟閱讀歷史的規模同級）。 */
+const VIEWER_CAP = 200
 
 function viewerKey(scope: ReaderScope): string {
   return `${scope.sourceKey}\n${scope.comicId}`
@@ -125,13 +127,24 @@ export function getSourceViewer(scope: ReaderScope): SourceViewer | undefined {
 }
 
 export function setSourceViewer(scope: ReaderScope, viewer: SourceViewer | undefined): void {
-  if (!viewer) return
   const raw = kv.get(VIEWER_KEY)
   const map: Record<string, SourceViewer> =
     raw && typeof raw === "object" ? { ...(raw as Record<string, SourceViewer>) } : {}
   const key = viewerKey(scope)
+  // 源這次不宣告就忘掉：留著舊值會在源改版後一直用錯方向。
+  if (!viewer) {
+    if (!(key in map)) return
+    delete map[key]
+    kv.set(VIEWER_KEY, map)
+    return
+  }
   if (map[key] === viewer) return
   map[key] = viewer
+  // 這張表只是「續讀不要掉回全域方向」的快取，不是資料：寫太多就丟最舊寫入的，避免無上限長大。
+  const keys = Object.keys(map)
+  if (keys.length > VIEWER_CAP) {
+    for (const stale of keys.slice(0, keys.length - VIEWER_CAP)) delete map[stale]
+  }
   kv.set(VIEWER_KEY, map)
 }
 
