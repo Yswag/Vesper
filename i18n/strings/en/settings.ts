@@ -60,7 +60,6 @@ export default {
 
   /** Cache settings (thumbnails and page images live in separate pools). */
   cache: {
-    title: "Cache",
     thumbsGroup: "Thumbnails",
     thumbsUsageTitle: "Cached",
     statsDetail: "{files} · {size}",

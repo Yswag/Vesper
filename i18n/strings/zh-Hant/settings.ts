@@ -67,7 +67,6 @@ export default {
 
   /** 快取配置頁（縮圖與正文兩個池）。 */
   cache: {
-    title: "快取",
     thumbsGroup: "縮圖",
     thumbsUsageTitle: "已快取",
     statsDetail: "{files} · {size}",

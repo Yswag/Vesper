@@ -59,7 +59,6 @@ export default {
 
   /** 缓存配置页（缩略图与正文两个池）。 */
   cache: {
-    title: "缓存",
     thumbsGroup: "缩略图",
     thumbsUsageTitle: "已缓存",
     statsDetail: "{files} · {size}",
