@@ -69,8 +69,8 @@ export default {
   prefetch: "圖片預取",
   prefetchPages: { one: "{n} 頁", other: "{n} 頁" },
   prefetchOff: "關閉",
-  /** 滑到這一章底部就自動接上下一章，接著往下滑就行。 */
-  seamlessNext: "滑到底自動接下一章",
+  /** 下一話接在這一話後面，畫廊與連續都是直接往後翻／滑。 */
+  seamlessNext: "無縫接續下一話",
   /** 預設跟隨源宣告的閱讀方式（沒有就退全域）；打開就存成這本的獨立設定。 */
   perComic: "記住這本的設定",
 
