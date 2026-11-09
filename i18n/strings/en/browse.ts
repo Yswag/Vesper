@@ -7,6 +7,7 @@ export default {
   searchSources: "Search enabled sources",
   searchResults: "Results ({n})",
   findInRepositories: "Search repositories",
+  disableSource: "Disable",
   emptyTitle: "No enabled sources",
   emptyDetail: "Install and enable comic sources in Settings → Comic Sources. Aidoku indexes can be added under Source repositories.",
   pickSources: "Choose sources",

@@ -14,6 +14,7 @@ export default {
   /** `{n}` 是篩選後的來源數。 */
   searchResults: "結果 ({n})",
   findInRepositories: "到源倉庫找",
+  disableSource: "停用",
   emptyTitle: "沒有已啟用的源",
   emptyDetail: "請到「設定 → 漫畫源」安裝並開啟漫畫來源；Aidoku 索引可在「源倉庫」加入。",
   pickSources: "去挑源",

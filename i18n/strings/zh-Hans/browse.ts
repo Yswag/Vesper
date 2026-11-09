@@ -7,6 +7,7 @@ export default {
   searchSources: "搜索已启用的源",
   searchResults: "结果 ({n})",
   findInRepositories: "到源仓库找",
+  disableSource: "停用",
   emptyTitle: "没有已启用的源",
   emptyDetail: "请到「设置 → 漫画源」安装并开启漫画来源；Aidoku 索引可在「源仓库」加入。",
   pickSources: "去挑选源",

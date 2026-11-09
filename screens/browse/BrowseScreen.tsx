@@ -1,8 +1,12 @@
 // 瀏覽：列出已啟用的源，點進去就是那源的一頁（探索 / 分類 / 排行）。
 // 放大鏡依名稱與 key 篩選；找不到就帶著關鍵字去源倉庫搜。
 // 不用常駐的下拉搜尋框：tab 根頁上它一進頁就展開，容易被當成搜漫畫。
+// 長按卡片直接進那個源的設定／帳號／詳情或停用；排序、移除、更新留在源管理。
 
-import { HStack, Image, NavigationLink, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack } from "scripting"
+import {
+  Button, Divider, Group, HStack, Image, NavigationLink, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack,
+  useState, type VirtualNode,
+} from "scripting"
 
 import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
@@ -13,6 +17,11 @@ import { SourceAvatar } from "../../components/SourceAvatar"
 import { SourceScreen } from "./SourceScreen"
 import { SourceListScreen } from "../settings/SourceListScreen"
 import { RepositoryListScreen } from "../settings/RepositoryListScreen"
+import { SourceDetailScreen } from "../settings/SourceDetailScreen"
+import { SourceSettingsScreen } from "../settings/SourceSettingsScreen"
+import { AidokuSettingsScreen } from "../settings/AidokuSettingsScreen"
+import { SourceAccountScreen } from "../settings/SourceAccountScreen"
+import { accountSpec, findSource, hasAidokuSettings, setSourceEnabled } from "../../sources/registry"
 import { PageBackground } from "../../app/theme"
 import { Chip } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
@@ -23,6 +32,18 @@ import { matchesQuery, searchToolbarItem, useToolbarSearch } from "../../design/
 import { Footnote } from "../../design/text"
 import { cardGap, pageInsets, rowPadding, sourceIconSize } from "../../design/tokens"
 
+/** 長按選單推的頁。 */
+type SourcePage = "settings" | "aidokuSettings" | "account" | "detail"
+
+function sourcePageView(key: string, page: SourcePage): VirtualNode {
+  switch (page) {
+    case "settings": return <SourceSettingsScreen sourceKey={key} />
+    case "aidokuSettings": return <AidokuSettingsScreen sourceKey={key} />
+    case "account": return <SourceAccountScreen sourceKey={key} />
+    case "detail": return <SourceDetailScreen sourceKey={key} />
+  }
+}
+
 export function BrowseScreen() {
   const library = comicLibrary()
   // 安裝／移除／啟用來源都由庫的單一訂閱通知（不必自己 reloadRegistry 或訂 subscribeSources）。
@@ -32,6 +53,7 @@ export function BrowseScreen() {
   const search = useToolbarSearch(t("browse.searchSources"))
   const query = search.query
   const shown = query ? sources.filter(source => matchesQuery(query, source.name, source.key)) : sources
+  const [pushed, setPushed] = useState<{ key: string; page: SourcePage } | null>(null)
 
   return (
     <ZStack>
@@ -41,6 +63,18 @@ export function BrowseScreen() {
         navigationTitle={t("browse.title")}
         navigationBarTitleDisplayMode="inline"
         searchable={search.searchable}
+        navigationDestination={{
+          // key 跟著源與頁換：同一個推頁位置會沿用上一次的狀態。
+          content: pushed ? (
+            <VStack key={`${pushed.key}:${pushed.page}`}>{sourcePageView(pushed.key, pushed.page)}</VStack>
+          ) : (
+            <VStack />
+          ),
+          isPresented: pushed !== null,
+          onChanged: (presented: boolean) => {
+            if (!presented) setPushed(null)
+          },
+        }}
         toolbar={
           <Toolbar>
             <ToolbarItem placement="topBarLeading">
@@ -100,15 +134,50 @@ export function BrowseScreen() {
               </VStack>
             ) : (
               shown.map(source => (
-                <NavigationLink key={source.key} destination={<SourceScreen sourceKey={source.key} />}>
-                  <SourceCard source={source} />
-                </NavigationLink>
+                <VStack
+                  key={source.key}
+                  spacing={0}
+                  contextMenu={{
+                    menuItems: <SourceMenuItems sourceKey={source.key} onOpen={page => setPushed({ key: source.key, page })} />,
+                  }}
+                >
+                  <NavigationLink destination={<SourceScreen sourceKey={source.key} />}>
+                    <SourceCard source={source} />
+                  </NavigationLink>
+                </VStack>
               ))
             )}
           </VStack>
         </ScrollView>
       </VStack>
     </ZStack>
+  )
+}
+
+/** 長按選單：有設定、有帳號才出現對應項；停用後卡片會從清單消失。 */
+function SourceMenuItems({ sourceKey, onOpen }: { sourceKey: string; onOpen: (page: SourcePage) => void }): VirtualNode {
+  const installed = findSource(sourceKey)
+  if (!installed) return <Group />
+  const hasVeneraSettings = (installed.settingsSpecs?.length ?? 0) > 0
+
+  return (
+    <Group>
+      {hasVeneraSettings ? (
+        <Button title={t("settings.sourceDetail.settingsRow")} systemImage="slider.horizontal.3" action={() => onOpen("settings")} />
+      ) : hasAidokuSettings(installed) ? (
+        <Button title={t("settings.sourceDetail.settingsRow")} systemImage="slider.horizontal.3" action={() => onOpen("aidokuSettings")} />
+      ) : null}
+      {accountSpec(installed) ? (
+        <Button title={t("settings.sourceDetail.accountRow")} systemImage="person.crop.circle" action={() => onOpen("account")} />
+      ) : null}
+      <Button title={t("settings.sourceDetail.title")} systemImage="info.circle" action={() => onOpen("detail")} />
+      <Divider />
+      <Button
+        title={t("browse.disableSource")}
+        systemImage="power"
+        action={() => setSourceEnabled(sourceKey, false)}
+      />
+    </Group>
   )
 }
 
