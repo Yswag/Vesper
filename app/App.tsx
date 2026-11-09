@@ -19,7 +19,7 @@
 
 import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
-import { PageBackground, useTint } from "./theme"
+import { PageBackground, useAppearanceOverride, useTint } from "./theme"
 import { liquidGlass } from "../design/glass"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
@@ -65,6 +65,8 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   // 那些地方一律用 useTint() 的明確顏色（見 design/ 與 screens/）。中性盤（石墨）照樣套：tint 是近白，
   // 文字型控制項剛好；Toggle 的圓鈕會淹在軌道裡，所以 ToggleRow 自己用 `toggleTint()` 換回系統綠。
   const tint = useTint()
+  // 深淺模式掛在這一層呈現上（`undefined`＝跟隨系統）。
+  const scheme = useAppearanceOverride()
   const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
@@ -186,7 +188,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
 
   if (hideTabBar) {
     return (
-      <ZStack toast={toast} overlay={overlay} tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ZStack toast={toast} overlay={overlay} tint={tint.tint} preferredColorScheme={scheme} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageBackground />
         <NavigationStack>{sectionScreen(section)}</NavigationStack>
       </ZStack>
@@ -194,7 +196,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   }
 
   return (
-    <ZStack tint={tint.tint}>
+    <ZStack tint={tint.tint} preferredColorScheme={scheme}>
       <PageBackground />
       {/* tab bar 收起行為（iOS 26+ 的膠囊）。這個 API 只有 automatic／never／onScrollDown／onScrollUp
           四個值，**沒有展開門檻可調**。實測（2026-10-09）：

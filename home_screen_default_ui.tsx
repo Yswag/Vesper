@@ -36,7 +36,7 @@ import { getMiniHubLayout, type MiniHubSection } from "./app/miniHubLayout"
 import { comicLibrary, installComicLibrary } from "./app/services"
 import { resumeEntry, unreadCountOf, type ResumeEntry } from "./app/shelf"
 import { checkSourceUpdates } from "./app/sourceUpdates"
-import { PageBackground, useTint } from "./app/theme"
+import { PageBackground, reloadThemeFromStorage, useAppearanceOverride, useTint } from "./app/theme"
 import { parseUpdateTime, updatesScheduler } from "./app/updates"
 import { useSubscription } from "./app/useSubscription"
 import { CoverImage } from "./components/CoverImage"
@@ -142,6 +142,9 @@ export default function HomeScreenDefaultUI() {
 
   const [dataReady, setDataReady] = useState(() => fileAccess() !== null)
   const tint = useTint()
+  // 這裡是 Scripting 自己的首頁分頁：`preferredColorScheme` 會連宿主 App 一起切，只能用區域覆蓋。
+  const scheme = useAppearanceOverride()
+  const environments = scheme ? { colorScheme: scheme } : undefined
 
   // 收藏、已讀、追更快取、離線層與語言一變就重繪：背景檢查寫回 library.json 時看板自己跟上。
   const refresh = useSubscription(subscribeLibrary, comicLibrary().onChange, subscribeLocale)
@@ -165,6 +168,7 @@ export default function HomeScreenDefaultUI() {
           // 先重讀盤上的那一份：不只看板要是新的，接下來的背景檢查也才不會蓋掉完整 App 的寫入。
           reloadRegistry()
           reloadLibraryFromDisk()
+          reloadThemeFromStorage()
           refresh()
           void checkQuietly(alive)
           break
@@ -184,7 +188,7 @@ export default function HomeScreenDefaultUI() {
 
   if (!dataReady) {
     return (
-      <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ZStack tint={tint.tint} environments={environments} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageBackground />
         <ProgressView />
       </ZStack>
@@ -204,7 +208,7 @@ export default function HomeScreenDefaultUI() {
   }
 
   return (
-    <NavigationStack>
+    <NavigationStack environments={environments}>
       <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageScroll title="Vesper" trailing={OpenAppButton}>
           {getMiniHubLayout().enabled.map(section => sections[section]())}

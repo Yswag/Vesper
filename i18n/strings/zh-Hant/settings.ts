@@ -88,6 +88,9 @@ export default {
 
   /** 外觀主題頁與主題名稱表。 */
   theme: {
+    appearanceGroup: "深淺模式",
+    light: "淺色",
+    dark: "深色",
     paletteGroup: "底色 · 顏色",
     compositionGroup: "底色 · 構圖",
     custom: "自訂",

@@ -12,7 +12,6 @@ import {
   Text,
   VStack,
   ZStack,
-  useColorScheme,
   useEffect,
   useState,
   type Color,
@@ -21,6 +20,7 @@ import {
   type Shape,
 } from "scripting"
 
+import { useResolvedColorScheme } from "../app/theme"
 import { t } from "../i18n"
 import { Card } from "./layout"
 import { rowSeparatorInset } from "./rows"
@@ -50,7 +50,7 @@ interface Anchor {
 }
 
 function ShimmerLight({ width, height, anchor }: { width: number; height: number; anchor: Anchor }) {
-  const scheme = useColorScheme()
+  const scheme = useResolvedColorScheme()
   const [moving, setMoving] = useState(false)
   useEffect(() => {
     const timer = setTimeout(() => setMoving(true), SHIMMER_DELAY_MS)

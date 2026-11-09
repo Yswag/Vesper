@@ -6,6 +6,7 @@ import {
   Circle,
   Rectangle,
   ZStack,
+  useColorScheme,
   type Color,
   type DynamicShapeStyle,
   type MeshGradient,
@@ -19,6 +20,7 @@ import { t, type MessageKey } from "../i18n"
 
 const KEY = "venera:theme"
 const CUSTOM_COLOR_KEY = "venera:theme:customColor"
+const APPEARANCE_KEY = "venera:appearance"
 
 /** 一個色盤的三個角色：底色、過渡、光。 */
 export interface Tone {
@@ -547,6 +549,14 @@ export function setPalette(id: string): void {
 
 export const subscribeTheme = bus.subscribe
 
+/** 重讀 Storage 裡的主題設定：Mini Hub 跟完整 App 是兩個實例，對方改的值要靠這個跟上。 */
+export function reloadThemeFromStorage(): void {
+  current = readStoredChoice()
+  appearance = parseAppearance(kv.get(APPEARANCE_KEY))
+  customCache = null
+  bus.emit()
+}
+
 /** 目前的組合（換構圖或顏色都會重新渲染）。 */
 export function useThemeChoice(): ThemeChoice {
   useSubscription(subscribeTheme)
@@ -556,6 +566,45 @@ export function useThemeChoice(): ThemeChoice {
 /** 目前的 tint（跟 `useThemeChoice` 同一條訂閱：切換主題時與背景一起換）。 */
 export function useTint(): Tint {
   return deriveTint(findPalette(useThemeChoice().palette))
+}
+
+// ── 深淺模式 ──────────────────────────────────────────────────────
+// 根層用覆蓋值強制深淺；算顏色的地方用 `useResolvedColorScheme`。
+// `useColorScheme()` 只跟系統外觀、讀不到 App 自己的覆蓋，強制深色時會拿到淺色。
+
+export type Appearance = "system" | "light" | "dark"
+
+export const APPEARANCES: Appearance[] = ["system", "light", "dark"]
+
+/** 壞值與舊版（沒存過）都當跟隨系統。 */
+export function parseAppearance(raw: unknown): Appearance {
+  return raw === "light" || raw === "dark" ? raw : "system"
+}
+
+let appearance: Appearance = parseAppearance(kv.get(APPEARANCE_KEY))
+
+export function appearanceSetting(): Appearance {
+  return appearance
+}
+
+export function setAppearance(next: Appearance): void {
+  if (next === appearance) return
+  appearance = next
+  kv.set(APPEARANCE_KEY, next)
+  bus.emit()
+}
+
+/** 根層要強制的深淺；跟隨系統回 `undefined`（不覆蓋）。 */
+export function useAppearanceOverride(): Mode | undefined {
+  useSubscription(subscribeTheme)
+  return appearance === "system" ? undefined : appearance
+}
+
+/** 實際生效的深淺：要把雙值顏色解成單一 `Color` 的地方一律用這個。 */
+export function useResolvedColorScheme(): Mode {
+  const system = useColorScheme()
+  useSubscription(subscribeTheme)
+  return appearance === "system" ? system : appearance
 }
 
 // 同一個「構圖 × 色盤」只算一次。每次 build 都要排 16 個控制點的 mesh，而每個頁面都掛一顆

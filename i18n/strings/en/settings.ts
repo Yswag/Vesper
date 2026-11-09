@@ -81,6 +81,9 @@ export default {
   },
 
   theme: {
+    appearanceGroup: "Appearance",
+    light: "Light",
+    dark: "Dark",
     paletteGroup: "Background · Color",
     compositionGroup: "Background · Composition",
     custom: "Custom",

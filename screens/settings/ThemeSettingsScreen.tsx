@@ -1,19 +1,24 @@
-// 外觀主題設定頁：構圖 × 顏色兩軸選擇。
+// 外觀主題設定頁：深淺模式，加上構圖 × 顏色兩軸選擇。
 // 由 SettingsScreen 導覽進入。
 
-import { Circle, ColorPicker, Divider, HStack, Image, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useRef, type Color, type ScrollViewProxy } from "scripting"
+import { Circle, ColorPicker, Divider, HStack, Image, Picker, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useRef, type Color, type ScrollViewProxy } from "scripting"
 
 import {
+  APPEARANCES,
   COMPOSITIONS,
   PALETTES,
   PaletteDot,
+  appearanceSetting,
   buildCustomPalette,
   getCustomColor,
+  parseAppearance,
+  setAppearance,
   setComposition,
   setCustomColor,
   setPalette,
   useThemeChoice,
   useTint,
+  type Appearance,
   type Composition,
   type Palette,
 } from "../../app/theme"
@@ -22,7 +27,13 @@ import { CardGroup, PageScroll } from "../../design/layout"
 import { rowSeparatorInset } from "../../design/rows"
 import { Footnote } from "../../design/text"
 import { dotStroke, rowPadding } from "../../design/tokens"
-import { subscribe as subscribeLocale, t } from "../../i18n"
+import { subscribe as subscribeLocale, t, type MessageKey } from "../../i18n"
+
+const APPEARANCE_LABELS: Record<Appearance, MessageKey> = {
+  system: "settings.followSystem",
+  light: "settings.theme.light",
+  dark: "settings.theme.dark",
+}
 
 export function ThemeSettingsScreen() {
   // 這一頁的每一個名字（構圖／色盤）都在字典裡：語言換了要跟著重繪。
@@ -41,6 +52,22 @@ export function ThemeSettingsScreen() {
 
   return (
     <PageScroll title={t("settings.root.appearance")}>
+      <CardGroup title={t("settings.theme.appearanceGroup")}>
+        <Picker
+          title={t("settings.theme.appearanceGroup")}
+          value={appearanceSetting()}
+          pickerStyle="segmented"
+          onChanged={(value: string | number) => setAppearance(parseAppearance(value))}
+          padding={rowPadding}
+        >
+          {APPEARANCES.map(item => (
+            <Text key={item} tag={item}>
+              {t(APPEARANCE_LABELS[item])}
+            </Text>
+          ))}
+        </Picker>
+      </CardGroup>
+
       <CardGroup title={t("settings.theme.paletteGroup")}>
         <ScrollViewReader>
           {proxy => {

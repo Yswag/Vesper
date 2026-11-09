@@ -7,10 +7,10 @@
 // 頭像與圖片都走既有的圖片管線（源多半需要 Referer），失敗時誠實顯示，不畫破圖。
 // 解析與快取都在 ComicLibrary.thumbnailPath 後面；這裡只認來源鍵與網址。
 
-import { HStack, Image, ProgressView, Spacer, Text, VStack, useEffect, useMemo, useState, useColorScheme, type Color, type StyledText } from "scripting"
+import { HStack, Image, ProgressView, Spacer, Text, VStack, useEffect, useMemo, useState, type Color, type StyledText } from "scripting"
 
 import { comicLibrary } from "../app/services"
-import { useTint } from "../app/theme"
+import { useResolvedColorScheme, useTint } from "../app/theme"
 import { radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
@@ -255,7 +255,7 @@ export function CommentContent({
 }) {
   const body = useMemo(() => parseComment(content), [content])
   const tint = useTint()
-  const scheme = useColorScheme()
+  const scheme = useResolvedColorScheme()
   const linkColor = String(tint.tint[scheme]) as Color
   const styled = useMemo(() => toStyledText(body.runs, color, linkColor), [body, color, linkColor])
 

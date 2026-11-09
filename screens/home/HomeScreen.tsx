@@ -1,6 +1,6 @@
 // 首頁：繼續閱讀進度與 Bangumi 推薦流。
 
-import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useColorScheme, useState, type Color, type VirtualNode } from "scripting"
+import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useState, type Color, type VirtualNode } from "scripting"
 
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
 import { CoverBadge } from "../../design/CoverBadge"
@@ -20,7 +20,7 @@ import { clearProgress, listProgress, type Progress } from "../../library/booksh
 import { bangumiCardSize, resumeCardSize, type CardSize } from "../shared/comicMetrics"
 import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { canOpenComicDetail, progressDetailDestination, ProgressMenuItems } from "../shared/progressActions"
-import { PageBackground, useTint } from "../../app/theme"
+import { PageBackground, useResolvedColorScheme, useTint } from "../../app/theme"
 import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
 import { HistoryScreen } from "./HistoryScreen"
@@ -44,7 +44,7 @@ function GlassDots({ children }: { children: VirtualNode }) {
 export function HomeScreen() {
   // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
-  const tintColor = String(tint.tint[useColorScheme()]) as Color
+  const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [topRank, setTopRank] = useState<BangumiSubject[]>([])
   const [trending, setTrending] = useState<BangumiSubject[]>([])
   const [following, setFollowing] = useState<BangumiSubject[]>([])

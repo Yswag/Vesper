@@ -79,6 +79,9 @@ export default {
   },
 
   theme: {
+    appearanceGroup: "深浅模式",
+    light: "浅色",
+    dark: "深色",
     paletteGroup: "底色 · 颜色",
     compositionGroup: "底色 · 构图",
     custom: "自定义",

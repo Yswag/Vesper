@@ -23,7 +23,6 @@ import {
   VStack,
   ZStack,
   useEffect,
-  useColorScheme,
   useMemo,
   useState,
   type Color,
@@ -62,7 +61,7 @@ import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { presentReader } from "./ResumeReaderScreen"
 import { type ChapterRef } from "./ReaderScreen"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
-import { PageBackground, useTint } from "../../app/theme"
+import { PageBackground, useResolvedColorScheme, useTint } from "../../app/theme"
 import { cardBackground, cardShape, capsule, fill, pageInsets, pageSpacing, palette, radius, rect, rowPadding } from "../../design/tokens"
 import { Card } from "../../design/layout"
 import { Tag } from "../../design/Tag"
@@ -283,7 +282,7 @@ export function ComicDetailScreen({
   const [pendingTitle, setPendingTitle] = useState(initialTitle)
   // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
-  const tintColor = String(tint.tint[useColorScheme()]) as Color
+  const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [detail, setDetail] = useState<ComicPage | null>(() => readDetailCache(initialSourceKey, initialComicId) ?? null)
   // 載入失敗的原因；null＝沒話要說（載入中也算，那一句在 render 時才算）。
   const [status, setStatus] = useState<string | null>(null)
