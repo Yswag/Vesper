@@ -33,7 +33,7 @@ export interface CoverImageProps {
   cornerRadius?: number
   /** 沒圖時挑佔位色盤並顯示首字（同標題永遠同色）。 */
   title?: string
-  /** 加上投影。只留在圖片這層：加到含角標的容器上，角標也會被投一份影。 */
+  /** 加上投影。只留在圖片這層：加到含角標的容器上，角標也會被投一份影。影是整格的形狀，fit 留白的圖不要開。 */
   lifted?: boolean
 }
 
@@ -228,5 +228,5 @@ export function CoverImage({
     </ZStack>
   )
 
-  return lifted ? <CoverShadow>{body}</CoverShadow> : body
+  return lifted ? <CoverShadow cornerRadius={cornerRadius}>{body}</CoverShadow> : body
 }
