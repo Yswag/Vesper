@@ -2,7 +2,6 @@
 
 import {
   Button,
-  Divider,
   GeometryReader,
   Group,
   HStack,
@@ -871,8 +870,6 @@ export function ComicDetailScreen({
                 </NavigationLink>
               ) : null}
             </HStack>
-
-            <Divider />
 
             {/* 3. 標籤膠囊群 (Pills)：約束在 maxWidth: "infinity" 內，防止大量 tags 撐破父容器 */}
             {allTags.length > 0 ? (
