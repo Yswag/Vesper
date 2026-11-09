@@ -37,6 +37,7 @@ export default {
   },
   sectionMenu: "切换分类，当前是{title}",
 
+  noMatch: "找不到“{query}”",
   cancel: "取消",
   save: "保存",
   add: "添加",

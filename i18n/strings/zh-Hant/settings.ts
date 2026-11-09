@@ -261,6 +261,7 @@ export default {
 
   /** 源倉庫（清單頁）。 */
   repos: {
+    searchPrompt: "搜尋所有倉庫的源",
     joined: "已加入 ({n})",
     refreshing: "正在更新 ({done}/{total})…",
     empty: "還沒有加入任何倉庫",

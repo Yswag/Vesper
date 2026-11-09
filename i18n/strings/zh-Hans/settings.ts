@@ -245,6 +245,7 @@ export default {
   },
 
   repos: {
+    searchPrompt: "搜索所有仓库的源",
     joined: "已添加 ({n})",
     refreshing: "正在更新 ({done}/{total})…",
     empty: "还没有添加任何仓库",

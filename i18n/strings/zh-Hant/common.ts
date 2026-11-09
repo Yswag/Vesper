@@ -60,6 +60,9 @@ export default {
   /** 沒有分頁列時那顆切換分類的存取標籤：`{title}` 是目前分類。 */
   sectionMenu: "切換分類，目前是{title}",
 
+  /** 本地篩選一筆都沒中；`{query}` 是使用者打的字。 */
+  noMatch: "找不到「{query}」",
+
   /** 按鈕與對話框的動詞。 */
   cancel: "取消",
   save: "儲存",

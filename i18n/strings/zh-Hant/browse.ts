@@ -10,6 +10,10 @@ export default {
   manageSources: "漫畫來源管理",
   /** `{n}` 是已啟用的來源數。 */
   enabledSources: "已啟用的來源 ({n})",
+  searchSources: "搜尋已啟用的源",
+  /** `{n}` 是篩選後的來源數。 */
+  searchResults: "結果 ({n})",
+  findInRepositories: "到源倉庫找",
   emptyTitle: "沒有已啟用的源",
   emptyDetail: "請到「設定 → 漫畫源」安裝並開啟漫畫來源；Aidoku 索引可在「源倉庫」加入。",
   pickSources: "去挑源",

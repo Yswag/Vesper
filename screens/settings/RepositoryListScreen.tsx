@@ -1,5 +1,6 @@
 // 源倉庫：加入與管理。加入只保存索引（index.json），**不會**自動安裝任何源；
 // 要裝哪個源進去倉庫裡逐筆挑（RepositoryDetailScreen）。
+// 放大鏡搜所有倉庫的本地索引快取（不連網），結果依倉庫分組、在列上直接安裝。
 
 import {
   Button,
@@ -18,13 +19,21 @@ import {
   useState,
 } from "scripting"
 
-import { Card, GroupHeader, PageScroll } from "../../design/layout"
+import { Card, CardGroup, GroupHeader, PageScroll } from "../../design/layout"
+import { matchesQuery, useToolbarSearch } from "../../design/search"
 import { Chevron } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { rowPadding, toneText } from "../../design/tokens"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { addRepository, refreshRepository } from "../../sources/registry"
+import {
+  addRepository,
+  installRepositoryEntry,
+  refreshRepository,
+  repositoryEntries,
+  subscribeSources,
+  type RepositoryEntryStatus,
+} from "../../sources/registry"
 import {
   listRepositories,
   removeRepository,
@@ -33,10 +42,15 @@ import {
   subscribeRepositories,
   type StoredRepository,
 } from "../../sources/repository"
-import { RepositoryDetailScreen } from "./RepositoryDetailScreen"
+import { actionLabel, confirmInstall, EntryRow, RepositoryDetailScreen } from "./RepositoryDetailScreen"
 
-export function RepositoryListScreen() {
-  useSubscription(subscribeLocale)
+/** `initialQuery`：從瀏覽頁「到源倉庫找」帶過來的關鍵字，一進頁就搜。 */
+export function RepositoryListScreen({ initialQuery = "" }: { initialQuery?: string } = {}) {
+  // 源一裝好，搜尋結果的安裝狀態要跟著變。
+  useSubscription(subscribeLocale, subscribeSources)
+  const search = useToolbarSearch(t("settings.repos.searchPrompt"), initialQuery)
+  /** 搜尋結果裡正在裝的那一列：`倉庫網址\nkey`。 */
+  const [busyKey, setBusyKey] = useState<string | null>(null)
   const [repositories, setRepositories] = useState<StoredRepository[]>([])
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
@@ -105,6 +119,27 @@ export function RepositoryListScreen() {
     }
   }
 
+  async function install(repository: StoredRepository, item: RepositoryEntryStatus) {
+    if (busyKey !== null || !(await confirmInstall(repository, item))) return
+    setBusyKey(`${repository.url}\n${item.entry.key}`)
+    setStatus({ kind: "loading", text: t("settings.repo.installing", { name: item.entry.name }) })
+    try {
+      const result = await installRepositoryEntry(repository.url, item.entry.key)
+      setStatus({
+        kind: "ready",
+        text: result.updated
+          ? t("settings.repo.updated", { name: result.name, version: result.version })
+          : t("settings.repo.installed", { name: result.name, version: result.version }),
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setStatus({ kind: "error", text: t("common.failed", { message }) })
+      await Dialog.alert({ title: item.entry.name, message })
+    } finally {
+      setBusyKey(null)
+    }
+  }
+
   async function handleRename(repository: StoredRepository) {
     const nextName = await Dialog.prompt({
       title: t("settings.repos.renameTitle"),
@@ -151,8 +186,45 @@ export function RepositoryListScreen() {
     />
   )
 
+  if (search.query) {
+    const groups = repositories
+      .map(repository => ({
+        repository,
+        items: repositoryEntries(repository.url).filter(item => matchesQuery(search.query, item.entry.name, item.entry.key)),
+      }))
+      .filter(group => group.items.length > 0)
+
+    return (
+      <PageScroll title={t("settings.shared.repository")} trailing={TrailingButton} search={search}>
+        {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
+        {groups.length === 0 ? (
+          <EmptyState variant="page" icon="magnifyingglass" title={t("common.noMatch", { query: search.query })} />
+        ) : (
+          groups.map(({ repository, items }) => (
+            <CardGroup key={repository.url} title={`${repository.name} (${items.length})`}>
+              {items.map((item, index) => {
+                const id = `${repository.url}\n${item.entry.key}`
+                return (
+                  <VStack key={`${item.entry.key}:${index}`} spacing={0}>
+                    {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
+                    <EntryRow
+                      status={item}
+                      busy={busyKey !== null}
+                      label={busyKey === id ? t("settings.repo.processing") : actionLabel(item)}
+                      onInstall={() => void install(repository, item)}
+                    />
+                  </VStack>
+                )
+              })}
+            </CardGroup>
+          ))
+        )}
+      </PageScroll>
+    )
+  }
+
   return (
-    <PageScroll title={t("settings.shared.repository")} trailing={TrailingButton} onRefresh={handleRefreshAll}>
+    <PageScroll title={t("settings.shared.repository")} trailing={TrailingButton} onRefresh={handleRefreshAll} search={search}>
       <VStack spacing={8} alignment="leading">
         <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
           <GroupHeader title={t("settings.repos.joined", { n: repositories.length })} />

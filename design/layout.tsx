@@ -2,10 +2,11 @@
 //
 // 全 App 的頁面都用同一套 padding 與間距，不然每一頁的內容邊界都會差幾點。
 
-import { HStack, RoundedRectangle, ScrollView, Spacer, Text, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
+import { HStack, RoundedRectangle, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
 import { scrollTopBar } from "./glass"
+import { searchToolbarItem, type ToolbarSearch } from "./search"
 import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpacing, radius, type StackChildren } from "./tokens"
 
 /**
@@ -20,6 +21,7 @@ export function PageScroll({
   leading,
   trailing,
   onRefresh,
+  search,
   zoomFrom,
   children,
 }: {
@@ -30,6 +32,8 @@ export function PageScroll({
   trailing?: () => VirtualNode | null
   /** 下拉重整回呼。 */
   onRefresh?: () => Promise<void> | void
+  /** 導覽列放大鏡搜尋（`useToolbarSearch`）；搜尋時下拉重整停用，免得兩者搶手勢。 */
+  search?: ToolbarSearch
   /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
   zoomFrom?: { sourceID: string; namespace: NamespaceID }
   children: StackChildren
@@ -43,20 +47,35 @@ export function PageScroll({
         spacing={0}
         navigationTitle={title}
         navigationBarTitleDisplayMode="inline"
+        searchable={search?.searchable}
         toolbar={
-          Leading || Trailing
-            ? {
-                topBarLeading: Leading ? <Leading /> : undefined,
-                topBarTrailing: Trailing ? <Trailing /> : undefined,
-              }
-            : undefined
+          search ? (
+            <Toolbar>
+              {Leading ? (
+                <ToolbarItem placement="topBarLeading">
+                  <Leading />
+                </ToolbarItem>
+              ) : null}
+              {searchToolbarItem(search)}
+              {Trailing ? (
+                <ToolbarItem placement="topBarTrailing">
+                  <Trailing />
+                </ToolbarItem>
+              ) : null}
+            </Toolbar>
+          ) : Leading || Trailing ? (
+            {
+              topBarLeading: Leading ? <Leading /> : undefined,
+              topBarTrailing: Trailing ? <Trailing /> : undefined,
+            }
+          ) : undefined
         }
       >
         <ScrollView
           axes="vertical"
           scrollContentBackground="hidden"
           {...scrollTopBar(null)}
-          refreshable={onRefresh ? () => Promise.resolve(onRefresh()) : undefined}
+          refreshable={onRefresh && !search?.active ? () => Promise.resolve(onRefresh()) : undefined}
         >
           <VStack spacing={pageSpacing} padding={pageInsets}>
             {children}

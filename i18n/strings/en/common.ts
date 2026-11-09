@@ -38,6 +38,7 @@ export default {
   },
   sectionMenu: "Switch section, currently {title}",
 
+  noMatch: "No match for “{query}”",
   cancel: "Cancel",
   save: "Save",
   add: "Add",

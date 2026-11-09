@@ -251,6 +251,7 @@ export default {
   },
 
   repos: {
+    searchPrompt: "Search all repositories",
     joined: "Added ({n})",
     refreshing: "Updating ({done}/{total})…",
     empty: "No repositories added yet",

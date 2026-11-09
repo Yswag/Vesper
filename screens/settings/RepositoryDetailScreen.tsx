@@ -51,16 +51,6 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     setLoaded(true)
   }
 
-  /** Aidoku 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
-  async function blockedByPro(): Promise<boolean> {
-    if (!repository || kindOf(repository) !== "aidoku-index" || hasPro()) return false
-    await Dialog.alert({
-      title: t("sources.aidoku.requiresPro"),
-      message: t("sources.aidoku.requiresProDetail"),
-    })
-    return true
-  }
-
   useEffect(() => {
     sync()
     const offRepositories = subscribeRepositories(sync)
@@ -73,16 +63,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
   async function install(item: RepositoryEntryStatus) {
     const { entry } = item
-    if (await blockedByPro()) return
-    if (item.installed && !item.fromThisRepo) {
-      const confirmed = await Dialog.confirm({
-        title: t("settings.repo.replaceTitle", { name: entry.name }),
-        message: t("settings.repo.replaceMessage"),
-        confirmLabel: t("settings.repo.replace"),
-        cancelLabel: t("common.cancel"),
-      })
-      if (!confirmed) return
-    }
+    if (!repository || !(await confirmInstall(repository, item))) return
     setBusyKey(entry.key)
     setStatus({ kind: "loading", text: t("settings.repo.installing", { name: entry.name }) })
     try {
@@ -121,7 +102,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   /** 一鍵安裝：掃描衝突、彈窗確認、循序/受控安裝 */
   async function installAll() {
     if (entries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
-    if (await blockedByPro()) return
+    if (!repository || (await blockedByPro(repository))) return
 
     // 1. 同倉重複去重：同一倉庫內同 key 只保留第一筆
     const seenInRepo = new Set<string>()
@@ -378,7 +359,29 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   )
 }
 
-function actionLabel(status: RepositoryEntryStatus): string {
+/** Aidoku 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
+async function blockedByPro(repository: StoredRepository): Promise<boolean> {
+  if (kindOf(repository) !== "aidoku-index" || hasPro()) return false
+  await Dialog.alert({
+    title: t("sources.aidoku.requiresPro"),
+    message: t("sources.aidoku.requiresProDetail"),
+  })
+  return true
+}
+
+/** 單筆安裝前的關卡：Pro 限制、從別處裝的要確認取代。回 false 就不裝。 */
+export async function confirmInstall(repository: StoredRepository, item: RepositoryEntryStatus): Promise<boolean> {
+  if (await blockedByPro(repository)) return false
+  if (!item.installed || item.fromThisRepo) return true
+  return await Dialog.confirm({
+    title: t("settings.repo.replaceTitle", { name: item.entry.name }),
+    message: t("settings.repo.replaceMessage"),
+    confirmLabel: t("settings.repo.replace"),
+    cancelLabel: t("common.cancel"),
+  })
+}
+
+export function actionLabel(status: RepositoryEntryStatus): string {
   if (!status.installed) return t("settings.shared.install")
   if (!status.fromThisRepo) return t("settings.repo.replace")
   if (status.updateAvailable) return t("settings.repo.updateAvailable", { version: status.entry.version })
@@ -391,7 +394,7 @@ function originName(origin: string | null): string {
   return listRepositories().find(repository => isFromRepository(origin, repository.url))?.name ?? repositoryNameFor(origin)
 }
 
-function EntryRow({
+export function EntryRow({
   status,
   busy,
   label,
