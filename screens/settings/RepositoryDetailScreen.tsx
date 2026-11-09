@@ -22,7 +22,15 @@ import {
   subscribeSources,
   type RepositoryEntryStatus,
 } from "../../sources/registry"
-import { getRepository, kindOf, subscribeRepositories, type StoredRepository } from "../../sources/repository"
+import {
+  getRepository,
+  isFromRepository,
+  kindOf,
+  listRepositories,
+  repositoryNameFor,
+  subscribeRepositories,
+  type StoredRepository,
+} from "../../sources/repository"
 
 export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: string }) {
   useSubscription(subscribeLocale)
@@ -63,8 +71,18 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     }
   }, [repositoryUrl])
 
-  async function install(entry: CatalogEntry) {
+  async function install(item: RepositoryEntryStatus) {
+    const { entry } = item
     if (await blockedByPro()) return
+    if (item.installed && !item.fromThisRepo) {
+      const confirmed = await Dialog.confirm({
+        title: t("settings.repo.replaceTitle", { name: entry.name }),
+        message: t("settings.repo.replaceMessage"),
+        confirmLabel: t("settings.repo.replace"),
+        cancelLabel: t("common.cancel"),
+      })
+      if (!confirmed) return
+    }
     setBusyKey(entry.key)
     setStatus({ kind: "loading", text: t("settings.repo.installing", { name: entry.name }) })
     try {
@@ -118,23 +136,14 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     // 2. 本地已安裝狀態分流
     // - newOrUpdate: 全新未安裝，或同倉庫來源且有新版
     // - conflict: 本地已安裝，但來源不是本倉庫（來自其他倉庫或手動匯入）
-    const normRepoUrl = repositoryUrl.trim().replace(/\/+$/, "").toLowerCase()
     const newOrUpdate: CatalogEntry[] = []
     const conflict: CatalogEntry[] = []
 
     for (const item of uniqueEntries) {
-      if (!item.installed) {
+      if (!item.installed || item.updateAvailable) {
         newOrUpdate.push(item.entry)
-      } else {
-        const origin = (item.installed.stored.origin ?? "").trim().replace(/\/+$/, "").toLowerCase()
-        const isFromThisRepo = origin === normRepoUrl
-        if (isFromThisRepo) {
-          if (item.updateAvailable) {
-            newOrUpdate.push(item.entry)
-          }
-        } else {
-          conflict.push(item.entry)
-        }
+      } else if (!item.fromThisRepo) {
+        conflict.push(item.entry)
       }
     }
 
@@ -268,16 +277,10 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     )
   }
 
-  const normRepoUrl = repositoryUrl.trim().replace(/\/+$/, "").toLowerCase()
   const hasUpdatable = entries.some(item => item.updateAvailable)
-  // 本倉已全安裝且無更新：每一筆都存在且來源為本倉，且無可更新版本
+  // 本倉已全安裝且無更新：每一筆都是從本倉裝的，且無可更新版本
   const allInstalledFromThisRepo =
-    entries.length > 0 &&
-    entries.every(item => {
-      if (!item.installed) return false
-      const origin = (item.installed.stored.origin ?? "").trim().replace(/\/+$/, "").toLowerCase()
-      return origin === normRepoUrl && !item.updateAvailable
-    })
+    entries.length > 0 && entries.every(item => item.fromThisRepo && !item.updateAvailable)
   const isActionDisabled = busy || busyKey !== null || batchProgress !== null || allInstalledFromThisRepo
 
   return (
@@ -362,7 +365,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
               busy={busy || busyKey !== null}
               label={busyKey === item.entry.key ? t("settings.repo.processing") : actionLabel(item)}
               onInstall={() => {
-                if (busyKey === null && !busy) void install(item.entry)
+                if (busyKey === null && !busy) void install(item)
               }}
             />
           </VStack>
@@ -377,8 +380,15 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
 function actionLabel(status: RepositoryEntryStatus): string {
   if (!status.installed) return t("settings.shared.install")
+  if (!status.fromThisRepo) return t("settings.repo.replace")
   if (status.updateAvailable) return t("settings.repo.updateAvailable", { version: status.entry.version })
   return t("settings.shared.reinstall")
+}
+
+/** 已安裝那份的來源：已加入的倉庫用它的名稱，沒加入的從網址推，手動貼上的另寫。 */
+function originName(origin: string | null): string {
+  if (!origin) return t("settings.repo.manualOrigin")
+  return listRepositories().find(repository => isFromRepository(origin, repository.url))?.name ?? repositoryNameFor(origin)
 }
 
 function EntryRow({
@@ -400,7 +410,7 @@ function EntryRow({
     languages.length > 0 ? languages.join(" / ") : "",
     status.entry.key,
     `v${status.entry.version}`,
-    installedVersion ? t("settings.repo.installedVersion", { version: installedVersion }) : "",
+    installedVersion && status.fromThisRepo ? t("settings.repo.installedVersion", { version: installedVersion }) : "",
   ]
     .filter(Boolean)
     .join(" · ")
@@ -438,6 +448,14 @@ function EntryRow({
         <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
           {metaLine}
         </Text>
+        {status.installed && !status.fromThisRepo ? (
+          <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
+            {t("settings.repo.installedFrom", {
+              version: installedVersion ?? "",
+              origin: originName(status.installed.stored.origin),
+            })}
+          </Text>
+        ) : null}
       </VStack>
       <Spacer />
       <Button

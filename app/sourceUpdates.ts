@@ -17,7 +17,7 @@ import {
   type InstallResult,
   type InstalledSource,
 } from "../sources/registry"
-import { listRepositories, subscribeRepositories, type StoredRepository } from "../sources/repository"
+import { listRepositories, repositoryKey, subscribeRepositories, type StoredRepository } from "../sources/repository"
 import { offline } from "./updates"
 
 /** 倉庫索引多久重抓一次。 */
@@ -31,11 +31,6 @@ export interface SourceUpdate {
   from: string
   /** 倉庫裡的版本。 */
   to: string
-}
-
-/** 來源倉庫的比對鍵：忽略前後空白、結尾斜線與大小寫。 */
-export function repositoryKey(url: string): string {
-  return url.trim().replace(/\/+$/, "").toLowerCase()
 }
 
 function installedVersion(source: InstalledSource): string {

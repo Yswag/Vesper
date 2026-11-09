@@ -542,7 +542,9 @@ export interface RepositoryEntryStatus {
   entry: CatalogEntry
   /** 已經裝了同 key 的源；沒有就是未安裝。 */
   installed?: InstalledSource
-  /** 倉庫的版本比已安裝的新。 */
+  /** 已安裝的那份是從這個倉庫裝的；否則安裝就是用這個倉庫的版本取代。 */
+  fromThisRepo: boolean
+  /** 從這個倉庫裝的，而且倉庫的版本比較新。 */
   updateAvailable: boolean
 }
 
@@ -552,10 +554,12 @@ export function repositoryEntries(repositoryUrl: string): RepositoryEntryStatus[
   return repository.entries.map(entry => {
     const installed = findSource(entry.key)
     const installedVersion = installed?.meta?.version ?? installed?.stored.version
+    const fromThisRepo = Boolean(installed && repositoryStore.isFromRepository(installed.stored.origin, repository.url))
     return {
       entry,
       installed,
-      updateAvailable: Boolean(installedVersion && compareVersion(entry.version, installedVersion) > 0),
+      fromThisRepo,
+      updateAvailable: fromThisRepo && Boolean(installedVersion && compareVersion(entry.version, installedVersion) > 0),
     }
   })
 }

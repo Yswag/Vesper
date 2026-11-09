@@ -33,6 +33,24 @@ export interface StoredRepository {
   error?: string
 }
 
+/**
+ * 倉庫網址的比對鍵：同一份索引的不同寫法要對得上——前後空白、大小寫、
+ * 結尾的 `index.json`／`index.min.json` 與斜線，以及 GitHub raw 的 `refs/heads/`。
+ */
+export function repositoryKey(url: string): string {
+  return url
+    .trim()
+    .toLowerCase()
+    .replace(/^(https?:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/)refs\/heads\//, "$1")
+    .replace(/\/index(\.min)?\.json$/, "")
+    .replace(/\/+$/, "")
+}
+
+/** 這個源是不是從這個倉庫裝的。 */
+export function isFromRepository(origin: string | null, repositoryUrl: string): boolean {
+  return origin !== null && repositoryKey(origin) === repositoryKey(repositoryUrl)
+}
+
 interface RepositoryFile {
   version: number
   repositories: StoredRepository[]
