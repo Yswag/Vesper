@@ -12,6 +12,7 @@ import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../.
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { SkeletonCardGroups } from "../../design/skeleton"
 import { toneText } from "../../design/tokens"
+import { hostFeedbackCount } from "../../app/hostUI"
 import { useTint } from "../../app/theme"
 import type { SettingSpec } from "../../engine/loader"
 import { useSubscription } from "../../app/useSubscription"
@@ -99,16 +100,17 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setStatus({ kind: "ready", text: t("settings.sourceSettings.resetDone") })
   }
 
+  // 源自己用 showMessage／showDialog 報了結果就不再疊一層；沒報才用橫幅補上。
   async function runCallback(id: string, label: string) {
     setRunningId(id)
     setStatus({ kind: "loading", text: t("common.inProgress", { label }) })
+    const before = hostFeedbackCount()
     try {
       await runSourceSettingCallback(sourceKey, id)
-      setStatus({ kind: "ready", text: t("settings.shared.done", { label }) })
+      setStatus(hostFeedbackCount() > before ? null : { kind: "ready", text: t("settings.shared.done", { label }) })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      setStatus({ kind: "error", text: t("common.failed", { message }) })
-      await Dialog.alert({ title: label, message })
+      setStatus(hostFeedbackCount() > before ? null : { kind: "error", text: t("common.failed", { message }) })
     } finally {
       setRunningId(null)
     }

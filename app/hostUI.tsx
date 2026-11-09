@@ -16,10 +16,21 @@ interface DialogAction {
   style?: unknown
 }
 
+let feedbackCount = 0
+
+/** 源至今呼叫 showMessage／showDialog 的次數；前後相減就知道一段呼叫有沒有自己報結果。 */
+export function hostFeedbackCount(): number {
+  return feedbackCount
+}
+
 export const hostUI: HostUI = {
-  showMessage: (message: string) => showToast(message),
+  showMessage: (message: string) => {
+    feedbackCount++
+    showToast(message)
+  },
 
   showDialog: async (title: string, content: string, actions: unknown[]) => {
+    feedbackCount++
     const items = (Array.isArray(actions) ? actions : [])
       .map(action => action as DialogAction)
       .filter(action => action && typeof action.text === "string")
