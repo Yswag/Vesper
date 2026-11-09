@@ -40,7 +40,7 @@ import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { describeError } from "../../engine/errors"
 import { log } from "../../engine/log"
-import { buildPageSlots, isWideAspect, rightHalfFirst } from "../../engine/pageslots"
+import { buildChainedSlots, chainSlotId, isWideAspect, rightHalfFirst, type ChainedChapter } from "../../engine/pageslots"
 import { hasPro } from "../../engine/pro"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { ChapterImage } from "../../components/ChapterImage"
@@ -86,9 +86,9 @@ interface FollowupChapter {
   session: ChapterSession
 }
 
-/** 連續預加載時的捲動目標：話 id 裡的冒號會被編碼，所以用最後一個冒號切頁碼。 */
+/** 連續模式一頁的捲動 id（＝不切時的格 id）：話 id 裡的冒號會被編碼，所以用最後一個冒號切頁碼。 */
 function chainKey(epId: string, page: number): string {
-  return `${encodeURIComponent(epId)}:${page}`
+  return chainSlotId(epId, String(page))
 }
 
 function parseChainKey(id: string): { epId: string; page: number } | null {
@@ -407,13 +407,20 @@ function ReaderContent({
   const anchorSlotId = useRef<string | null>(null)
   /** 立刻捲到某一格（翻頁、拖曳列；包在 withAnimation 裡就有動畫）。 */
   function scrollToSlot(slot: number) {
-    const id = slotsRef.current.slots[slot]?.id ?? String(slot)
+    const id = slotsRef.current.slots[slot]?.id
+    if (id === undefined) return
     anchorSlotId.current = id
     scrollProxy.current?.scrollTo(id, settings.direction === "ttb" ? "top" : "leading")
   }
-  /** 捲到某一頁的第一格。 */
+  /** 捲到正在看的那一話某一頁的第一格。 */
   function scrollToPage(page: number) {
-    scrollToSlot(slotsRef.current.firstSlotOf(page))
+    scrollToSlot(focusSlotOf(page))
+  }
+  /** 正在看的那一話某一頁的第一格；那話不在格清單裡就退回這條捲動的第一話。 */
+  function focusSlotOf(page: number): number {
+    const slots = slotsRef.current
+    const slot = slots.firstSlotOf(focusEpRef.current, page)
+    return slot >= 0 ? slot : Math.max(slots.firstSlotOf(currentEpId, page), 0)
   }
   // ScrollView 重建完（開章、換模式／方向）就執行等著的跳頁；頁面排出來（有 session、沒有狀態遮罩）才捲。
   useEffect(() => {
@@ -580,12 +587,11 @@ function ReaderContent({
   }, [])
   // 拖曳列的上界＝最後一頁索引（章末提示卡不算一頁）。
   const lastPage = Math.max(pageCount - 1, 0)
-  const clampPage = (value: number) => Math.min(Math.max(Math.round(value), 0), lastPage)
 
 
   /** 放開拖曳列：捲到目標頁，並擋掉捲動落定前的過期可見集合回報。 */
   function commitScrub(page: number) {
-    if (chainOnRef.current) {
+    if (chainOnRef.current && !paginated) {
       const focused = followupsRef.current.find(item => item.epId === focusEpRef.current)
       const count = focused?.session.pageCount ?? session?.pageCount ?? 0
       const last = Math.max(count - 1, 0)
@@ -599,11 +605,15 @@ function ReaderContent({
       })
       return
     }
-    const target = clampPage(page)
-    if (target === clampPage(leadingPageRef.current ?? 0)) return
+    // 接章時拖曳列只管正在看的那一話。
+    const focused = chainOnRef.current ? followupsRef.current.find(item => item.epId === focusEpRef.current) : undefined
+    const last = Math.max((focused?.session.pageCount ?? pageCount) - 1, 0)
+    const clamp = (value: number) => Math.min(Math.max(Math.round(value), 0), last)
+    const target = clamp(page)
+    if (target === clamp(leadingPageRef.current ?? 0)) return
     releaseZoom()
     // 閘門記格號（可見回報與位移換算都是格）。
-    const slot = slotsRef.current.firstSlotOf(target)
+    const slot = focusSlotOf(target)
     scrubTarget.current = slot
     setLeadingPage(target)
     void withAnimation(TURN_ANIM, () => scrollToSlot(slot))
@@ -641,8 +651,11 @@ function ReaderContent({
       focusEpRef.current = id
       setFocusEpId(id)
       setLeadingPage(0)
-      const anchor = settings.direction === "ttb" ? "top" : "leading"
-      scrollProxy.current?.scrollTo(chainKey(id, 0), anchor)
+      const slot = slotsRef.current.firstSlotOf(id, 0)
+      if (slot < 0) return
+      releaseZoom()
+      if (paginated) holdSlot(slot)
+      scrollToSlot(slot)
       return
     }
     if (id === currentEpId) return
@@ -695,22 +708,27 @@ function ReaderContent({
   /** 畫面上的頁（圖片索引）；連續模式回 null。 */
   function displayedPage(): number | null {
     const slot = displayedSlot()
-    return slot === null ? null : slotsRef.current.pageOf(slot)
+    return slot === null ? null : slotsRef.current.locate(slot)?.page ?? null
   }
 
-  /** 寫領先格：記住格 id（插格補位用），頁碼變了才寫訊號。 */
+  /** 寫領先格：記住格 id（插格補位用），跨到接上的章就換正在看的話，頁碼變了才寫訊號。 */
   function setLeadingSlot(slot: number) {
     const slots = slotsRef.current
+    const hit = slots.locate(slot)
+    if (!hit) return
     anchorSlotId.current = slots.slots[slot]?.id ?? null
-    const page = slots.pageOf(slot)
-    if (leadingPageRef.current !== page) setLeadingPage(page)
+    if (focusEpRef.current !== hit.epId) {
+      focusEpRef.current = hit.epId
+      setFocusEpId(hit.epId)
+    }
+    if (leadingPageRef.current !== hit.page) setLeadingPage(hit.page)
   }
 
   /** 要看哪一格來算目標：自己剛下的目標（動畫還在飛）／還原中的目標／畫面上的實際位置。 */
   function turnBase(): number | null {
     const commanded = turnTarget.current ?? scrubTarget.current
     if (commanded !== null) return commanded
-    const leading = leadingPageRef.current === null ? null : slotsRef.current.firstSlotOf(leadingPageRef.current)
+    const leading = leadingPageRef.current === null ? null : focusSlotOf(leadingPageRef.current)
     if (!restored.current) return leading
     return displayedSlot() ?? leading
   }
@@ -793,8 +811,8 @@ function ReaderContent({
   const vertical = settings.direction === "ttb"
   const rtl = settings.direction === "rtl"
   const paginated = settings.mode === "gallery"
-  // 連續模式才把下一集接在同一條捲動後面。畫廊仍是一頁一頁。
-  const chainOn = settings.seamlessNext && !paginated
+  // 把下一集接在同一條捲動後面：連續模式接頁、畫廊接格。
+  const chainOn = settings.seamlessNext
   chainOnRef.current = chainOn
   const focusEntry = chainOn ? followups.find(item => item.epId === focusEpId) : undefined
   const focusSession = focusEntry?.session ?? session
@@ -907,7 +925,7 @@ function ReaderContent({
     }
   }, [chainOn, currentEpId])
 
-  // 畫廊切寬圖：格清單（一格一畫面）。沒開或不是畫廊時一張一格，格號＝頁碼。
+  // 格清單（一格一畫面）：這條捲動的第一話＋接上的章。畫廊切寬圖時寬圖佔兩格，其他一張一格。
   const splitActive = paginated && settings.splitWide
   const splitActiveRef = useRef(splitActive)
   splitActiveRef.current = splitActive
@@ -915,22 +933,38 @@ function ReaderContent({
   const [wideVersion, setWideVersion] = useState(0)
   useEffect(() => {
     if (!session) return
-    const unsubscribe = session.subscribeAspects((_, aspect) => {
-      if (splitActiveRef.current && isWideAspect(aspect)) setWideVersion(version => version + 1)
-    })
+    const sessions = [session, ...followups.map(item => item.session)]
+    const unsubscribes = sessions.map(item =>
+      item.subscribeAspects((_, aspect) => {
+        if (splitActiveRef.current && isWideAspect(aspect)) setWideVersion(version => version + 1)
+      })
+    )
     // 掛上訂閱前已經量到的寬圖也要算進來。
     if (splitActiveRef.current) setWideVersion(version => version + 1)
-    return unsubscribe
-  }, [session])
-  const pageSlots = useMemo(
-    () =>
-      buildPageSlots(
-        pageCount,
-        splitActive && session ? page => isWideAspect(session.aspectOf(page)) : null,
-        rightHalfFirst(settings.direction, settings.splitSwap)
-      ),
-    [session, pageCount, splitActive, settings.direction, settings.splitSwap, wideVersion]
-  )
+    return () => {
+      for (const unsubscribe of unsubscribes) unsubscribe()
+    }
+  }, [session, followups])
+  const pageSlots = useMemo(() => {
+    const wideOf = (owner: ChapterSession) =>
+      splitActive ? (page: number) => isWideAspect(owner.aspectOf(page)) : null
+    const list: ChainedChapter[] = [
+      { epId: currentEpId, pageCount, isWide: session ? wideOf(session) : null },
+    ]
+    if (chainOn) {
+      for (const item of followups) {
+        list.push({ epId: item.epId, pageCount: item.session.pageCount, isWide: wideOf(item.session) })
+      }
+    }
+    return buildChainedSlots(list, rightHalfFirst(settings.direction, settings.splitSwap))
+  }, [session, currentEpId, pageCount, chainOn, followups, splitActive, settings.direction, settings.splitSwap, wideVersion])
+  // 格所屬的那一話的 session。
+  const sessionOf = useMemo(() => {
+    const map = new Map<string, ChapterSession>()
+    if (session) map.set(currentEpId, session)
+    for (const item of followups) map.set(item.epId, item.session)
+    return map
+  }, [session, currentEpId, followups])
   const slotsRef = useRef(pageSlots)
   slotsRef.current = pageSlots
 
@@ -945,7 +979,11 @@ function ReaderContent({
     if (from < 0) return
     // 這一頁自己被切開（或取消切割）時 id 會變：退回這一頁的第一格。
     let to = pageSlots.indexOf(anchor)
-    if (to < 0) to = pageSlots.firstSlotOf(before.pageOf(from))
+    if (to < 0) {
+      const hit = before.locate(from)
+      to = hit ? pageSlots.firstSlotOf(hit.epId, hit.page) : -1
+    }
+    if (to < 0) return
     const id = pageSlots.slots[to]?.id ?? null
     anchorSlotId.current = id
     if (to === from || id === null) return
@@ -1029,28 +1067,32 @@ function ReaderContent({
     () =>
       session
         ? paginated
-          ? pageSlots.slots.map((slot, i) => (
-              <ZStack key={slot.id} tag={i} frame={{ width: pageSize.width, height: pageSize.height }}>
-                <ZoomableView
-                  contentSize={pageSize}
-                  box={pageSize}
-                  resetToken={`${currentEpId}:${zoomEpoch}`}
-                  onSingleTap={onPageTap}
-                  onZoomChange={handleZoomChange}
-                >
-                  <ChapterImage
-                    key={`${slot.id}:${renderGeneration}`}
-                    session={session}
-                    index={slot.page}
-                    half={slot.half}
-                    // 可縮放：超分照放大後的框算，放大時才有細節。
-                    size={{ width: pageSize.width, height: pageSize.height, zoom: MAX_ZOOM }}
-                  />
-                </ZoomableView>
-              </ZStack>
-            ))
+          ? pageSlots.slots.map((slot, i) => {
+              const owner = sessionOf.get(slot.epId)
+              if (!owner) return null
+              return (
+                <ZStack key={slot.id} tag={i} frame={{ width: pageSize.width, height: pageSize.height }}>
+                  <ZoomableView
+                    contentSize={pageSize}
+                    box={pageSize}
+                    resetToken={`${slot.epId}:${zoomEpoch}`}
+                    onSingleTap={onPageTap}
+                    onZoomChange={handleZoomChange}
+                  >
+                    <ChapterImage
+                      key={`${slot.id}:${renderGeneration}`}
+                      session={owner}
+                      index={slot.page}
+                      half={slot.half}
+                      // 可縮放：超分照放大後的框算，放大時才有細節。
+                      size={{ width: pageSize.width, height: pageSize.height, zoom: MAX_ZOOM }}
+                    />
+                  </ZoomableView>
+                </ZStack>
+              )
+            })
           : Array.from({ length: pageCount }, (_, i) => {
-              const id = chainOn ? chainKey(currentEpId, i) : String(i)
+              const id = chainKey(currentEpId, i)
               if (!vertical) {
                 return (
                   <HStack key={id} tag={i} frame={{ height: pageSize.height }} alignment="center">
@@ -1076,12 +1118,12 @@ function ReaderContent({
               )
             })
         : [],
-    [session, pageCount, pageSlots, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration, zoomEpoch, chainOn],
+    [session, sessionOf, pageCount, pageSlots, paginated, vertical, currentEpId, pageSize.width, pageSize.height, renderGeneration, zoomEpoch],
   )
 
   const followupPages = useMemo(
     () =>
-      chainOn
+      chainOn && !paginated
         ? followups.flatMap(item =>
             Array.from({ length: item.session.pageCount }, (_, i) => {
               const id = chainKey(item.epId, i)
@@ -1110,7 +1152,7 @@ function ReaderContent({
             })
           )
         : [],
-    [chainOn, followups, vertical, pageSize.width, pageSize.height, renderGeneration]
+    [chainOn, paginated, followups, vertical, pageSize.width, pageSize.height, renderGeneration]
   )
 
   // 章末提示：有下一話時所有模式皆走邊緣 overscroll 拉動進入下一話；僅全書最後一話時保留「已是全書最後一話」
@@ -1231,7 +1273,8 @@ function ReaderContent({
                   threshold: 0.0,
                   onChanged: ids => {
                     if (!restored.current) return
-                    if (chainOn) {
+                    // 連續接章沒有翻頁閘門，依話序找領先頁；畫廊接章走下面的格號（格號已經跨話排序）。
+                    if (chainOn && !paginated) {
                       const visible = (ids as string[])
                         .map(parseChainKey)
                         .filter((item): item is { epId: string; page: number } => item !== null)
@@ -1263,7 +1306,7 @@ function ReaderContent({
                       if (leadingPageRef.current !== best.page) setLeadingPage(best.page)
                       return
                     }
-                    // id 是格 id（不切時就是頁碼字串）；章末卡找不到格，略過。
+                    // id 是格 id；章末卡找不到格，略過。
                     const indexes = (ids as string[])
                       .map(value => slotsRef.current.indexOf(value))
                       .filter(value => value >= 0)

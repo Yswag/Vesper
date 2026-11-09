@@ -60,6 +60,70 @@ export function buildPageSlots(
   }
 }
 
+/** 接章後的一格：多帶它屬於哪一話。 */
+export interface ChainedSlot extends PageSlot {
+  epId: string
+}
+
+export interface ChainedChapter {
+  epId: string
+  pageCount: number
+  /** 同 `buildPageSlots`：null＝不切。 */
+  isWide: ((page: number) => boolean) | null
+}
+
+export interface ChainedSlots {
+  slots: ChainedSlot[]
+  /** 這一話這一頁的第一格；頁越界夾到這一話兩端，話不在串裡或沒有頁回 -1。 */
+  firstSlotOf(epId: string, page: number): number
+  /** 這一格是哪一話哪一頁；越界夾到兩端，空串回 null。 */
+  locate(slot: number): { epId: string; page: number } | null
+  /** 依 id 找格；找不到回 -1。 */
+  indexOf(id: string): number
+  /** 這一話佔的格號 `[start, end)`；不在串裡回 null。 */
+  rangeOf(epId: string): { start: number; end: number } | null
+}
+
+/** 接章格的 id：話 id 編碼後接冒號與章內格 id（`"12"`／`"12L"`），話 id 裡的冒號已被編碼。 */
+export function chainSlotId(epId: string, localId: string): string {
+  return `${encodeURIComponent(epId)}:${localId}`
+}
+
+/**
+ * 把幾話的格依序接成一條。每話各自排格，id 帶話 id，所以任何一話插格都不會動到別話的 id。
+ * 重複的話只收第一次。
+ */
+export function buildChainedSlots(chapters: ChainedChapter[], rightFirst: boolean): ChainedSlots {
+  const slots: ChainedSlot[] = []
+  const ranges = new Map<string, { start: number; end: number; local: PageSlots }>()
+  for (const chapter of chapters) {
+    if (ranges.has(chapter.epId)) continue
+    const local = buildPageSlots(chapter.pageCount, chapter.isWide, rightFirst)
+    const start = slots.length
+    for (const slot of local.slots) slots.push({ ...slot, id: chainSlotId(chapter.epId, slot.id), epId: chapter.epId })
+    ranges.set(chapter.epId, { start, end: slots.length, local })
+  }
+  const byId = new Map(slots.map((slot, index) => [slot.id, index]))
+  return {
+    slots,
+    firstSlotOf: (epId, page) => {
+      const range = ranges.get(epId)
+      if (!range || range.end === range.start) return -1
+      return range.start + range.local.firstSlotOf(page)
+    },
+    locate: slot => {
+      if (slots.length === 0) return null
+      const hit = slots[Math.min(Math.max(Math.round(slot), 0), slots.length - 1)]
+      return { epId: hit.epId, page: hit.page }
+    },
+    indexOf: id => byId.get(id) ?? -1,
+    rangeOf: epId => {
+      const range = ranges.get(epId)
+      return range ? { start: range.start, end: range.end } : null
+    },
+  }
+}
+
 /** 超分的來源範圍（像素）：整張不帶 x/y；半張從中線切，奇數寬多的一列歸右半。 */
 export function halfRect(
   width: number,
