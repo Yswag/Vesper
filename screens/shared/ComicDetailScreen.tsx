@@ -12,7 +12,6 @@ import {
   NamespaceReader,
   Navigation,
   NavigationLink,
-  NavigationStack,
   ScrollView,
   Section,
   Spacer,
@@ -60,7 +59,7 @@ import { heroCoverSize, recommendCardSize } from "./comicMetrics"
 import { presentReader } from "./ResumeReaderScreen"
 import { type ChapterRef } from "./ReaderScreen"
 import { groupChapters, resolveInitialGroupName, type ChapterGroup } from "./chapterGrouping"
-import { PageBackground, useResolvedColorScheme, useTint } from "../../app/theme"
+import { PageBackground, ThemedNavigationStack, useResolvedColorScheme, useTint } from "../../app/theme"
 import { cardBackground, cardShape, capsule, fill, pageInsets, pageSpacing, palette, radius, rect, rowPadding } from "../../design/tokens"
 import { Card } from "../../design/layout"
 import { Tag } from "../../design/Tag"
@@ -459,7 +458,7 @@ export function ComicDetailScreen({
   async function openSwitch() {
     await Navigation.present({
       element: (
-        <NavigationStack>
+        <ThemedNavigationStack>
           <SourceSwitchSheet
             sourceKey={sourceKey}
             title={comicTitle}
@@ -470,7 +469,7 @@ export function ComicDetailScreen({
               setActive(ref)
             }}
           />
-        </NavigationStack>
+        </ThemedNavigationStack>
       ),
       modalPresentationStyle: "pageSheet",
     })

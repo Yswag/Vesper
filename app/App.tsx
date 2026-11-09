@@ -19,7 +19,7 @@
 
 import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
 
-import { PageBackground, useAppearanceOverride, useTint } from "./theme"
+import { PageBackground, ThemedNavigationStack, useAppearanceOverride, useTint } from "./theme"
 import { liquidGlass } from "../design/glass"
 import { SECTIONS } from "./sections"
 import { useSubscription } from "./useSubscription"
@@ -158,9 +158,9 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
       // 加入只快取索引，裝哪個源要在詳情頁挑。
       await Navigation.present({
         element: (
-          <NavigationStack>
+          <ThemedNavigationStack>
             <RepositoryDetailScreen repositoryUrl={repository.url} />
-          </NavigationStack>
+          </ThemedNavigationStack>
         ),
         modalPresentationStyle: "pageSheet",
       })

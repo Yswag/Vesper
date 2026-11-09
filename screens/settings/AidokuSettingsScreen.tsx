@@ -10,9 +10,10 @@
 // 值只寫使用者改過的 key（`installed.json` 的 `settings`），沒改的就是 schema 預設；
 // 改完會讓源下次呼叫時重載（見 `sources/aidoku.ts` 的 `setSetting`）。
 
-import { Divider, HStack, Navigation, NavigationLink, NavigationStack, Slider, Spacer, Stepper, Text, VStack, useEffect, useState } from "scripting"
+import { Divider, HStack, Navigation, NavigationLink, Slider, Spacer, Stepper, Text, VStack, useEffect, useState } from "scripting"
 
 import { languageName } from "../../app/languageNames"
+import { ThemedNavigationStack } from "../../app/theme"
 import { Card, CardGroup, PageScroll } from "../../design/layout"
 import {
   ActionRow,
@@ -157,9 +158,9 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     if (!item.url) return
     await Navigation.present({
       element: (
-        <NavigationStack>
+        <ThemedNavigationStack>
           <AidokuWebLoginScreen sourceKey={sourceKey} item={item} />
-        </NavigationStack>
+        </ThemedNavigationStack>
       ),
       modalPresentationStyle: "fullScreen",
     })
@@ -173,9 +174,9 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   async function oauthLogin(item: AidokuSettingItem) {
     await Navigation.present({
       element: (
-        <NavigationStack>
+        <ThemedNavigationStack>
           <AidokuOAuthScreen sourceKey={sourceKey} item={item} />
-        </NavigationStack>
+        </ThemedNavigationStack>
       ),
       modalPresentationStyle: "fullScreen",
     })

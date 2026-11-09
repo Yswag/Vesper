@@ -4,6 +4,7 @@
 
 import {
   Circle,
+  NavigationStack,
   Rectangle,
   ZStack,
   useColorScheme,
@@ -598,6 +599,16 @@ export function setAppearance(next: Appearance): void {
 export function useAppearanceOverride(): Mode | undefined {
   useSubscription(subscribeTheme)
   return appearance === "system" ? undefined : appearance
+}
+
+/** `Navigation.present` 出來的頁面不繼承根層深淺：呈現的根一律用這個代替 `NavigationStack`。 */
+export function ThemedNavigationStack({ children }: { children: JSX.Element }) {
+  const scheme = useAppearanceOverride()
+  return (
+    <NavigationStack preferredColorScheme={scheme} environments={scheme ? { colorScheme: scheme } : undefined}>
+      {children}
+    </NavigationStack>
+  )
 }
 
 /** 實際生效的深淺：要把雙值顏色解成單一 `Color` 的地方一律用這個。 */

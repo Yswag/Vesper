@@ -8,7 +8,6 @@ import {
   Image,
   Menu,
   Navigation,
-  NavigationStack,
   Picker,
   ProgressView,
   ScrollView,
@@ -27,7 +26,7 @@ import { isAbortError } from "../../engine/http"
 import { comicLibrary } from "../../app/services"
 import { loadSearchSelections, saveSearchSelection } from "../../app/searchOptions"
 import { aidokuFilterRows, loadFilterValues, saveFilterValues } from "../../app/aidokuSearchFilters"
-import { PageBackground, useTint } from "../../app/theme"
+import { PageBackground, ThemedNavigationStack, useTint } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { decodeSearchOptions, defaultSearchValues, encodeSearchOptions, type SearchOptionRow, type SearchOptionValue } from "../../sources/searchOptions"
@@ -89,7 +88,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   async function openOptions() {
     await Navigation.present({
       element: (
-        <NavigationStack>
+        <ThemedNavigationStack>
           <SearchFilterSheet
             rows={optionRows}
             values={optionValues}
@@ -100,7 +99,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
               setSelections(previous => ({ ...previous, [sourceKey]: options }))
             }}
           />
-        </NavigationStack>
+        </ThemedNavigationStack>
       ),
       modalPresentationStyle: "pageSheet",
     })
@@ -169,7 +168,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     const current = filters
     await Navigation.present({
       element: (
-        <NavigationStack>
+        <ThemedNavigationStack>
           <AidokuFilterSheet
             rows={current.rows}
             values={current.values}
@@ -180,7 +179,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
               setFilters({ rows: current.rows, values })
             }}
           />
-        </NavigationStack>
+        </ThemedNavigationStack>
       ),
       modalPresentationStyle: "pageSheet",
     })
