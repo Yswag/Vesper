@@ -36,7 +36,6 @@ export default {
     settings: "Settings",
     search: "Search",
   },
-  sectionMenu: "Switch section, currently {title}",
 
   noMatch: "No match for “{query}”",
   cancel: "Cancel",

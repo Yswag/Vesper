@@ -12,7 +12,7 @@ import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { ExitToolbar } from "../../components/ExitToolbar"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { SourceScreen } from "./SourceScreen"
 import { SourceListScreen } from "../settings/SourceListScreen"
@@ -78,7 +78,7 @@ export function BrowseScreen() {
         toolbar={
           <Toolbar>
             <ToolbarItem placement="topBarLeading">
-              <LeadingToolbar />
+              <ExitToolbar />
             </ToolbarItem>
             {sources.length > 0 ? searchToolbarItem(search) : null}
             <ToolbarItem placement="topBarTrailing">

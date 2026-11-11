@@ -35,7 +35,6 @@ export default {
     settings: "设置",
     search: "搜索",
   },
-  sectionMenu: "切换分类，当前是{title}",
 
   noMatch: "找不到“{query}”",
   cancel: "取消",

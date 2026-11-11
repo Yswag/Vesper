@@ -8,7 +8,7 @@ import { CoverShadow } from "../../design/CoverShadow"
 import { glass, liquidGlass, scrollTopBar } from "../../design/glass"
 import { Tag } from "../../design/Tag"
 import { WidthReporter } from "../../components/WidthReporter"
-import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { ExitToolbar } from "../../components/ExitToolbar"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { comicLibrary } from "../../app/services"
@@ -130,7 +130,7 @@ export function HomeScreen() {
         spacing={0}
         navigationTitle={t("home.title")}
         navigationBarTitleDisplayMode="inline"
-        toolbar={{ topBarLeading: <LeadingToolbar /> }}
+        toolbar={{ topBarLeading: <ExitToolbar /> }}
       >
         <ScrollView
           scrollContentBackground="hidden"

@@ -1,15 +1,11 @@
-// 應用外殼。兩種殼，差在「分頁怎麼切」：
+// 應用外殼（index.tsx）：五個 tab 的 TabView，每個 tab 一棵自己的 NavigationStack（切 tab 不丟導航歷史）。
+// 搜尋是最後一個 tab 且標記 role="search"：iOS 會把它放在最右，並提供「展開成輸入框、
+// 同時收起其他 tab」的原生行為。
+// tabViewSearchActivation="searchTabSelection" 是那個展開行為的開關（沒有它就不會展開）。
+// 它同時也會自動聚焦、彈鍵盤——所以 SearchScreen 把 searchable 的 presented 綁起來，
+// 讓系統回報展開狀態；但**不要**把它設成 false（那是「取消搜尋」，會把 tab 切回上一個）。
 //
-// 1. 預設（index.tsx）：五個 tab 的 TabView，每個 tab 一棵自己的 NavigationStack（切 tab 不丟導航歷史）。
-//    搜尋是最後一個 tab 且標記 role="search"：iOS 會把它放在最右，並提供「展開成輸入框、
-//    同時收起其他 tab」的原生行為。
-//    tabViewSearchActivation="searchTabSelection" 是那個展開行為的開關（沒有它就不會展開）。
-//    它同時也會自動聚焦、彈鍵盤——所以 SearchScreen 把 searchable 的 presented 綁起來，
-//    讓系統回報展開狀態；但**不要**把它設成 false（那是「取消搜尋」，會把 tab 切回上一個）。
-//
-// 2. hideTabBar（沒有分頁列）：單一 NavigationStack + 導覽列左上角的切換分類選單
-//    （components/SectionMenu）。代價：切分類會重建畫面，各分類的導航歷史與頁面狀態不留。
-//    Scripting 首頁分頁現在是自己的 Mini Hub（home_screen_default_ui.tsx），不再走這個殼。
+// Scripting 首頁分頁是另一個入口（home_screen_default_ui.tsx 的 Mini Hub），不走這個殼。
 //
 // 掛載後在背景依序查：先漫畫源更新（app/sourceUpdates.ts，有可更新就在設定 tab 掛紅色數字角標），
 // 查完再查追更（TTL 與讓路都在 app/updates.ts）。
@@ -17,7 +13,7 @@
 // toast 掛在殼上：源的 UI.showMessage 需要一個全域出口（見 app/toast.ts）。
 // 載入指示同樣掛殼的 overlay：源的 UI.showLoading 要一張浮動小卡片，不是 modal（見 app/loadingState.ts）。
 
-import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState, type VirtualNode } from "scripting"
+import { Navigation, NavigationStack, Tab, TabView, ZStack, useEffect, useObservable, useState } from "scripting"
 
 import { PageBackground, ThemedNavigationStack, useAppearanceOverride, useTint } from "./theme"
 import { liquidGlass } from "../design/glass"
@@ -27,7 +23,7 @@ import { subscribe as subscribeLocale, t } from "../i18n"
 import { CustomDialogOverlay } from "./CustomDialogOverlay"
 import { LoadingHUD } from "./LoadingHUD"
 import { setToastListener } from "./toast"
-import { setTabBarHidden, setTabChangeListener, switchToTab } from "./navigation"
+import { setTabChangeListener, switchToTab } from "./navigation"
 import { setInstallListener } from "./installLink"
 import { checkSourceUpdates, sourceUpdateCount, subscribeSourceUpdates } from "./sourceUpdates"
 import { updatesScheduler } from "./updates"
@@ -39,24 +35,7 @@ import { HomeScreen } from "../screens/home/HomeScreen"
 import { SearchScreen } from "../screens/search/SearchScreen"
 import { SettingsScreen } from "../screens/settings/SettingsScreen"
 
-/** 分頁編號 → 畫面。順序要跟 app/sections.ts 的 SECTIONS 一致（切換分類的選單照它畫）。 */
-function sectionScreen(index: number): VirtualNode {
-  switch (index) {
-    case 1:
-      return <BookshelfScreen />
-    case 2:
-      return <BrowseScreen />
-    case 3:
-      return <SettingsScreen />
-    case 4:
-      return <SearchScreen />
-    default:
-      return <HomeScreen />
-  }
-}
-
-export function App({ hideTabBar = false, pendingInstall = null }: {
-  hideTabBar?: boolean
+export function App({ pendingInstall = null }: {
   /** 冷啟動時由入口從 URL scheme 帶進來的倉庫網址。 */
   pendingInstall?: string | null
 }) {
@@ -67,7 +46,6 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
   const tint = useTint()
   // 深淺模式掛在這一層呈現上（`undefined`＝跟隨系統）。
   const scheme = useAppearanceOverride()
-  const [section, setSection] = useState(0)
   const [toastMessage, setToastMessage] = useState("")
   const [toastShown, setToastShown] = useState(false)
   // 熱啟動的請求（onResume）與冷啟動的參數都先排進同一個位置，依序處理。
@@ -96,11 +74,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
     }
   }, [])
 
-  // 畫面自己的導覽列在畫面裡建，拿不到這裡的 prop，所以用這個旗標告訴它們自己在哪種殼裡。
-  // 一定要在 render 期間設定：子畫面的 toolBar 節點就是這一輪 render 建的。
-  setTabBarHidden(hideTabBar)
-
-  // 分頁標題的唯一來源是 app/sections.ts（索引＝分頁編號）；這裡不再抄一份中文。
+  // 分頁標題與圖示的唯一來源是 app/sections.ts（索引＝分頁編號）。
   const titles = SECTIONS.map(entry => t(entry.titleKey))
   // 換語言要重繪整個殼，不然五個 Tab 的標題會留在舊語言（子畫面自己也有訂閱，但殼不在它們裡面）。
   useSubscription(subscribeLocale, subscribeSourceUpdates)
@@ -112,10 +86,7 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
       setToastMessage(message)
       setToastShown(true)
     })
-    setTabChangeListener(tabIndex => {
-      selection.setValue(tabIndex)
-      setSection(tabIndex)
-    })
+    setTabChangeListener(tabIndex => selection.setValue(tabIndex))
     return () => {
       setToastListener(null)
       setTabChangeListener(null)
@@ -153,8 +124,6 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
       )
       setToastShown(true)
       switchToTab(3)
-      // 首頁分頁殼不能 present；那裡切到設定頁就夠了。
-      if (hideTabBar) return
       // 加入只快取索引，裝哪個源要在詳情頁挑。
       await Navigation.present({
         element: (
@@ -186,15 +155,6 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
     ),
   }
 
-  if (hideTabBar) {
-    return (
-      <ZStack toast={toast} overlay={overlay} tint={tint.tint} preferredColorScheme={scheme} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-        <PageBackground />
-        <NavigationStack>{sectionScreen(section)}</NavigationStack>
-      </ZStack>
-    )
-  }
-
   return (
     <ZStack tint={tint.tint} preferredColorScheme={scheme}>
       <PageBackground />
@@ -210,27 +170,27 @@ export function App({ hideTabBar = false, pendingInstall = null }: {
         toast={toast}
         overlay={overlay}
       >
-        <Tab title={titles[0]} systemImage="house" value={0}>
+        <Tab title={titles[0]} systemImage={SECTIONS[0].systemImage} value={0}>
           <NavigationStack>
             <HomeScreen />
           </NavigationStack>
         </Tab>
-        <Tab title={titles[1]} systemImage="books.vertical" value={1}>
+        <Tab title={titles[1]} systemImage={SECTIONS[1].systemImage} value={1}>
           <NavigationStack>
             <BookshelfScreen />
           </NavigationStack>
         </Tab>
-        <Tab title={titles[2]} systemImage="square.grid.2x2" value={2}>
+        <Tab title={titles[2]} systemImage={SECTIONS[2].systemImage} value={2}>
           <NavigationStack>
             <BrowseScreen />
           </NavigationStack>
         </Tab>
-        <Tab title={titles[3]} systemImage="gearshape" value={3} {...settingsBadge}>
+        <Tab title={titles[3]} systemImage={SECTIONS[3].systemImage} value={3} {...settingsBadge}>
           <NavigationStack>
             <SettingsScreen />
           </NavigationStack>
         </Tab>
-        <Tab title={titles[4]} systemImage="magnifyingglass" value={4} role="search">
+        <Tab title={titles[4]} systemImage={SECTIONS[4].systemImage} value={4} role="search">
           <NavigationStack>
             <SearchScreen />
           </NavigationStack>

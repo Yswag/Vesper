@@ -44,12 +44,7 @@ export default {
   /** 正文越界：`{n}` 是第幾頁（1 起算），`{total}` 是總頁數。 */
   pageMissing: "第 {n} 頁不存在（共 {total} 頁）",
 
-  /**
-   * 五個分類（＝五個分頁）的標題。
-   *
-   * 分頁列的 `<Tab title>` 與沒有分頁列時的切換選單都讀同一份（見 `app/sections.ts`），
-   * 所以這裡是標題的唯一來源——以前那兩處各抄了一份中文。
-   */
+  /** 五個分類（＝五個分頁）的標題；分頁列的 `<Tab title>` 經 `app/sections.ts` 讀這裡。 */
   tabs: {
     home: "首頁",
     bookshelf: "書架",
@@ -57,8 +52,6 @@ export default {
     settings: "設定",
     search: "搜尋",
   },
-  /** 沒有分頁列時那顆切換分類的存取標籤：`{title}` 是目前分類。 */
-  sectionMenu: "切換分類，目前是{title}",
 
   /** 本地篩選一筆都沒中；`{query}` 是使用者打的字。 */
   noMatch: "找不到「{query}」",

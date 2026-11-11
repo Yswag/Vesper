@@ -12,7 +12,7 @@ import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpa
 /**
  * 頁面殼：極光背景 + inline 標題 + 內容捲動區。
  *
- * 要放導覽列按鈕請傳「元件」而不是節點（`leading={LeadingToolbar}`）：
+ * 要放導覽列按鈕請傳「元件」而不是節點（`leading={ExitToolbar}`）：
  * 把 toolbar 這種 modifier prop 的 VirtualNode 傳過元件邊界，這個 runtime 會把裡面的 view render 兩次
  * （實測：設定頁左上角出現兩個 X；同一個節點寫在頁面自己的 JSX 裡就正常）。
  */
@@ -26,7 +26,7 @@ export function PageScroll({
   children,
 }: {
   title?: string
-  /** 導覽列左側的元件（例如 LeadingToolbar）。目前沒有頁面需要右側按鈕，要再加。 */
+  /** 導覽列左側的元件（例如 ExitToolbar）。目前沒有頁面需要右側按鈕，要再加。 */
   leading?: () => VirtualNode | null
   /** 導覽列右側的元件（例如加號動作按鈕）。 */
   trailing?: () => VirtualNode | null

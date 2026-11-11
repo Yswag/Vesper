@@ -29,7 +29,7 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import { loadHistory, pushHistory, clearHistory } from "../../app/searchHistory"
 import { loadSearchSelections } from "../../app/searchOptions"
 import { setSearchTriggerListener } from "../../app/navigation"
-import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { ExitToolbar } from "../../components/ExitToolbar"
 import { CoverImage } from "../../components/CoverImage"
 import { WidthReporter } from "../../components/WidthReporter"
 import { PageBackground } from "../../app/theme"
@@ -210,7 +210,7 @@ export function SearchScreen() {
         navigationTitle={t("common.tabs.search")}
         navigationBarTitleDisplayMode="inline"
         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}
-        toolbar={{ topBarLeading: <LeadingToolbar /> }}
+        toolbar={{ topBarLeading: <ExitToolbar /> }}
         // 用系統的搜尋框（role="search" 的 tab 會把它放在底部、展開時收起其他 tab）。
         // 送出事件用 onSubmit(triggers: "search")：跨 30 個源跑一次要好幾秒，不適合逐字搜。
         searchable={{ value: keyword, onChanged: handleKeywordChange, prompt: t("search.keyword"), presented }}

@@ -2,7 +2,7 @@
 
 import { Button, Device, Divider, NavigationLink, useEffect, useState } from "scripting"
 
-import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { ExitToolbar } from "../../components/ExitToolbar"
 import {
   LOCALE_SELF_NAMES,
   applyLocaleSetting,
@@ -69,7 +69,7 @@ export function SettingsScreen() {
       : formatBytes(cacheStats.totalBytes + pageStats.bytes)
 
   return (
-    <PageScroll title={t("settings.root.title")} leading={LeadingToolbar}>
+    <PageScroll title={t("settings.root.title")} leading={ExitToolbar}>
       <CardGroup title={t("settings.root.groupSources")}>
         <NavigationLink destination={<SourceListScreen />}>
           <IconRow

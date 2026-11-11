@@ -24,7 +24,7 @@ import { updatesScheduler } from "../../app/updates"
 import { useSubscription } from "../../app/useSubscription"
 import { ComicGridLayout, type ComicGridEntry } from "../../components/ComicGrid"
 import { useGridRemoval } from "../../components/gridRemoval"
-import { LeadingToolbar } from "../../components/LeadingToolbar"
+import { ExitToolbar } from "../../components/ExitToolbar"
 import { scrollTopBar } from "../../design/glass"
 import { Card } from "../../design/layout"
 import { IconRow } from "../../design/rows"
@@ -124,7 +124,7 @@ export function BookshelfScreen() {
         // iOS 自己會顯示轉圈；檢查的進度另外寫在膠囊列下面。
         refreshable={checkUpdates}
         toolbar={{
-          topBarLeading: <LeadingToolbar />,
+          topBarLeading: <ExitToolbar />,
           topBarTrailing: (
             <Menu
               label={
