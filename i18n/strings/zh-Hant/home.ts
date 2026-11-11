@@ -26,10 +26,14 @@ export default {
     sourceUpdates: { one: "{n} 個漫畫源可更新", other: "{n} 個漫畫源可更新" },
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
+    /** 有收藏但一部都還沒檢查過。 */
+    notChecked: "尚未檢查更新",
     /** 追更封面角標的讀屏說法。 */
     newChapters: { one: "新增 {n} 話", other: "新增 {n} 話" },
     activityTitle: "閱讀紀錄",
     streak: "連續 {days} 天",
+    /** 最近 7 天讀完的話數。 */
+    weekChapters: { one: "近 7 天 {n} 話", other: "近 7 天 {n} 話" },
     /** 閱讀紀錄：當天讀完的話數。 */
     dayChapters: { one: "{n} 話", other: "{n} 話" },
     /** 閱讀紀錄：一部當天碰過好幾話時的副標，last 是最後讀的那話。 */
