@@ -34,7 +34,7 @@ import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
 import { getMiniHubLayout, type MiniHubSection } from "./app/miniHubLayout"
 import { comicLibrary, installComicLibrary } from "./app/services"
-import { byLatestUpdate, resumeEntry, unreadCountOf, type ResumeEntry } from "./app/shelf"
+import { byLatestUpdate, newChapters, resumeEntry, type ResumeEntry } from "./app/shelf"
 import { availableSourceUpdates, checkSourceUpdates, subscribeSourceUpdates } from "./app/sourceUpdates"
 import { PageBackground, reloadThemeFromStorage, useAppearanceOverride, useTint } from "./app/theme"
 import { parseUpdateTime, updatesScheduler } from "./app/updates"
@@ -570,14 +570,14 @@ function ActivitySection({ activity }: { activity: Record<string, DayActivity> }
   )
 }
 
-/** 看板的一列：收藏接上追更紀錄與未讀數。 */
+/** 看板的一列：收藏接上追更紀錄與新話數。 */
 interface UpdateItem {
   favorite: Favorite
   record: ComicUpdateRecord
-  unreadCount: number
+  newCount: number
 }
 
-/** 判斷是否為近期活躍的更新作品（完結或超過 90 天未更的老漫畫不列入）。 */
+/** 還在更新的作品（完結或超過 90 天未更的不算）。 */
 function isRecentUpdate(record: ComicUpdateRecord, now: number): boolean {
   if (record.status === "completed") return false
   if (record.updateTime) {
@@ -589,17 +589,15 @@ function isRecentUpdate(record: ComicUpdateRecord, now: number): boolean {
   return true
 }
 
-/** 有未讀的活躍作品，最近更新的在前。沒有追更紀錄＝還沒查過，不算更新。 */
+/** 有新話的收藏（上次碰它之後多出來的），最近更新的在前。 */
 function pendingUpdates(): UpdateItem[] {
   const favorites = new Map(listFavorites().map(favorite => [comicGroupKey(favorite), favorite]))
   const items: UpdateItem[] = []
-  const now = Date.now()
   for (const record of Object.values(allComicUpdates())) {
     const favorite = favorites.get(comicGroupKey(record))
     if (!favorite) continue
-    if (!isRecentUpdate(record, now)) continue
-    const unreadCount = unreadCountOf(favorite)
-    if (unreadCount > 0) items.push({ favorite, record, unreadCount })
+    const newCount = newChapters(record)
+    if (newCount > 0) items.push({ favorite, record, newCount })
   }
   return items.sort((a, b) => byLatestUpdate(a.record, b.record))
 }
@@ -690,8 +688,9 @@ function UpdatesSection({
                     />
                     <HStack padding={6}>
                       <UnreadBadge
-                        count={item.unreadCount}
-                        accessibilityLabel={t("bookshelf.unreadBadge", { n: item.unreadCount })}
+                        count={item.newCount}
+                        prefix="+"
+                        accessibilityLabel={t("home.miniHub.newChapters", { n: item.newCount })}
                       />
                     </HStack>
                   </ZStack>

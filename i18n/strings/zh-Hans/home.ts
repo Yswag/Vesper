@@ -19,6 +19,7 @@ export default {
     sourceUpdates: { one: "{n} 个漫画源可更新", other: "{n} 个漫画源可更新" },
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
+    newChapters: { one: "新增 {n} 话", other: "新增 {n} 话" },
     activityTitle: "阅读记录",
     streak: "连续 {days} 天",
     dayChapters: { one: "{n} 话", other: "{n} 话" },

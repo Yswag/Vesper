@@ -45,6 +45,11 @@ export interface ComicUpdateRecord {
   latestEpId: string
   latestEpTitle: string
   chapterCount: number
+  /**
+   * 讀者上次碰這部（收藏、閱讀、標已讀）時的章數；之後多出來的才算新話。
+   * 寫入時由 `setComicUpdate` 補上，呼叫端不必給。
+   */
+  seenChapterCount?: number
   checkedAt: number
   status?: ComicStatus
   updateTime?: string
@@ -198,6 +203,7 @@ function cleanUpdates(raw: unknown): Record<string, ComicUpdateRecord> {
       latestEpId: typeof entry.latestEpId === "string" ? entry.latestEpId : "",
       latestEpTitle: typeof entry.latestEpTitle === "string" ? entry.latestEpTitle : "",
       chapterCount: typeof entry.chapterCount === "number" ? entry.chapterCount : 0,
+      seenChapterCount: typeof entry.seenChapterCount === "number" ? entry.seenChapterCount : undefined,
       checkedAt: typeof entry.checkedAt === "number" ? entry.checkedAt : 0,
       status: entry.status,
       updateTime: typeof entry.updateTime === "string" ? entry.updateTime : undefined,
@@ -276,6 +282,7 @@ export function toggleFavorite(entry: Omit<Favorite, "addedAt">): boolean {
       return
     }
     library.favorites.push({ ...entry, addedAt: Date.now() })
+    markSeen(library, entry.sourceKey, entry.comicId)
     added = true
   }, "now")
   return added
@@ -331,6 +338,7 @@ export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notif
       { ...entry, updatedAt: Date.now() },
       finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
     )
+    markSeen(library, entry.sourceKey, entry.comicId)
   }, options.notify === false ? "none" : "debounced")
 }
 
@@ -361,6 +369,7 @@ export function markChapterRead(sourceKey: string, comicId: string, epIds: strin
     } else {
       library.progress[key] = withReadIds(existing ?? recordFor(library, sourceKey, comicId), next)
     }
+    if (isRead) markSeen(library, sourceKey, comicId)
   }, "now")
 }
 
@@ -462,11 +471,34 @@ export function getComicUpdate(sourceKey: string, comicId: string): ComicUpdateR
   return load().updates[keyOf(sourceKey, comicId)]
 }
 
-/** 寫入一部作品的最新一話（同作品覆寫）。 */
+/** 一筆紀錄的基準章數；還沒有基準的舊紀錄以它當時的章數為準。 */
+function seenCountOf(record: ComicUpdateRecord | undefined): number | undefined {
+  if (!record) return undefined
+  return record.seenChapterCount ?? (record.chapterCount > 0 ? record.chapterCount : undefined)
+}
+
+/**
+ * 寫入一部作品的最新一話（同作品覆寫）。基準章數沿用上一筆，第一次寫入就是當下的章數；
+ * 源把章節收掉時基準跟著降，之後補回來的才算得到。
+ */
 export function setComicUpdate(record: ComicUpdateRecord): void {
   mutate(library => {
-    library.updates[keyOf(record.sourceKey, record.comicId)] = record
+    const key = keyOf(record.sourceKey, record.comicId)
+    const seen = record.seenChapterCount ?? seenCountOf(library.updates[key]) ?? record.chapterCount
+    library.updates[key] = {
+      ...record,
+      // 章數 0 多半是源一時沒給清單，不拿它壓基準。
+      seenChapterCount: record.chapterCount > 0 ? Math.min(seen, record.chapterCount) : seen,
+    }
   })
+}
+
+/** 讀者碰過這部了：現有的章數都算看過。還沒有追更紀錄就等第一次檢查建立基準。 */
+function markSeen(library: Library, sourceKey: string, comicId: string): void {
+  const key = keyOf(sourceKey, comicId)
+  const record = library.updates[key]
+  if (!record || record.chapterCount <= 0 || record.seenChapterCount === record.chapterCount) return
+  library.updates[key] = { ...record, seenChapterCount: record.chapterCount }
 }
 
 /** 整份追更快取（拷貝；呼叫端排序／筛選不會改到 cache）。 */

@@ -51,12 +51,14 @@ export function formatUnreadCount(count: number): string {
 export interface UnreadBadgeProps {
   /** 未讀章節數；呼叫端先擋掉 0。 */
   count: number
+  /** 數字前的符號（「+」＝新增的話數）。 */
+  prefix?: string
   /** 讀屏用的說法（「未讀 3 話」）；不給就只念數字。 */
   accessibilityLabel?: string
 }
 
 /** 封面的未讀數字膠囊：實心 tint 底、對比字（淺色主題的 tint 是亮色，所以不用純白）。 */
-export function UnreadBadge({ count, accessibilityLabel }: UnreadBadgeProps) {
+export function UnreadBadge({ count, prefix = "", accessibilityLabel }: UnreadBadgeProps) {
   const tint = useTint()
   return (
     <HStack
@@ -66,7 +68,7 @@ export function UnreadBadge({ count, accessibilityLabel }: UnreadBadgeProps) {
       accessibilityLabel={accessibilityLabel}
     >
       <Text font="caption2" fontWeight="bold" foregroundStyle={tint.onTint} monospacedDigit lineLimit={1}>
-        {formatUnreadCount(count)}
+        {`${prefix}${formatUnreadCount(count)}`}
       </Text>
     </HStack>
   )

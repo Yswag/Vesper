@@ -26,6 +26,8 @@ export default {
     sourceUpdates: { one: "{n} 個漫畫源可更新", other: "{n} 個漫畫源可更新" },
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
+    /** 追更封面角標的讀屏說法。 */
+    newChapters: { one: "新增 {n} 話", other: "新增 {n} 話" },
     activityTitle: "閱讀紀錄",
     streak: "連續 {days} 天",
     /** 閱讀紀錄：當天讀完的話數。 */

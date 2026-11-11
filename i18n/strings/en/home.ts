@@ -19,6 +19,7 @@ export default {
     sourceUpdates: { one: "{n} source update available", other: "{n} source updates available" },
     updatesTitle: "Latest updates",
     allUpToDate: "All favorites are up to date",
+    newChapters: { one: "{n} new chapter", other: "{n} new chapters" },
     activityTitle: "Reading activity",
     streak: "{days}-day streak",
     dayChapters: { one: "{n} chapter", other: "{n} chapters" },

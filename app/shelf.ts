@@ -16,7 +16,7 @@ import {
 } from "../library/bookshelf"
 
 export type ShelfSort = "recent" | "added" | "title"
-/** `updates`＝有未讀章節（見 {@link unreadCountOf}）。 */
+/** `updates`＝有新話（見 {@link newCountOf}）。 */
 export type ShelfFilter = "all" | "updates" | "read" | "unread"
 
 /**
@@ -87,13 +87,27 @@ export function unreadChapters(
   return Math.max(0, record.chapterCount - readIds.size)
 }
 
-/** 這一部收藏的未讀章節數；> 0 就是「有更新」。沒有追更紀錄＝還沒查過，不算更新。 */
+/** 這一部收藏的未讀章節數（封面角標）。沒有追更紀錄＝還沒查過，算 0。 */
 export function unreadCountOf(favorite: Favorite): number {
   return unreadChapters(
     getComicUpdate(favorite.sourceKey, favorite.comicId),
     readChapterIds(favorite.sourceKey, favorite.comicId),
     cachedChapterList(favorite.sourceKey, favorite.comicId)
   )
+}
+
+/**
+ * 新話數的算式（純函式）：讀者上次碰這部之後多出來的章數。跟未讀數是兩件事——
+ * 沒追完的舊作未讀很多，但沒有新話。還沒有基準的紀錄當作都看過。
+ */
+export function newChapters(record: ComicUpdateRecord | undefined): number {
+  if (!record) return 0
+  return Math.max(0, record.chapterCount - (record.seenChapterCount ?? record.chapterCount))
+}
+
+/** 這一部收藏的新話數；> 0 就是「有更新」。 */
+export function newCountOf(favorite: Favorite): number {
+  return newChapters(getComicUpdate(favorite.sourceKey, favorite.comicId))
 }
 
 /**
@@ -114,8 +128,10 @@ export interface ShelfItem {
   readFraction?: number
   /** 源被移除了（封面只能用標題佔位）。 */
   removed: boolean
-  /** 未讀章節數：封面角標畫這個數字，「更新」篩選也看它。 */
+  /** 未讀章節數：封面角標畫這個數字。 */
   unreadCount: number
+  /** 新話數：「更新」篩選看它。 */
+  newCount: number
 }
 
 /** 收藏接閱讀紀錄（同一部一個鍵），再篩選、排序。 */
@@ -130,6 +146,7 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
         readFraction: readFraction(read),
         removed: comicLibrary().source(favorite.sourceKey) === undefined,
         unreadCount: unreadCountOf(favorite),
+        newCount: newCountOf(favorite),
       }
     })
     .filter(item =>
@@ -138,7 +155,7 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
         : filter === "unread"
           ? item.progress === undefined
           : filter === "updates"
-            ? item.unreadCount > 0
+            ? item.newCount > 0
             : true
     )
 
