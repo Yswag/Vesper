@@ -3,6 +3,7 @@
 
 import { canResumeOffline } from "./offlineReading"
 import { comicLibrary } from "./services"
+import { parseUpdateTime } from "./updates"
 import { cachedChapterList, comicGroupKey, type ReaderChapter } from "../engine/offline"
 import {
   getComicUpdate,
@@ -95,6 +96,16 @@ export function unreadCountOf(favorite: Favorite): number {
   )
 }
 
+/**
+ * 「有更新」清單的排序（書架的「更新」篩選與 Mini Hub 追更列共用）：最近更新的在前。
+ * 源沒給更新日期的排在後面；同一天或都沒日期就照檢查時間。
+ */
+export function byLatestUpdate(a: ComicUpdateRecord, b: ComicUpdateRecord): number {
+  return (
+    (parseUpdateTime(b.updateTime) ?? 0) - (parseUpdateTime(a.updateTime) ?? 0) || b.checkedAt - a.checkedAt
+  )
+}
+
 /** 收藏網格的一格：收藏接上閱讀紀錄，判斷都算好了。 */
 export interface ShelfItem {
   favorite: Favorite
@@ -131,12 +142,12 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
             : true
     )
 
-  // 「更新」照檢查時間排；同一批檢查幾乎同秒，撞在一起時就退回下面原本的規則。
-  const checkedAt = new Map<string, number>()
+  // 「更新」照 `byLatestUpdate` 排；分不出先後時就退回下面原本的規則。
+  const records = new Map<string, ComicUpdateRecord>()
   if (filter === "updates") {
     for (const item of items) {
       const record = getComicUpdate(item.favorite.sourceKey, item.favorite.comicId)
-      if (record) checkedAt.set(comicGroupKey(item.favorite), record.checkedAt)
+      if (record) records.set(comicGroupKey(item.favorite), record)
     }
   }
 
@@ -144,8 +155,9 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
   const lastTouched = (item: ShelfItem) => item.progress?.updatedAt ?? item.favorite.addedAt
   return items.sort((a, b) => {
     if (sort === "recent" && filter === "updates") {
-      const delta =
-        (checkedAt.get(comicGroupKey(b.favorite)) ?? 0) - (checkedAt.get(comicGroupKey(a.favorite)) ?? 0)
+      const recordA = records.get(comicGroupKey(a.favorite))
+      const recordB = records.get(comicGroupKey(b.favorite))
+      const delta = recordA && recordB ? byLatestUpdate(recordA, recordB) : 0
       if (delta !== 0) return delta
     }
     return sort === "title"

@@ -16,6 +16,7 @@ export default {
 
   miniHub: {
     openApp: "打开 App",
+    sourceUpdates: { one: "{n} 个漫画源可更新", other: "{n} 个漫画源可更新" },
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
     activityTitle: "阅读记录",

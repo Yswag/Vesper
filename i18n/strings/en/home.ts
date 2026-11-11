@@ -16,6 +16,7 @@ export default {
 
   miniHub: {
     openApp: "Open App",
+    sourceUpdates: { one: "{n} source update available", other: "{n} source updates available" },
     updatesTitle: "Latest updates",
     allUpToDate: "All favorites are up to date",
     activityTitle: "Reading activity",
