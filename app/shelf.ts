@@ -184,3 +184,13 @@ export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
         : lastTouched(b) - lastTouched(a)
   })
 }
+
+/**
+ * 待讀（Mini Hub）：有未讀、但沒有新話的收藏——有新話的歸追更列，兩邊不重複。
+ * 差最少話的在前，同數照最近碰過的；源被移除的開不起來，不列。
+ */
+export function backlogItems(): ShelfItem[] {
+  return shelfItems("recent", "all")
+    .filter(item => !item.removed && item.unreadCount > 0 && item.newCount === 0)
+    .sort((a, b) => a.unreadCount - b.unreadCount)
+}

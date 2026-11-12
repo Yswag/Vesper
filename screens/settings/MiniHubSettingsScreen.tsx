@@ -29,7 +29,9 @@ export type MiniHubRow = { id: string; section?: MiniHubSection }
 const SECTION_ICONS: Record<MiniHubSection, string> = {
   resume: "play.circle",
   updates: "bell.badge",
+  backlog: "books.vertical",
   activity: "square.grid.3x3",
+  search: "magnifyingglass",
 }
 
 function sectionTitle(section: MiniHubSection): string {
@@ -38,8 +40,12 @@ function sectionTitle(section: MiniHubSection): string {
       return t("home.resumeTitle")
     case "updates":
       return t("home.miniHub.updatesTitle")
+    case "backlog":
+      return t("home.miniHub.backlogTitle")
     case "activity":
       return t("home.miniHub.activityTitle")
+    case "search":
+      return t("common.tabs.search")
   }
 }
 

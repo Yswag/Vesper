@@ -30,7 +30,11 @@ export default {
     notChecked: "尚未檢查更新",
     /** 追更封面角標的讀屏說法。 */
     newChapters: { one: "新增 {n} 話", other: "新增 {n} 話" },
+    /** 有未讀、但沒有新話的收藏。 */
+    backlogTitle: "待讀",
     activityTitle: "閱讀紀錄",
+    /** 搜尋框樣子的那一顆裡的提示語。 */
+    searchPrompt: "搜尋漫畫",
     streak: "連續 {days} 天",
     /** 最近 7 天讀完的話數。 */
     weekChapters: { one: "近 7 天 {n} 話", other: "近 7 天 {n} 話" },

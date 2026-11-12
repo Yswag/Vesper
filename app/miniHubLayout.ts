@@ -6,10 +6,10 @@ import { kv } from "../engine/storage"
 
 const KEY = "venera:miniHub"
 
-export type MiniHubSection = "resume" | "updates" | "activity"
+export type MiniHubSection = "resume" | "updates" | "backlog" | "activity" | "search"
 
 /** 預設順序，也是全部的區塊。新增區塊時加在這裡，舊設定會把它補在啟用的最後。 */
-export const MINI_HUB_SECTIONS: readonly MiniHubSection[] = ["resume", "updates", "activity"]
+export const MINI_HUB_SECTIONS: readonly MiniHubSection[] = ["resume", "updates", "backlog", "activity", "search"]
 
 export interface MiniHubLayout {
   enabled: MiniHubSection[]

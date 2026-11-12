@@ -56,7 +56,15 @@ import { bangumiCardSize, type CardSize } from "../shared/comicMetrics"
 /** 搜尋中：進度最多每 300ms 上一次畫面（合併更新）。 */
 const PROGRESS_FLUSH_MS = 300
 
-export function SearchScreen() {
+export function SearchScreen({
+  autoFocus = false,
+  zoomFrom,
+}: {
+  /** 推入的用法（Mini Hub）：進頁就展開搜尋框。搜尋分頁由系統自己展開，不要給。 */
+  autoFocus?: boolean
+  /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
+  zoomFrom?: { sourceID: string; namespace: NamespaceID }
+}) {
   const library = comicLibrary()
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState("")
@@ -66,8 +74,9 @@ export function SearchScreen() {
   // 每個源存下來的篩選（"sourceKey" → 送去源的 options 陣列）。
   // 這頁只讀不寫：篩選入口在單源搜尋頁，這裡只負責把存過的值帶進請求。
   const [selections, setSelections] = useState<Record<string, Array<string | null>>>({})
-  // 搜尋框展開狀態由系統綁定（勿手動設為 false，否則將觸發取消並切換分頁）
-  const presented = useObservable(false)
+  // 搜尋框展開狀態由系統綁定（勿手動設為 false，否則將觸發取消並切換分頁）。
+  // 推入時第一幀就是展開的：鍵盤跟著轉場上來，不用等轉場完再補。
+  const presented = useObservable(autoFocus)
 
   /**
    * 搜尋輪次管理（epoch + AbortController）：新關鍵字或離開畫面時作廢舊輪次並中止請求。
@@ -203,7 +212,7 @@ export function SearchScreen() {
   }
 
   return (
-    <ZStack>
+    <ZStack navigationTransition={zoomFrom ? { type: "zoom", ...zoomFrom } : undefined}>
       <PageBackground />
       <VStack
         spacing={0}
@@ -213,7 +222,14 @@ export function SearchScreen() {
         toolbar={{ topBarLeading: <ExitToolbar /> }}
         // 用系統的搜尋框（role="search" 的 tab 會把它放在底部、展開時收起其他 tab）。
         // 送出事件用 onSubmit(triggers: "search")：跨 30 個源跑一次要好幾秒，不適合逐字搜。
-        searchable={{ value: keyword, onChanged: handleKeywordChange, prompt: t("search.keyword"), presented }}
+        // 推入時搜尋框固定佔位：預設的會在轉場後才長出來，蓋在內容上再把內容推下去。
+        searchable={{
+          value: keyword,
+          onChanged: handleKeywordChange,
+          prompt: t("search.keyword"),
+          presented,
+          placement: autoFocus ? "navigationBarDrawerAlwaysDisplay" : undefined,
+        }}
         onSubmit={{ triggers: "search", action: () => void run(keyword) }}
       >
         {submitted.length === 0 ? (

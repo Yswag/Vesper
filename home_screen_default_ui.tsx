@@ -1,8 +1,8 @@
 // Scripting 首頁入口（Home Screen Tab UI）：Vesper 的 Mini Hub。
-// 長駐於 Scripting 首頁分頁，不可調用 Navigation.present 與 Script.exit()。
+// 長駐於 Scripting 首頁分頁，不可調用 Script.exit()；完整的五分頁殼也不 present 進來（會在分頁裡再疊一層殼）。
 //
-// 全螢幕 App 不再塞進來：這裡只有四件事，資料全在本機（不抓 Bangumi）——
-//   續讀 Hero、最新追更、閱讀熱力圖（順序與開關見 app/miniHubLayout.ts），加上導覽列的「開啟完整 App」。
+// 區塊：續讀 Hero、最新追更、待讀、閱讀熱力圖、搜尋（順序與開關見 app/miniHubLayout.ts），
+// 加上導覽列的「開啟完整 App」。
 // 背景檢查是靜默的：資料載入完成、每次切回首頁各跑一輪，先漫畫源更新再追更；
 // TTL 各自把關（見 app/sourceUpdates.ts、app/updates.ts），所以這裡放心呼叫。
 
@@ -13,6 +13,7 @@ import {
   GeometryReader,
   HStack,
   Image,
+  NamespaceReader,
   NavigationLink,
   NavigationStack,
   ProgressView,
@@ -34,7 +35,7 @@ import { onBeforeExit } from "./app/lifecycle"
 import { installLocaleSetting } from "./app/localeSetting"
 import { getMiniHubLayout, type MiniHubSection } from "./app/miniHubLayout"
 import { comicLibrary, installComicLibrary } from "./app/services"
-import { byLatestUpdate, newChapters, resumeEntry, type ResumeEntry } from "./app/shelf"
+import { backlogItems, byLatestUpdate, newChapters, resumeEntry, type ResumeEntry, type ShelfItem } from "./app/shelf"
 import { availableSourceUpdates, checkSourceUpdates, subscribeSourceUpdates } from "./app/sourceUpdates"
 import { PageBackground, reloadThemeFromStorage, useAppearanceOverride, useTint } from "./app/theme"
 import { parseUpdateTime, updatesScheduler } from "./app/updates"
@@ -66,12 +67,13 @@ import {
 } from "./library/bookshelf"
 import { formatHistoryTime } from "./screens/home/historyTime"
 import { ReadingLogScreen } from "./screens/home/ReadingLogScreen"
+import { SearchScreen } from "./screens/search/SearchScreen"
 import { ComicDetailScreen } from "./screens/shared/ComicDetailScreen"
 import { launchResumeReader } from "./screens/shared/ResumeReaderScreen"
 import { reloadRegistry } from "./sources/registry"
 
-/** 追更看板最多幾部（橫向滾動列可多放幾部）。 */
-const UPDATE_LIMIT = 10
+/** 橫向封面列（追更、待讀）最多幾部。 */
+const RAIL_LIMIT = 10
 
 const HERO_COVER = { width: 84, height: 120 }
 const RAIL_COVER = { width: 84, height: 118 }
@@ -84,6 +86,8 @@ const RECENT_LIMIT = 8
 /** 封面與文字之間。 */
 const COVER_GAP = 12
 const DORMANT_AFTER_DAYS = 90
+const SEARCH_FIELD_HEIGHT = 44
+const SEARCH_ZOOM_ID = "miniHub:search"
 /** 檢查超過這麼久才顯示轉圈：TTL 沒到的那一輪幾乎立刻結束，不該每次切回來都閃一下。 */
 const CHECKING_INDICATOR_DELAY = 400
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -242,7 +246,9 @@ export default function HomeScreenDefaultUI() {
         checkedAt={updatesCheckedAt()}
       />
     ),
+    backlog: () => <BacklogSection key="backlog" items={backlogItems()} />,
     activity: () => <ActivitySection key="activity" activity={readingActivity()} />,
+    search: () => <SearchSection key="search" />,
   }
 
   const sourceUpdates = availableSourceUpdates().length
@@ -687,7 +693,7 @@ const IDLE_UPDATES: Record<IdleUpdatesState, { icon: string; text: () => string 
   upToDate: { icon: "checkmark.circle.fill", text: () => t("home.miniHub.allUpToDate") },
 }
 
-/** `items` 是全部有更新的作品：標題的數字是總數，橫列只放前 `UPDATE_LIMIT` 部。標題右邊是檢查中的轉圈，否則是上次檢查的時間。 */
+/** `items` 是全部有更新的作品：標題的數字是總數，橫列只放前 `RAIL_LIMIT` 部。標題右邊是檢查中的轉圈，否則是上次檢查的時間。 */
 function UpdatesSection({
   items,
   idle,
@@ -730,66 +736,137 @@ function UpdatesSection({
           </HStack>
         </Card>
       ) : (
-        <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
-          <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
-            {items.slice(0, UPDATE_LIMIT).map(item => (
-              <NavigationLink
-                key={comicGroupKey(item.favorite)}
-                destination={
-                  <ComicDetailScreen
-                    sourceKey={item.favorite.sourceKey}
-                    comicId={item.favorite.comicId}
-                    title={item.favorite.title}
-                  />
-                }
-                buttonStyle="plain"
-              >
-                <VStack spacing={6} alignment="leading" frame={{ width: RAIL_COVER.width }}>
-                  <ZStack alignment="topTrailing">
-                    <CoverImage
-                      sourceKey={item.favorite.sourceKey}
-                      url={item.favorite.cover}
-                      width={RAIL_COVER.width}
-                      height={RAIL_COVER.height}
-                      title={item.favorite.title}
-                      lifted={true}
-                    />
-                    <HStack padding={6}>
-                      <UnreadBadge
-                        count={item.newCount}
-                        prefix="+"
-                        accessibilityLabel={t("home.miniHub.newChapters", { n: item.newCount })}
-                      />
-                    </HStack>
-                  </ZStack>
-
-                  {/* 作品名稱（一行截斷） */}
-                  <Text
-                    font="caption"
-                    fontWeight="semibold"
-                    lineLimit={1}
-                    frame={{ width: RAIL_COVER.width, alignment: "leading" }}
-                  >
-                    {item.favorite.title}
-                  </Text>
-
-                  {/* 最新話數（一行截斷） */}
-                  {item.record.latestEpTitle ? (
-                    <Text
-                      font="caption2"
-                      foregroundStyle="secondaryLabel"
-                      lineLimit={1}
-                      frame={{ width: RAIL_COVER.width, alignment: "leading" }}
-                    >
-                      {item.record.latestEpTitle}
-                    </Text>
-                  ) : null}
-                </VStack>
-              </NavigationLink>
-            ))}
-          </HStack>
-        </ScrollView>
+        <CoverRail
+          items={items.slice(0, RAIL_LIMIT).map(item => ({
+            favorite: item.favorite,
+            count: item.newCount,
+            prefix: "+",
+            badgeLabel: t("home.miniHub.newChapters", { n: item.newCount }),
+            subtitle: item.record.latestEpTitle,
+          }))}
+        />
       )}
     </VStack>
+  )
+}
+
+/** 待讀：`items` 是全部的待讀作品，標題的數字是總數，橫列只放前 `RAIL_LIMIT` 部；沒有就整塊不顯示。 */
+function BacklogSection({ items }: { items: ShelfItem[] }) {
+  if (items.length === 0) return null
+
+  return (
+    <VStack spacing={cardGap} alignment="leading" frame={{ maxWidth: "infinity" }}>
+      <GroupHeader title={`${t("home.miniHub.backlogTitle")} (${items.length})`} />
+      <CoverRail
+        items={items.slice(0, RAIL_LIMIT).map(item => ({
+          favorite: item.favorite,
+          count: item.unreadCount,
+          badgeLabel: t("bookshelf.unreadBadge", { n: item.unreadCount }),
+          subtitle: item.progress?.epTitle,
+        }))}
+      />
+    </VStack>
+  )
+}
+
+/** 搜尋：長得像搜尋框的一顆膠囊，點了從膠囊 zoom 進聚合搜尋頁，進去就展開輸入框。 */
+function SearchSection() {
+  return (
+    <NamespaceReader>
+      {searchNs => (
+        <NavigationLink
+          destination={<SearchScreen autoFocus={true} zoomFrom={{ sourceID: SEARCH_ZOOM_ID, namespace: searchNs }} />}
+          buttonStyle="plain"
+        >
+          <HStack
+            spacing={8}
+            alignment="center"
+            padding={{ horizontal: 14 }}
+            frame={{ maxWidth: "infinity", height: SEARCH_FIELD_HEIGHT }}
+            background={{ style: fill.chip, shape: capsule() }}
+            contentShape="rect"
+            matchedTransitionSource={{ id: SEARCH_ZOOM_ID, namespace: searchNs }}
+          >
+            <Image systemName="magnifyingglass" font="subheadline" foregroundStyle="secondaryLabel" />
+            <Text font="body" foregroundStyle="secondaryLabel" lineLimit={1}>
+              {t("home.miniHub.searchPrompt")}
+            </Text>
+            <Spacer />
+          </HStack>
+        </NavigationLink>
+      )}
+    </NamespaceReader>
+  )
+}
+
+/** 橫向封面列的一格：封面角標、作品名與一行副標。 */
+interface RailItem {
+  favorite: Favorite
+  count: number
+  /** 角標數字前的符號（追更是 `+`）。 */
+  prefix?: string
+  /** 角標的讀屏說法。 */
+  badgeLabel: string
+  subtitle?: string
+}
+
+/** 橫向封面列（左右出血到頁面邊界）：每一格點了推詳情。 */
+function CoverRail({ items }: { items: RailItem[] }) {
+  return (
+    <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
+      <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
+        {items.map(item => (
+          <NavigationLink
+            key={comicGroupKey(item.favorite)}
+            destination={
+              <ComicDetailScreen
+                sourceKey={item.favorite.sourceKey}
+                comicId={item.favorite.comicId}
+                title={item.favorite.title}
+              />
+            }
+            buttonStyle="plain"
+          >
+            <VStack spacing={6} alignment="leading" frame={{ width: RAIL_COVER.width }}>
+              <ZStack alignment="topTrailing">
+                <CoverImage
+                  sourceKey={item.favorite.sourceKey}
+                  url={item.favorite.cover}
+                  width={RAIL_COVER.width}
+                  height={RAIL_COVER.height}
+                  title={item.favorite.title}
+                  lifted={true}
+                />
+                <HStack padding={6}>
+                  <UnreadBadge count={item.count} prefix={item.prefix} accessibilityLabel={item.badgeLabel} />
+                </HStack>
+              </ZStack>
+
+              {/* 作品名稱（一行截斷） */}
+              <Text
+                font="caption"
+                fontWeight="semibold"
+                lineLimit={1}
+                frame={{ width: RAIL_COVER.width, alignment: "leading" }}
+              >
+                {item.favorite.title}
+              </Text>
+
+              {/* 副標（一行截斷） */}
+              {item.subtitle ? (
+                <Text
+                  font="caption2"
+                  foregroundStyle="secondaryLabel"
+                  lineLimit={1}
+                  frame={{ width: RAIL_COVER.width, alignment: "leading" }}
+                >
+                  {item.subtitle}
+                </Text>
+              ) : null}
+            </VStack>
+          </NavigationLink>
+        ))}
+      </HStack>
+    </ScrollView>
   )
 }
