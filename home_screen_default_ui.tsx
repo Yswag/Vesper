@@ -1,7 +1,7 @@
 // Scripting 首頁入口（Home Screen Tab UI）：Vesper 的 Mini Hub。
 // 長駐於 Scripting 首頁分頁，不可調用 Script.exit()；完整的五分頁殼也不 present 進來（會在分頁裡再疊一層殼）。
 //
-// 區塊：續讀 Hero、最新追更、待讀、閱讀熱力圖、搜尋（順序與開關見 app/miniHubLayout.ts），
+// 區塊：搜尋、續讀 Hero、最新追更、待讀、閱讀熱力圖（順序與開關見 app/miniHubLayout.ts），
 // 加上導覽列的「開啟完整 App」。
 // 背景檢查是靜默的：資料載入完成、每次切回首頁各跑一輪，先漫畫源更新再追更；
 // TTL 各自把關（見 app/sourceUpdates.ts、app/updates.ts），所以這裡放心呼叫。
@@ -814,7 +814,8 @@ interface RailItem {
 function CoverRail({ items }: { items: RailItem[] }) {
   return (
     <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
-      <HStack spacing={12} padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
+      {/* 沒副標的格子比較矮：靠上對齊，封面才在同一條線上。 */}
+      <HStack spacing={12} alignment="top" padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
         {items.map(item => (
           <NavigationLink
             key={comicGroupKey(item.favorite)}
