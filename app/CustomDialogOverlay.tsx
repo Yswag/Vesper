@@ -234,6 +234,8 @@ function MessageDialog({ request }: { request: Extract<CustomDialogRequest, { ki
   }
 
   const isTwoButtons = request.actions.length === 2
+  // 多行內容（清單、逐筆結果）置中會參差不齊，靠左才對得齊；單句維持置中。
+  const contentAlignment: "leading" | "center" = request.content?.includes("\n") ? "leading" : "center"
 
   return (
     <VStack spacing={0} frame={{ width: 270 }}>
@@ -257,8 +259,8 @@ function MessageDialog({ request }: { request: Extract<CustomDialogRequest, { ki
             <Text
               font="subheadline"
               foregroundStyle="secondaryLabel"
-              multilineTextAlignment="center"
-              frame={{ width: 242 }}
+              multilineTextAlignment={contentAlignment}
+              frame={{ width: 242, alignment: contentAlignment }}
             >
               {request.content}
             </Text>
