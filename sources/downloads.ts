@@ -5,6 +5,7 @@ import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
 import {
   beginChapter,
+  flushChapter,
   idOf,
   isComplete,
   listChapters,
@@ -13,6 +14,7 @@ import {
   savePage,
   statusOf,
   subscribeOffline,
+  type OfflineChapter,
   type OfflineKey,
   type OfflineStatus,
 } from "../engine/offline"
@@ -348,12 +350,16 @@ function pump() {
 async function runTask(task: Task) {
   task.state = "running"
   bus.emitDebounced()
+  // 章節結束的每一條路（完成、取消、失敗）都要把 manifest 補寫出去：
+  // 節流下最後不滿 10 頁的那幾頁只留在記憶體（見 offline 的 savePage）。
+  let chapter: OfflineChapter | null = null
   try {
     const images = await task.deps.loadImages(task.source, task.key.comicId, task.key.epId)
     // 清單還沒拿到就被取消：連 manifest 都不寫，這一章等於沒動過。
     if (task.cancelled) return
     // 先把清單寫進離線層：已經抓到而且圖片鍵還對得上的頁留著，所以重跑只補缺的。
-    const chapter = beginChapter(task.key, images, task.meta)
+    const opened = beginChapter(task.key, images, task.meta)
+    chapter = opened
     task.total = images.length
     bus.emitDebounced()
 
@@ -363,7 +369,7 @@ async function runTask(task: Task) {
       if (offlinePagePath(task.key, index, imageKey)) continue
       try {
         const bytes = await task.deps.fetchPage(task.source, task.key.comicId, task.key.epId, imageKey)
-        savePage(chapter, index, imageKey, bytes)
+        savePage(opened, index, imageKey, bytes)
       } catch (error) {
         // 一張失敗不擋其他張，也不會讓這一章變成已下載。
         task.error = error instanceof Error ? error.message : String(error)
@@ -376,6 +382,7 @@ async function runTask(task: Task) {
     task.error = error instanceof Error ? error.message : String(error)
     log("error", "download", `${task.key.epId} 下載失敗`, error)
   } finally {
+    if (chapter) flushChapter(chapter)
     running--
     // 任務結束釋放 source 與 deps 引用；若有錯誤保留輕量紀錄供 UI 呈現錯誤訊息
     if (task.error) {

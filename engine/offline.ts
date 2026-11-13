@@ -120,6 +120,39 @@ const bus = createEmitter({ debounceMs: 250 })
 
 export const subscribeOffline = bus.subscribe
 
+// ------------------------------------------------------------------ 統計
+//
+// 完成數與位元組數由寫入端維護（一頁一次加減），查詢時不再走訪整章的頁。
+// `OfflineChapter` 是對外型別，所以記在模組內的 WeakMap：章節物件換掉就自然失效。
+
+interface ChapterTally {
+  completed: number
+  bytes: number
+  /** 上一次寫 manifest 之後又落了幾頁（節流用）。 */
+  unwritten: number
+}
+
+const tallies = new WeakMap<OfflineChapter, ChapterTally>()
+
+/** 這一章的統計；第一次用到時走一遍，之後由 `beginChapter`／`savePage` 維護。 */
+function tallyOf(chapter: OfflineChapter): ChapterTally {
+  const cached = tallies.get(chapter)
+  if (cached) return cached
+  let completed = 0
+  chapter.imageKeys.forEach((imageKey, at) => {
+    const page = chapter.pages[String(at)]
+    if (page && page.key === imageKey) completed++
+  })
+  let bytes = 0
+  for (const page of Object.values(chapter.pages)) bytes += page.bytes
+  const tally: ChapterTally = { completed, bytes, unwritten: 0 }
+  tallies.set(chapter, tally)
+  return tally
+}
+
+/** 每幾頁寫一次 manifest（開始與收尾各寫一次，收尾見 `flushChapter`）。 */
+const MANIFEST_PAGES_PER_WRITE = 10
+
 // ------------------------------------------------------------------ 寫入
 
 function writeChapter(chapter: OfflineChapter) {
@@ -138,6 +171,8 @@ function writeChapter(chapter: OfflineChapter) {
     log("warning", "offline", `manifest 寫入失敗：${chapter.key.epId}`)
   }
   loadIndex().set(idOf(chapter.key), chapter)
+  const tally = tallies.get(chapter)
+  if (tally) tally.unwritten = 0
 }
 
 /**
@@ -150,11 +185,16 @@ export function beginChapter(
 ): OfflineChapter {
   const previous = chapterOf(key)
   const pages: Record<string, OfflinePage> = {}
+  let kept = 0
+  let bytes = 0
   if (previous) {
     for (const [slot, page] of Object.entries(previous.pages)) {
       const at = Number(slot)
-      if (imageKeys[at] === page.key && exists(pageFile(key, at))) pages[slot] = page
-      else remove(pageFile(key, at))
+      if (imageKeys[at] === page.key && exists(pageFile(key, at))) {
+        pages[slot] = page
+        kept++
+        bytes += page.bytes
+      } else remove(pageFile(key, at))
     }
   }
   const chapter: OfflineChapter = {
@@ -166,6 +206,8 @@ export function beginChapter(
     pages,
     updatedAt: Date.now(),
   }
+  // 留著的頁都是「索引還在、圖片鍵也對得上」的，所以正好是完成數。
+  tallies.set(chapter, { completed: kept, bytes, unwritten: 0 })
   writeChapter(chapter)
   bus.emitDebounced()
   return chapter
@@ -179,10 +221,31 @@ export function savePage(chapter: OfflineChapter, index: number, imageKey: strin
   FileManager.writeAsBytesSync(temp, bytes)
   if (exists(target)) remove(target)
   FileManager.renameSync(temp, target)
-  chapter.pages[String(index)] = { key: imageKey, bytes: bytes.byteLength }
+  const slot = String(index)
+  const tally = tallyOf(chapter)
+  const previous = chapter.pages[slot]
+  if (previous) {
+    tally.bytes -= previous.bytes
+    if (chapter.imageKeys[index] === previous.key) tally.completed--
+  }
+  chapter.pages[slot] = { key: imageKey, bytes: bytes.byteLength }
+  tally.bytes += bytes.byteLength
+  if (chapter.imageKeys[index] === imageKey) tally.completed++
   chapter.updatedAt = Date.now()
-  writeChapter(chapter)
+
+  // 索引每頁都要更新（查詢與續傳都看它）；manifest 節流寫，收尾由下載管理員呼叫 `flushChapter`。
+  loadIndex().set(idOf(chapter.key), chapter)
+  tally.unwritten++
+  if (tally.unwritten >= MANIFEST_PAGES_PER_WRITE) writeChapter(chapter)
   bus.emitDebounced()
+}
+
+/**
+ * 把這一章的 manifest 立刻寫到磁碟。
+ * 下載管理員在章節結束（完成、取消、失敗）時呼叫：節流下最多有 9 頁只留在記憶體。
+ */
+export function flushChapter(chapter: OfflineChapter): void {
+  writeChapter(chapter)
 }
 
 /** 刪掉一整章（manifest 與所有頁面檔案）。 */
@@ -191,7 +254,10 @@ export function removeChapter(key: OfflineKey): void {
   loadIndex().delete(idOf(key))
   // 最後一章刪掉時清單快取也收掉（不留孤兒檔）。落點選這裡而不是下載管理員：索引在上一行才更新完，
   // 刪完立刻看剩下的章最準；下載任務晚到的 manifest 寫回只會讓這部暫時少一份快取，下次線上就補回來。
-  if (!hasOfflineChapters(key.sourceKey, key.comicId)) remove(chapterListFile(key.sourceKey, key.comicId))
+  if (!hasOfflineChapters(key.sourceKey, key.comicId)) {
+    remove(chapterListFile(key.sourceKey, key.comicId))
+    chapterLists.delete(comicGroupKey(key))
+  }
   bus.emitDebounced()
 }
 
@@ -217,26 +283,12 @@ export function comicCount(): number {
   return comics.size
 }
 
-function completedOf(chapter: OfflineChapter): number {
-  let done = 0
-  chapter.imageKeys.forEach((imageKey, at) => {
-    const page = chapter.pages[String(at)]
-    if (page && page.key === imageKey) done++
-  })
-  return done
-}
-
-function bytesOf(chapter: OfflineChapter): number {
-  let total = 0
-  for (const page of Object.values(chapter.pages)) total += page.bytes
-  return total
-}
-
 export function statusOf(key: OfflineKey): OfflineStatus {
   const chapter = chapterOf(key)
   const total = chapter?.imageKeys.length ?? 0
-  const completed = chapter ? completedOf(chapter) : 0
-  const bytes = chapter ? bytesOf(chapter) : 0
+  const tally = chapter ? tallyOf(chapter) : null
+  const completed = tally?.completed ?? 0
+  const bytes = tally?.bytes ?? 0
   const state: OfflineState = total > 0 && completed >= total ? "done" : completed > 0 ? "partial" : "none"
   return { state, completed, total, bytes }
 }
@@ -282,32 +334,37 @@ function chapterListFile(sourceKey: string, comicId: string): string {
   return join(appDataRoot(), "offline-chapters", `${hash}.json`)
 }
 
-/**
- * 章節清單快取的順序標記：舊→新（閱讀順序）。沒有這個標記的檔是更早寫的，
- * Aidoku 作品當時存的是新→舊，讀到就當沒有快取，等下次線上取得時覆寫。
- */
-const CHAPTER_LIST_ORDER = "reading"
+// 章節清單的記憶體快取：以「檔案的修改時間」當過期判準——完整 App 與 Mini Hub 是兩個實例，
+// 同一個 process 裡「我是唯一寫入者」不成立。沒有檔也記住（不然沒下載過的收藏每次白查一次）。
 
-/** 覆寫這部漫畫的章節清單快取（舊→新）。 */
-export function saveChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
-  const payload = JSON.stringify({ updatedAt: Date.now(), order: CHAPTER_LIST_ORDER, chapters })
-  if (!writeText(chapterListFile(sourceKey, comicId), payload)) {
-    log("warning", "offline", `章節清單快取寫入失敗：${comicId}`)
+/** 那時沒有這個檔（有檔但讀不到修改時間也算同一件事：下次重新讀）。 */
+const NO_LIST_FILE = -1
+
+interface ChapterListCache {
+  mtime: number
+  chapters: ReaderChapter[] | null
+}
+
+const chapterLists = new Map<string, ChapterListCache>()
+
+/** 唯讀觀測點：這一支 process 讀過幾次章節清單檔（回歸探針用，不是畫面或源的介面）。 */
+let chapterListReads = 0
+
+export function debugChapterListReads(): number {
+  return chapterListReads
+}
+
+function chapterListMtime(path: string): number {
+  try {
+    if (!FileManager.existsSync(path)) return NO_LIST_FILE
+    const value = Number(FileManager.statSync(path).modificationDate ?? 0)
+    return Number.isFinite(value) ? value : NO_LIST_FILE
+  } catch {
+    return NO_LIST_FILE
   }
 }
 
-/**
- * 線上取得清單時記下來。這部完全沒有離線內容就不留檔——不替每部瀏覽過的漫畫存檔。
- * （下載開始時走 `saveChapterList`：那時第一話還沒落地，這個守衛會把它擋掉。）
- */
-export function cacheChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
-  if (!hasOfflineChapters(sourceKey, comicId)) return
-  saveChapterList(sourceKey, comicId, chapters)
-}
-
-/** 這部漫畫上一次線上取得的章節清單；沒有、或讀不懂就回 null（呼叫端一律要能退回下載清單）。 */
-export function cachedChapterList(sourceKey: string, comicId: string): ReaderChapter[] | null {
-  const raw = readText(chapterListFile(sourceKey, comicId))
+function parseChapterList(raw: string | null): ReaderChapter[] | null {
   if (!raw) return null
   try {
     const item = JSON.parse(raw) as Record<string, any>
@@ -326,6 +383,57 @@ export function cachedChapterList(sourceKey: string, comicId: string): ReaderCha
   } catch {
     return null
   }
+}
+
+/** 讀檔並解析（唯一的讀取點；快取只認修改時間）。 */
+function readChapterList(path: string): ReaderChapter[] | null {
+  chapterListReads++
+  return parseChapterList(readText(path))
+}
+
+/**
+ * 章節清單快取的順序標記：舊→新（閱讀順序）。沒有這個標記的檔是更早寫的，
+ * Aidoku 作品當時存的是新→舊，讀到就當沒有快取，等下次線上取得時覆寫。
+ */
+const CHAPTER_LIST_ORDER = "reading"
+
+/** 覆寫這部漫畫的章節清單快取（舊→新）。 */
+export function saveChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
+  const path = chapterListFile(sourceKey, comicId)
+  const group = comicGroupKey({ sourceKey, comicId })
+  const payload = JSON.stringify({ updatedAt: Date.now(), order: CHAPTER_LIST_ORDER, chapters })
+  if (!writeText(path, payload)) {
+    log("warning", "offline", `章節清單快取寫入失敗：${comicId}`)
+    // 盤上的那份可能還是舊的：丟快取比留著一份錯的好。
+    chapterLists.delete(group)
+    return
+  }
+  // 直接存「解析回來的形狀」，跟之後讀檔拿到的一模一樣（呼叫端改動也汙染不到快取）。
+  chapterLists.set(group, { mtime: chapterListMtime(path), chapters: parseChapterList(payload) })
+}
+
+/**
+ * 線上取得清單時記下來。這部完全沒有離線內容就不留檔——不替每部瀏覽過的漫畫存檔。
+ * （下載開始時走 `saveChapterList`：那時第一話還沒落地，這個守衛會把它擋掉。）
+ */
+export function cacheChapterList(sourceKey: string, comicId: string, chapters: ReaderChapter[]): void {
+  if (!hasOfflineChapters(sourceKey, comicId)) return
+  saveChapterList(sourceKey, comicId, chapters)
+}
+
+/** 這部漫畫上一次線上取得的章節清單；沒有、或讀不懂就回 null（呼叫端一律要能退回下載清單）。 */
+export function cachedChapterList(sourceKey: string, comicId: string): ReaderChapter[] | null {
+  const group = comicGroupKey({ sourceKey, comicId })
+  const path = chapterListFile(sourceKey, comicId)
+  const cached = chapterLists.get(group)
+  let chapters: ReaderChapter[] | null
+  if (cached && cached.mtime === chapterListMtime(path)) chapters = cached.chapters
+  else {
+    chapters = readChapterList(path)
+    chapterLists.set(group, { mtime: chapterListMtime(path), chapters })
+  }
+  // 每次回一份新的：呼叫端排序、加東西都不會汙染下一次。
+  return chapters ? chapters.map(chapter => ({ ...chapter })) : null
 }
 
 /**
@@ -356,7 +464,7 @@ export function offlinePagePath(key: OfflineKey, index: number, imageKey?: strin
 /** 所有離線章節的佔用位元組（下載頁要顯示的數字）。 */
 export function totalBytes(): number {
   let total = 0
-  for (const chapter of loadIndex().values()) total += bytesOf(chapter)
+  for (const chapter of loadIndex().values()) total += tallyOf(chapter).bytes
   return total
 }
 
