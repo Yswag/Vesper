@@ -34,11 +34,29 @@ function fromData(data: Data): Bytes {
 }
 
 /**
+ * 執行期是否真的把 `Buffer.from(arrayBuffer, byteOffset, byteLength)` 當成 view：載入時用
+ * 一個小樣本自檢偏移有沒有被吃掉（`node:buffer` 的宣告比執行期少，只能實測）。
+ * 不成立就退回一次複製——結果一樣，只是慢一點。
+ */
+const bufferFromIsView = (() => {
+  try {
+    const source = new Uint8Array([1, 2, 3, 4])
+    const view = source.subarray(1, 3)
+    const wrapped = (Buffer as any).from(view.buffer, view.byteOffset, view.byteLength)
+    return wrapped.length === 2 && wrapped[0] === 2 && wrapped[1] === 3
+  } catch {
+    return false
+  }
+})()
+
+/**
  * node:crypto / node:buffer 的宣告只吃 ArrayBuffer-backed 的緩衝區，型別上對不起來；
  * 執行期只需要一份位元組，所以這裡統一轉一份並把型別放寬。
+ * 能 view 就不複製：呼叫端傳進來的可能是大緩衝區中間的一段。
  */
 function toBuffer(bytes: Bytes): any {
-  return Buffer.from(Array.from(bytes))
+  if (bufferFromIsView) return (Buffer as any).from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  return (Buffer as any).from(bytes)
 }
 
 function utf8Encode(str: string): Bytes {
@@ -124,6 +142,18 @@ function utf8Decode(bytes: Bytes): string {
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
+/** 字元 → 值：舊寫法每次 `indexOf` 都要掃一遍字串，改成 128 格的陣列。 */
+const B64_DECODE = (() => {
+  const table: number[] = new Array(128).fill(-1)
+  for (let i = 0; i < B64.length; i++) table[B64.charCodeAt(i)] = i
+  return table
+})()
+
+function b64Value(ch: string): number {
+  const code = ch.charCodeAt(0)
+  return code < 128 ? B64_DECODE[code] : -1
+}
+
 /** 容錯的 base64 解碼：接受 URL-safe（-_）與空白/換行，忽略填字。 */
 function base64Decode(value: string): Bytes {
   const clean = String(value ?? "")
@@ -134,10 +164,10 @@ function base64Decode(value: string): Bytes {
   let p = 0
   for (let i = 0; i < clean.length; i += 4) {
     const n =
-      (B64.indexOf(clean[i]) << 18) |
-      (B64.indexOf(clean[i + 1] ?? "A") << 12) |
-      ((clean[i + 2] ? B64.indexOf(clean[i + 2]) : 0) << 6) |
-      (clean[i + 3] ? B64.indexOf(clean[i + 3]) : 0)
+      (b64Value(clean[i]) << 18) |
+      (b64Value(clean[i + 1] ?? "A") << 12) |
+      ((clean[i + 2] ? b64Value(clean[i + 2]) : 0) << 6) |
+      (clean[i + 3] ? b64Value(clean[i + 3]) : 0)
     if (p < out.length) out[p++] = (n >> 16) & 0xff
     if (p < out.length) out[p++] = (n >> 8) & 0xff
     if (p < out.length) out[p++] = n & 0xff
@@ -214,8 +244,12 @@ function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: a
     ivBuf
   )
   cipher.setAutoPadding(false)
-  const out = Buffer.concat([cipher.update(toBuffer(toBytes(value))), cipher.final()])
-  return Uint8Array.from(out)
+  const head = cipher.update(toBuffer(toBytes(value)))
+  const tail = cipher.final()
+  // 沒有 auto padding 時 final() 幾乎都是空的：空的就省掉 Buffer.concat 的那一次複製。
+  const out = tail.length === 0 ? head : Buffer.concat([head, tail])
+  // 一定要複製成獨立的 Uint8Array：Buffer 可能來自共用池，view 出去會被之後的配置覆寫。
+  return new Uint8Array(out)
 }
 
 function normalizeHash(name: string): HashName {

@@ -22,6 +22,8 @@ function getCheerio(): any {
 interface Doc {
   $: any
   nodes: Map<number, any>
+  /** 節點 → 鍵：註冊前先查這裡，不再線性掃整張 nodes 表。 */
+  keys: WeakMap<object, number>
 }
 
 const docs = new Map<number, Doc>()
@@ -42,8 +44,10 @@ function isDocument(node: any): boolean {
 export function parseDocument(html: string): number {
   const $ = getCheerio().load(html ?? "")
   const key = nextDocKey++
-  const doc: Doc = { $, nodes: new Map() }
-  doc.nodes.set(0, $.root()[0])
+  const doc: Doc = { $, nodes: new Map(), keys: new WeakMap() }
+  const root = $.root()[0]
+  doc.nodes.set(0, root)
+  if (root && typeof root === "object") doc.keys.set(root, 0)
   docs.set(key, doc)
   evictOverLimit()
   return key
@@ -86,11 +90,11 @@ function nodeOf(docKey: number, nodeKey: number): any {
 function register(docKey: number, node: any): number | null {
   if (!node) return null
   const d = doc(docKey)
-  for (const [k, v] of d.nodes) {
-    if (v === node) return k
-  }
+  const known = d.keys.get(node)
+  if (known !== undefined) return known
   const key = nextNodeKey++
   d.nodes.set(key, node)
+  d.keys.set(node, key)
   return key
 }
 
