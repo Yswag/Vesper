@@ -20,9 +20,10 @@ import {
   useObservable,
   useRef,
   useState,
+  type AbortSignal,
 } from "scripting"
 
-import { type ComicSourceInfo } from "../../app/comic"
+import { type ComicLibrary, type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
@@ -43,18 +44,226 @@ import { type ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { log } from "../../engine/log"
 import { type SourceSearchResult } from "../../sources/search"
-import {
-  decodeSearchOptions,
-  encodeSearchOptions,
-  type SearchOptionRow,
-  type SearchOptionValue,
-} from "../../sources/searchOptions"
+import { decodeSearchOptions, encodeSearchOptions, type SearchOptionRow } from "../../sources/searchOptions"
 import { SourceSearchResults } from "../browse/SourceSearchResults"
 import { ComicDetailScreen } from "../shared/ComicDetailScreen"
 import { bangumiCardSize, type CardSize } from "../shared/comicMetrics"
 
 /** 搜尋中：進度最多每 300ms 上一次畫面（合併更新）。 */
 const PROGRESS_FLUSH_MS = 300
+
+/** 結果區看到的狀態；每次 commit 換一個新的物件。 */
+export interface SearchSnapshot {
+  /** 每次 commit +1：晚到的非同步結果拿舊版號比對就知道自己過期了。 */
+  version: number
+  /** 這一輪的關鍵字；空字串＝還沒搜尋（結果區顯示歷史）。 */
+  term: string
+  results: SourceSearchResult[]
+  running: boolean
+  history: string[]
+}
+
+/** 搜尋歷史的讀寫（畫面接真的儲存，探針接假的）。 */
+export interface SearchHistoryStore {
+  load: () => string[]
+  push: (term: string) => string[]
+  clear: () => string[]
+}
+
+/**
+ * store 對外的依賴。畫面接真的 `ComicLibrary`，探針接假的——
+ * 「換了關鍵字之後晚到的結果寫不進來」就是在這一層驗的。
+ */
+export interface SearchStoreDeps {
+  /** 派一輪搜尋；每完成一個源就呼叫 `onProgress`（整份快照），`signal` 取消。 */
+  run: (keyword: string, onProgress: (results: SourceSearchResult[]) => void, signal: AbortSignal) => Promise<unknown>
+  /** 這一頁要顯示哪些源（順序決定排法，還沒回來的畫骨架）。 */
+  sources: () => ComicSourceInfo[]
+  history: SearchHistoryStore
+  /** 送出時把關鍵字寫回搜尋框的草稿。 */
+  setDraft: (keyword: string) => void
+}
+
+/**
+ * 一輪聚合搜尋的狀態。**每個畫面實例一份**（兩個搜尋頁同時開著時各有一份結果，
+ * 晚到的回呼也只進得去自己那一份）；結果區自己訂閱，打字不會碰到它。
+ */
+export interface SearchStore {
+  /** 給 `useSubscription`。 */
+  subscribe: (notify: () => void) => () => void
+  read: () => SearchSnapshot
+  /** 送出關鍵字（歷史、草稿、取消上一輪都在這裡）。 */
+  submit: (keyword: string) => void
+  /** 搜尋框被清掉：作廢這一輪、丟掉結果。 */
+  clear: () => void
+  /** 清空搜尋歷史（歷史面板那顆按鈕）。 */
+  clearHistory: () => void
+  /** 離開畫面：作廢這一輪並取消在飛的請求。 */
+  dispose: () => void
+}
+
+export function createSearchStore(deps: SearchStoreDeps): SearchStore {
+  let version = 0
+  /** 輪次序號：新的一輪、清空、離開畫面都 +1；晚到的回呼帶著舊號，直接被擋掉。 */
+  let epoch = 0
+  let term = ""
+  let results: SourceSearchResult[] = []
+  let running = false
+  // 歷史在建立 store 時就讀好：畫面第一幀就要看得到，不能等 effect（那時結果區已經畫完了）。
+  let history: string[] = deps.history.load()
+  let snapshot: SearchSnapshot = { version, term, results, running, history }
+  const listeners = new Set<() => void>()
+  let controller: AbortController | null = null
+  /** 還沒沖出去的最新進度快照（合併更新用）。 */
+  let pending: SourceSearchResult[] | null = null
+  /** 排定的沖出計時器；0 是合法 handle，判斷用 `!== null`。 */
+  let flushTimer: number | null = null
+
+  function commit(): void {
+    version += 1
+    snapshot = { version, term, results, running, history }
+    for (const listener of [...listeners]) listener()
+  }
+
+  function abortCurrentRun(): void {
+    controller?.abort()
+    controller = null
+  }
+
+  /** 取消排定的沖出，並丟掉還沒沖出去的快照。 */
+  function cancelFlush(): void {
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer)
+      flushTimer = null
+    }
+    pending = null
+  }
+
+  async function runRound(text: string): Promise<void> {
+    // 新的一輪：先把上一輪取消（在飛的請求真的中止，排隊中的源不再派出），
+    // 上一輪還沒沖出去的進度一併丟掉。
+    abortCurrentRun()
+    cancelFlush()
+    const id = ++epoch
+    const abort = new AbortController()
+    controller = abort
+    /** 這一批回來的東西還算不算數。 */
+    const current = () => epoch === id
+
+    term = text
+    results = []
+    running = true
+    commit()
+
+    // 進度一次一源回來：先放著，最多每 300ms 才寫一次（trailing）。
+    // 不然 30 個源就是幾秒內 30 次重繪，搜尋中滑動會卡。
+    const flush = () => {
+      flushTimer = null
+      const latest = pending
+      pending = null
+      if (latest && current()) {
+        results = latest
+        commit()
+      }
+    }
+
+    try {
+      await deps.run(
+        text,
+        progress => {
+          // 舊的一輪的進度可能還在飛回來的路上，對不上就丟掉。
+          if (!current()) return
+          pending = progress
+          if (flushTimer === null) flushTimer = setTimeout(flush, PROGRESS_FLUSH_MS)
+        },
+        abort.signal
+      )
+    } catch (error) {
+      // 取消是正常結束（結果由 epoch 丟掉）；其他錯誤留一筆 warning，不要靜默。
+      if (!isAbortError(error)) log("warning", "search", `「${text}」搜尋未完成`, error)
+    } finally {
+      if (current()) {
+        // 這一輪結束：排定中的沖出作廢，直接補上最後一份結果。
+        const last = pending
+        if (flushTimer !== null) {
+          clearTimeout(flushTimer)
+          flushTimer = null
+        }
+        pending = null
+        if (last) results = last
+        running = false
+        controller = null
+        commit()
+      }
+    }
+  }
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    read: () => snapshot,
+    submit(raw) {
+      const text = raw.trim()
+      if (!text) return
+      if (deps.sources().length === 0) {
+        log("warning", "search", "沒有已啟用的源")
+        return
+      }
+      deps.setDraft(text)
+      history = deps.history.push(text)
+      if (typeof Keyboard !== "undefined" && Keyboard.visible) Keyboard.hide()
+      void runRound(text)
+    },
+    clear() {
+      epoch += 1
+      abortCurrentRun()
+      cancelFlush()
+      term = ""
+      results = []
+      running = false
+      commit()
+    },
+    clearHistory() {
+      history = deps.history.clear()
+      commit()
+    },
+    dispose() {
+      epoch += 1
+      abortCurrentRun()
+      cancelFlush()
+      listeners.clear()
+    },
+  }
+}
+
+/** 把這一頁接到共用的搜尋引擎（store 只認這幾個函式，探針換假的也能跑）。 */
+function depsFor(library: ComicLibrary, setDraft: (keyword: string) => void): SearchStoreDeps {
+  // 每個源存下來的篩選（"sourceKey" → 送去源的 options 陣列）。
+  // 這頁只讀不寫：篩選入口在單源搜尋頁，這裡只負責把存過的值帶進請求。
+  // 真的送出第一輪時才讀儲存，掛載時不必先讀一份用不到的。
+  let selections: Record<string, Array<string | null>> | null = null
+
+  /** 這個源的篩選列（庫給的 domain 資料，不再碰源的 instance）。 */
+  const rowsOf = (key: string): SearchOptionRow[] => library.source(key)?.searchOptions ?? []
+
+  /** 送去源的那個 options 陣列（存過的優先，否則源的預設）。 */
+  const requestOf = (key: string): Array<string | null> => {
+    selections ??= loadSearchSelections()
+    return encodeSearchOptions(rowsOf(key), decodeSearchOptions(rowsOf(key), selections[key]))
+  }
+
+  return {
+    sources: () => library.sources(),
+    run: (keyword, onProgress, signal) =>
+      library.search({ keyword, optionsOf: requestOf }, progress => onProgress(progress.results), { signal }),
+    history: { load: loadHistory, push: pushHistory, clear: clearHistory },
+    setDraft,
+  }
+}
 
 export function SearchScreen({
   autoFocus = false,
@@ -65,150 +274,27 @@ export function SearchScreen({
   /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
   zoomFrom?: { sourceID: string; namespace: NamespaceID }
 }) {
-  const library = comicLibrary()
   const [keyword, setKeyword] = useState("")
-  const [submitted, setSubmitted] = useState("")
-  const [results, setResults] = useState<SourceSearchResult[]>([])
-  const [running, setRunning] = useState(false)
-  const [history, setHistory] = useState<string[]>([])
-  // 每個源存下來的篩選（"sourceKey" → 送去源的 options 陣列）。
-  // 這頁只讀不寫：篩選入口在單源搜尋頁，這裡只負責把存過的值帶進請求。
-  const [selections, setSelections] = useState<Record<string, Array<string | null>>>({})
   // 搜尋框展開狀態由系統綁定（勿手動設為 false，否則將觸發取消並切換分頁）。
   // 推入時第一幀就是展開的：鍵盤跟著轉場上來，不用等轉場完再補。
   const presented = useObservable(autoFocus)
-
-  /**
-   * 搜尋輪次管理（epoch + AbortController）：新關鍵字或離開畫面時作廢舊輪次並中止請求。
-   */
-  const runRef = useRef({ id: 0, controller: null as AbortController | null })
-  /** 還沒沖出去的最新進度快照（合併更新用）。 */
-  const pendingRef = useRef<SourceSearchResult[] | null>(null)
-  /** 排定的沖出計時器；0 是合法 handle，判斷用 `!== null`。 */
-  const flushTimerRef = useRef<number | null>(null)
-
-  // 訂閱來源異動與語言切換
-  useSubscription(library.onChange, subscribeLocale)
-  const sources = library.sources()
+  /** 這一頁自己的搜尋狀態：`keyword` 只是草稿，結果在 store 裡（結果區自己訂閱）。 */
+  const storeRef = useRef<SearchStore | null>(null)
+  if (storeRef.current === null) storeRef.current = createSearchStore(depsFor(comicLibrary(), setKeyword))
+  const store = storeRef.current
 
   useEffect(() => {
-    setHistory(loadHistory())
-    setSelections(loadSearchSelections())
-
-    setSearchTriggerListener(kw => {
-      void run(kw)
-    })
+    setSearchTriggerListener(term => store.submit(term))
     return () => {
-      // 離開畫面：這一輪作廢（id 一換，回來的東西就不會再 setState）並取消在飛的請求。
-      runRef.current.id++
-      abortCurrentRun()
-      cancelFlush()
+      // 離開畫面：這一輪作廢並取消在飛的請求（store 只屬於這個實例）。
+      store.dispose()
       setSearchTriggerListener(null)
     }
   }, [])
 
-  function abortCurrentRun() {
-    runRef.current.controller?.abort()
-    runRef.current.controller = null
-  }
-
-  /** 取消排定的沖出，並丟掉還沒沖出去的快照。 */
-  function cancelFlush() {
-    if (flushTimerRef.current !== null) {
-      clearTimeout(flushTimerRef.current)
-      flushTimerRef.current = null
-    }
-    pendingRef.current = null
-  }
-
-  async function run(term: string) {
-    const text = term.trim()
-    if (!text) return
-    const list = library.sources()
-    if (list.length === 0) {
-      log("warning", "search", "沒有已啟用的源")
-      return
-    }
-
-    // 新的一輪：先把上一輪取消（在飛的請求真的中止，排隊中的源不再派出），
-    // 上一輪還沒沖出去的進度一併丟掉。
-    abortCurrentRun()
-    cancelFlush()
-    const id = ++runRef.current.id
-    const controller = new AbortController()
-    runRef.current.controller = controller
-    /** 這一批回來的東西還算不算數。 */
-    const current = () => runRef.current.id === id
-
-    setKeyword(text)
-    setSubmitted(text)
-    setRunning(true)
-    setResults([])
-    setHistory(pushHistory(text))
-    if (Keyboard.visible) Keyboard.hide()
-
-    // 進度一次一源回來：先放著，最多每 300ms 才 setResults 一次（trailing）。
-    // 不然 30 個源就是幾秒內 30 次整頁重繪，搜尋中滑動會卡。
-    const flush = () => {
-      flushTimerRef.current = null
-      const snapshot = pendingRef.current
-      pendingRef.current = null
-      if (snapshot && current()) setResults(snapshot)
-    }
-
-    try {
-      await library.search(
-        { keyword: text, optionsOf: key => requestOf(key) },
-        snapshot => {
-          // 舊的一輪的進度可能還在飛回來的路上，對不上就丟掉。
-          if (!current()) return
-          pendingRef.current = snapshot.results
-          if (flushTimerRef.current === null) flushTimerRef.current = setTimeout(flush, PROGRESS_FLUSH_MS)
-        },
-        { signal: controller.signal }
-      )
-    } catch (error) {
-      // 取消是正常結束（結果由 epoch 丟掉）；其他錯誤留一筆 warning，不要靜默。
-      if (!isAbortError(error)) log("warning", "search", `「${text}」搜尋未完成`, error)
-    } finally {
-      if (current()) {
-        // 這一輪結束：排定中的沖出作廢，直接補上最後一份結果。
-        if (flushTimerRef.current !== null) clearTimeout(flushTimerRef.current)
-        flushTimerRef.current = null
-        const snapshot = pendingRef.current
-        pendingRef.current = null
-        if (snapshot) setResults(snapshot)
-        setRunning(false)
-        runRef.current.controller = null
-      }
-    }
-  }
-
-  /** 這個源的篩選列（庫給的 domain 資料，不再碰源的 instance）。 */
-  function rowsOf(key: string): SearchOptionRow[] {
-    return library.source(key)?.searchOptions ?? []
-  }
-
-  /** 這個源目前的篩選（存過的優先，否則源的預設）。 */
-  function valuesOf(key: string): SearchOptionValue[] {
-    return decodeSearchOptions(rowsOf(key), selections[key])
-  }
-
-  /** 送去源的那個 options 陣列。 */
-  function requestOf(key: string): Array<string | null> {
-    return encodeSearchOptions(rowsOf(key), valuesOf(key))
-  }
-
   function handleKeywordChange(text: string) {
     setKeyword(text)
-    if (text.trim() === "") {
-      abortCurrentRun()
-      runRef.current.id++
-      cancelFlush()
-      setSubmitted("")
-      setResults([])
-      setRunning(false)
-    }
+    if (text.trim() === "") store.clear()
   }
 
   return (
@@ -230,16 +316,27 @@ export function SearchScreen({
           presented,
           placement: autoFocus ? "navigationBarDrawerAlwaysDisplay" : undefined,
         }}
-        onSubmit={{ triggers: "search", action: () => void run(keyword) }}
+        onSubmit={{ triggers: "search", action: () => store.submit(keyword) }}
       >
-        {submitted.length === 0 ? (
-          <HistoryPanel history={history} onPick={term => void run(term)} onClear={() => setHistory(clearHistory())} />
-        ) : (
-          <SearchResults sources={sources} results={results} running={running} term={submitted} />
-        )}
+        <SearchOutcome store={store} />
       </VStack>
     </ZStack>
   )
+}
+
+/**
+ * 結果區：自己訂閱 store。打字只動草稿，這個元件的函式體不重跑，
+ * 也不必把整份結果當 props 比一遍（props 只有一個每實例建立的 store）。
+ */
+function SearchOutcome({ store }: { store: SearchStore }) {
+  const library = comicLibrary()
+  // 源清單與語言變了要重排；結果本身由 store 通知。
+  useSubscription(store.subscribe, library.onChange, subscribeLocale)
+  const state = store.read()
+  if (state.term.length === 0) {
+    return <HistoryPanel history={state.history} onPick={store.submit} onClear={store.clearHistory} />
+  }
+  return <SearchResults sources={library.sources()} results={state.results} running={state.running} term={state.term} />
 }
 
 /** 一輪聚合搜尋的結果：每個源一排，順序照源清單（回來的先後不影響排法）。 */

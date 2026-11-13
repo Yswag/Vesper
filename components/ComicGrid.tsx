@@ -61,6 +61,22 @@ function entryKey(entry: ComicGridEntry): string {
   return `${entry.sourceKey}:${entry.comic.id}`
 }
 
+/**
+ * 每格的鍵與「有沒有進度」一次掃完：鍵本來每一格都要用來畫、到處查表，
+ * 「有沒有進度」又只是同一次迴圈裡的一個旗標，分兩趟只是白掃一次陣列。
+ * 純計算（探針直接 import 來量）。
+ */
+export function gridSurfaces(entries: readonly ComicGridEntry[]): { keys: string[]; hasProgress: boolean } {
+  const keys = new Array<string>(entries.length)
+  let hasProgress = false
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index]
+    keys[index] = entryKey(entry)
+    if (entry.readFraction !== undefined) hasProgress = true
+  }
+  return { keys, hasProgress }
+}
+
 /** 這一輪是不是只少了一格：換篩選、整批換掉都不算，不然會亂飛。 */
 function isSingleRemoval(previous: readonly string[], next: readonly string[]): boolean {
   if (previous.length !== next.length + 1) return false
@@ -73,23 +89,33 @@ function isSingleRemoval(previous: readonly string[], next: readonly string[]): 
  * 每一格「舊位置 − 新位置」的像素位移（沒動的不列）。
  * 格子位置是格子自己算的：第 i 格在 (i % columns, ⌊i / columns⌋) 個欄距／列距上，
  * 少一格之後後面每一格正好遞補前一格的位置。
+ *
+ * 舊位置一次建表：逐格 `previous.indexOf` 最壞是 O(n²)（位移一大就一路往後找），
+ * 換成建表就是固定兩趟。重複的鍵取第一次出現的位置，跟 `indexOf` 的語意一致。
+ * 純計算（探針逐格比對新舊）。
  */
-function collapseShift(
+export function collapseShift(
   previous: readonly string[],
   next: readonly string[],
   columns: number,
   columnPitch: number,
   rowPitch: number
 ): Record<string, { x: number; y: number }> {
+  const before = new Map<string, number>()
+  for (let index = 0; index < previous.length; index++) {
+    const key = previous[index]
+    if (!before.has(key)) before.set(key, index)
+  }
   const shift: Record<string, { x: number; y: number }> = {}
-  next.forEach((key, index) => {
-    const before = previous.indexOf(key)
-    if (before <= index) return
+  for (let index = 0; index < next.length; index++) {
+    const key = next[index]
+    const was = before.get(key)
+    if (was === undefined || was <= index) continue
     shift[key] = {
-      x: (before % columns - index % columns) * columnPitch,
-      y: (Math.floor(before / columns) - Math.floor(index / columns)) * rowPitch,
+      x: (was % columns - index % columns) * columnPitch,
+      y: (Math.floor(was / columns) - Math.floor(index / columns)) * rowPitch,
     }
-  })
+  }
   return shift
 }
 
@@ -134,10 +160,12 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
   const measured = containerWidth > 0
   const lastIndex = entries.length - 1
-  // 有任何一格帶進度才留這一行；瀏覽、搜尋的網格不受影響。
-  const hasProgress = entries.some(entry => entry.readFraction !== undefined)
-
-  const keys = entries.map(entryKey)
+  // 衍生值：欄數／格寬是 O(1) 算術，鍵是一次 O(n)（鍵本來每一格畫的時候就要用）。
+  // 真正貴的只有補位位移表，而它只在「少了一格」時才算：項目沒變時 `isSingleRemoval`
+  // 比個長度就回頭，什麼都不重算。
+  // 不另外做「內容簽名 memo」：`entries` 每次重繪都是新造的陣列（各畫面的事），
+  // 簽名本身就得把整份鍵串起來，成本跟直接算一樣（探針量過）。
+  const { keys, hasProgress } = gridSurfaces(entries)
 
   // LazyVGrid 自己不會演「少一格」的補位（版面變化不吃 `withAnimation`，實機是直接跳位）。
   // 所以位置自己補：先讓還留著的格子畫在舊位置，下一輪再將 offset 收成 0，
@@ -183,8 +211,8 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
           }
         >
           {measured ? entries.map((entry, index) => {
-            const key = entryKey(entry)
-            const sourceID = `grid:${entry.sourceKey}:${entry.comic.id}`
+            const key = keys[index]
+            const sourceID = `grid:${key}`
             return (
               <NavigationLink
                 key={key}
