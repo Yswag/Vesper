@@ -3,6 +3,7 @@ import {
   Divider,
   HStack,
   Image,
+  LazyVStack,
   RoundedRectangle,
   ScrollView,
   ScrollViewReader,
@@ -43,7 +44,7 @@ export interface ChapterDrawerProps {
 
 /**
  * 章節目錄抽屜：生命週期獨立組件。
- * 抽屜打開時 mount 並自動以普通 VStack + ScrollViewReader 執行一次無損定位；
+ * 抽屜打開時 mount，以 LazyVStack + ScrollViewReader 只排看得到的列並執行一次無損定位；
  * 抽屜關閉時 unmount，不消耗主閱讀器任何狀態或幀率。
  */
 export function ChapterDrawer({
@@ -73,6 +74,15 @@ export function ChapterDrawer({
     const g = chapterGroups.find((grp: ChapterGroup<ChapterItem>) => grp.name === activeGroup)
     return g ? g.chapters : chapters
   }, [isGrouped, chapterGroups, activeGroup, chapters])
+
+  // 下載標記：對清單算一次 Set（逐列問一次會變成幾百次同步檔案查詢）。
+  // 以整份清單算，切分組時不必重算；分組本身是它的子集，標記結果不變。
+  const downloadedIds = useMemo(() => {
+    const set = new Set<string>()
+    if (!isDownloaded) return set
+    for (const ch of chapters) if (isDownloaded(ch.id)) set.add(ch.id)
+    return set
+  }, [chapters, isDownloaded])
 
   // 保存當前 ScrollViewProxy 參照，供快速定位按鈕使用
   const scrollProxyRef = useRef<ScrollViewProxy | null>(null)
@@ -207,17 +217,17 @@ export function ChapterDrawer({
         </VStack>
       ) : null}
 
-      {/* 章節清單：普通 VStack 滿幀滑動，由頂部「定位」按鈕一鍵跳轉 */}
+      {/* 章節清單：LazyVStack 只排看得到的列（幾百話也不一次建完），由頂部「定位」按鈕一鍵跳轉 */}
       <ScrollView>
         <ScrollViewReader>
           {proxy => {
             scrollProxyRef.current = proxy
             const list = reversed ? [...displayChapters].reverse() : displayChapters
             return (
-              <VStack spacing={8} padding={{ horizontal: 16, vertical: 12 }} frame={{ maxWidth: "infinity" }}>
+              <LazyVStack spacing={8} padding={{ horizontal: 16, vertical: 12 }} frame={{ maxWidth: "infinity" }}>
                 {list.map((ch: ChapterItem) => {
                   const isCurrent = ch.id === currentEpId
-                  const onDevice = isDownloaded?.(ch.id) === true
+                  const onDevice = downloadedIds.has(ch.id)
                   return (
                     <ZStack key={ch.id} tag={ch.id} alignment="center" frame={{ maxWidth: "infinity" }}>
                       <HStack
@@ -278,7 +288,7 @@ export function ChapterDrawer({
                     </ZStack>
                   )
                 })}
-              </VStack>
+              </LazyVStack>
             )
           }}
         </ScrollViewReader>
