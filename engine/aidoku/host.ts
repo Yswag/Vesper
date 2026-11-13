@@ -3,6 +3,7 @@
 //
 // 生命週期：第一次用到才開 → 常駐 → 閒置逾時 dispose。每個源一條隊列（同一個源序列，不同源並行）；
 // 頁面層級的動作（建頁、重建、dispose）會先等所有源的隊列排空，所以不會拆在請求中間。
+// 隊列分兩級：使用者在等的（詳情、翻頁）排在背景追更前面；只在任務邊界讓位，跑起來的不會被中斷。
 
 import { Script, fetch } from "scripting"
 
@@ -108,8 +109,38 @@ let lastActivity = 0
 
 // ---------------------------------------------------------------- 隊列
 
-/** 每個源一條隊列：同一個源的呼叫序列，不同的源真的同時跑。 */
-const sourceQueues = new Map<string, Promise<unknown>>()
+/** 任務的優先級：使用者在等（詳情、翻頁）的排在背景追更前面。 */
+export type AidokuPriority = "user" | "background"
+
+/** 隊列裡的一筆：排序只看 `priority`。 */
+export interface AidokuQueueItem {
+  priority: AidokuPriority
+}
+
+/**
+ * 下一個該跑誰：**最早的使用者任務**先跑；沒有使用者任務才輪到最早的背景任務。
+ * 純函式、不碰宿主（離線探針驗這支）。回 -1 表示隊列是空的。
+ */
+export function nextAidokuTaskIndex(items: readonly AidokuQueueItem[]): number {
+  let background = -1
+  for (let index = 0; index < items.length; index++) {
+    if (items[index].priority === "user") return index
+    if (background < 0) background = index
+  }
+  return background
+}
+
+interface QueuedCall {
+  priority: AidokuPriority
+  task: () => Promise<unknown>
+  resolve: (value: any) => void
+  reject: (error: unknown) => void
+}
+
+/** 每個源一條隊列：還沒開始跑的呼叫（執行中的不在裡面）。 */
+const sourceQueues = new Map<string, QueuedCall[]>()
+/** 手上有呼叫在跑的源：同一個源一次只跑一個，先開始的不會被後來的打斷。 */
+const busySources = new Set<string>()
 /** 目前手上有多少個源的呼叫做到一半（排隊的不算）。 */
 let running = 0
 const idleWaiters: (() => void)[] = []
@@ -138,32 +169,53 @@ function bumpPending(sourceKey: string, delta: number): void {
 /**
  * 一次源呼叫排進這個源自己的隊列。
  * 呼叫數在**入列時**就加一：回收一個源之前要看它手上有沒有還沒跑的呼叫。
+ * `priority` 由呼叫端明講（逐呼叫帶進來，不讀環境態）：同一個源並行的背景與使用者呼叫才分得開。
  */
-export function runAidokuExclusive<T>(sourceKey: string, task: () => Promise<T>): Promise<T> {
+export function runAidokuExclusive<T>(
+  sourceKey: string,
+  task: () => Promise<T>,
+  priority: AidokuPriority = "user"
+): Promise<T> {
   slotOf(sourceKey)
   bumpPending(sourceKey, 1)
   touch(sourceKey)
-  const execute = async (): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const entry: QueuedCall = { priority, task, resolve, reject }
+    const queue = sourceQueues.get(sourceKey)
+    if (queue) queue.push(entry)
+    else sourceQueues.set(sourceKey, [entry])
+    pumpSource(sourceKey)
+  })
+}
+
+/** 這個源的下一個任務：挑一個就交給 `execute`，同一個源同時只有一個在跑。 */
+function pumpSource(sourceKey: string): void {
+  if (busySources.has(sourceKey)) return
+  const queue = sourceQueues.get(sourceKey)
+  if (!queue || queue.length === 0) return
+  const [entry] = queue.splice(nextAidokuTaskIndex(queue), 1)
+  if (queue.length === 0) sourceQueues.delete(sourceKey)
+  busySources.add(sourceKey)
+  void execute(sourceKey, entry)
+}
+
+async function execute(sourceKey: string, entry: QueuedCall): Promise<void> {
+  try {
     await pageGate
     running += 1
     try {
-      return await task()
+      entry.resolve(await entry.task())
     } finally {
       running -= 1
       bumpPending(sourceKey, -1)
       wake()
     }
+  } catch (failure) {
+    entry.reject(failure)
+  } finally {
+    busySources.delete(sourceKey)
+    pumpSource(sourceKey)
   }
-  const previous = sourceQueues.get(sourceKey) ?? Promise.resolve()
-  const run = previous.then(execute)
-  sourceQueues.set(
-    sourceKey,
-    run.then(
-      () => undefined,
-      () => undefined
-    )
-  )
-  return run
 }
 
 function wake(): void {
@@ -280,6 +332,14 @@ export function aidokuHostPort(): number {
 /** 這個源的 worker 裡載著它的源嗎（引擎用它判斷要不要重載）。 */
 export function isAidokuLoaded(sourceKey: string): boolean {
   return loadedKeys.has(sourceKey)
+}
+
+/**
+ * 同時最多幾個源的 worker（聚合搜尋據此限流：超過只會把剛載好的源擠掉，白載一輪）。
+ * 呼叫端讀這個數字，不要自己抄一份。
+ */
+export function aidokuWorkerLimit(): number {
+  return WORKER_LIMIT
 }
 
 function assetPath(name: string): string {

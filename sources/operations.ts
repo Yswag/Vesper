@@ -93,6 +93,8 @@ export interface SourceScope {
   signal?: AbortSignal
   /** Aidoku 源的搜尋篩選描述子（`aidokuFilters.encodeFilters`）。 */
   filters?: unknown[]
+  /** 沒人在等的呼叫（追更）：Aidoku 源的隊列把它排在使用者的呼叫後面。目前只有詳情認它。 */
+  background?: boolean
 }
 
 /**
@@ -439,7 +441,7 @@ export async function searchSource(
 }
 
 export async function loadDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
-  if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId)
+  if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId, scope?.background === true)
   const instance = await requireInstance(source)
   if (!instance.comic?.loadInfo) throw new Error(t("sources.unsupported.detail"))
 

@@ -176,15 +176,16 @@ export function parseUpdateTime(value: string | undefined): number | undefined {
 /**
  * 查一部作品。失敗回 `null`（呼叫端只算次數，不中斷整輪）。
  * 同作品共用在飛的 promise：背景剛好在查同一部時，接手的那一輪不會再打一次源。
+ * `background`：背景那一輪的源呼叫排在使用者（詳情、翻頁）後面；只對 Aidoku 源有差別。
  */
-function checkComic(ref: ComicRef): Promise<ComicUpdateRecord | null> {
+function checkComic(ref: ComicRef, background: boolean): Promise<ComicUpdateRecord | null> {
   const key = keyOf(ref)
   const flying = inFlight.get(key)
   if (flying) return flying
 
   const task = (async (): Promise<ComicUpdateRecord | null> => {
     try {
-      const page = await comicLibrary().comic({ sourceKey: ref.sourceKey, comicId: ref.comicId })
+      const page = await comicLibrary().comic({ sourceKey: ref.sourceKey, comicId: ref.comicId }, { background })
       const record = comicUpdateRecord(page)
       setComicUpdate(record)
       failedAt.delete(key)
@@ -316,7 +317,7 @@ function createScheduler(): UpdateScheduler {
     pass.nextStart.set(ref.sourceKey, Date.now() + interval)
     const before = getComicUpdate(ref.sourceKey, ref.comicId)
 
-    checkComic(ref)
+    checkComic(ref, pass.background)
       .then(record => {
         if (pass.finished) return
         pass.done++

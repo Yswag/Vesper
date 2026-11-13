@@ -26,6 +26,7 @@ import {
   type AidokuImageProcessors,
   type AidokuPackage,
   type AidokuPageImageRequest,
+  type AidokuPriority,
 } from "../engine/aidoku/host"
 import { appDataRoot, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
 import type { ImageRequest, ImageResponseInfo } from "../engine/images"
@@ -75,6 +76,55 @@ function idOf(key: string): string {
 export function dirOf(key: string): string {
   return join(appDataRoot(), "sources", "aidoku", idOf(key))
 }
+
+/**
+ * 載入用的 wasm 位元組（每個源一份）留最近用過的幾份：worker 被回收或者宿主閒置 dispose 之後，
+ * 同一個源再載入時不必重新從磁碟讀幾 MB。
+ *
+ * 上限跟宿主的 worker 上限同一個量級（那邊 3）：多留只會多佔記憶體（每份可能數 MB），
+ * 少留就得重讀磁碟。重新安裝、移除都走 `forgetLoaded`，那裡會把那一份丟掉。
+ */
+const PAYLOAD_CACHE_LIMIT = 6
+
+/** `Map` 的插入順序就是使用順序：命中時搬到尾端，最前面的就是最久沒用的那一份。 */
+export class AidokuPayloadCache {
+  private readonly entries = new Map<string, Uint8Array>()
+  private readonly limit: number
+
+  constructor(limit: number) {
+    this.limit = Math.max(1, limit)
+  }
+
+  get(key: string): Uint8Array | undefined {
+    const bytes = this.entries.get(key)
+    if (!bytes) return undefined
+    this.entries.delete(key)
+    this.entries.set(key, bytes)
+    return bytes
+  }
+
+  set(key: string, bytes: Uint8Array): void {
+    this.entries.delete(key)
+    this.entries.set(key, bytes)
+    while (this.entries.size > this.limit) {
+      const oldest = this.entries.keys().next().value as string | undefined
+      if (oldest === undefined) return
+      this.entries.delete(oldest)
+    }
+  }
+
+  delete(key: string): void {
+    this.entries.delete(key)
+  }
+
+  /** 目前留著哪些源，最久沒用的在前。 */
+  keys(): string[] {
+    return [...this.entries.keys()]
+  }
+}
+
+/** 全 App 一份（`readPayload` 讀過就留著，`forgetLoaded` 會清掉一個源）。 */
+export const payloadCache = new AidokuPayloadCache(PAYLOAD_CACHE_LIMIT)
 
 function payloadDir(key: string): string {
   return join(dirOf(key), "Payload")
@@ -152,8 +202,13 @@ function manifestOf(key: string): any {
 /** 載入用的一整包。 */
 function readPayload(key: string): AidokuPackage {
   const manifest = manifestOf(key)
-  const wasm = readBytes(join(payloadDir(key), "main.wasm"))
-  if (!wasm) throw new Error(t("sources.aidoku.missing"))
+  let wasm = payloadCache.get(key)
+  if (!wasm) {
+    const bytes = readBytes(join(payloadDir(key), "main.wasm"))
+    if (!bytes) throw new Error(t("sources.aidoku.missing"))
+    wasm = bytes
+    payloadCache.set(key, wasm)
+  }
   return {
     manifest,
     settingsJson: readJson(join(payloadDir(key), "settings.json")) ?? undefined,
@@ -831,6 +886,8 @@ function forgetLoaded(key: string): void {
   homeProviders.delete(key)
   imageProcessors.delete(key)
   initialized.delete(key)
+  // 重新安裝／移除都走這裡：磁碟上的 wasm 已經是另一份，記憶體這份不能給下一次載入。
+  payloadCache.delete(key)
   forgetAidokuSource(key)
 }
 
@@ -877,14 +934,24 @@ function shouldHeal(failure: unknown): boolean {
  * 收拾要在隊列外做：頁面層級的動作要先等所有源的隊列排空，不然會等到自己。
  * 第二次仍失敗預設標記源不可用，但 `markOnFailure=false` 的路徑（例如單張圖處理失敗）只把錯誤丟出去。
  */
-async function withHealing<T>(source: InstalledSource, step: string, task: () => Promise<T>, markOnFailure = true): Promise<T> {
+async function withHealing<T>(
+  source: InstalledSource,
+  step: string,
+  task: () => Promise<T>,
+  markOnFailure = true,
+  priority: AidokuPriority = "user"
+): Promise<T> {
   const key = source.stored.key
   const attempt = (): Promise<T> =>
-    runAidokuExclusive(key, async () => {
-      assertAvailable(key)
-      await ensureLoaded(source)
-      return await task()
-    })
+    runAidokuExclusive(
+      key,
+      async () => {
+        assertAvailable(key)
+        await ensureLoaded(source)
+        return await task()
+      },
+      priority
+    )
   try {
     return await attempt()
   } catch (failure) {
@@ -927,8 +994,15 @@ async function processPageImageBytes(
  * 一次源呼叫。撞到 Cloudflare 挑戰就先過盾再重試一次（只處理一次，避免重試又撞牆時繞圈）。
  * 過盾放在這裡而不是宿主：宿主那條路徑（HttpServer 回呼）建不了 timer。
  */
-async function call(source: InstalledSource, method: string, args: unknown[] = [], timeoutMs?: number): Promise<any> {
-  const run = () => withHealing(source, method, () => callAidoku(source.stored.key, method, args, timeoutMs))
+async function call(
+  source: InstalledSource,
+  method: string,
+  args: unknown[] = [],
+  timeoutMs?: number,
+  priority: AidokuPriority = "user"
+): Promise<any> {
+  const run = () =>
+    withHealing(source, method, () => callAidoku(source.stored.key, method, args, timeoutMs), true, priority)
   let value: any
   let failure: unknown = null
   let failed = false
@@ -1117,12 +1191,16 @@ export async function runtimeFilterDefs(source: InstalledSource): Promise<unknow
   return Array.isArray(defs) ? defs : []
 }
 
-/** 詳情＋章節：`getMangaDetails` 之後立刻補 `getChapterList`（章節就在詳情裡）。 */
-export function detail(source: InstalledSource, comicId: string): Promise<ComicDetail> {
+/**
+ * 詳情＋章節：`getMangaDetails` 之後立刻補 `getChapterList`（章節就在詳情裡）。
+ * `background`：追更這類沒人在等的呼叫，兩次源呼叫都排在使用者的呼叫後面。
+ */
+export function detail(source: InstalledSource, comicId: string, background = false): Promise<ComicDetail> {
+  const priority: AidokuPriority = background ? "background" : "user"
   return ask("detail", async () => {
-    const raw = await call(source, "getMangaDetails", [{ key: comicId, id: comicId }], SLOW_CALL_TIMEOUT_MS)
+    const raw = await call(source, "getMangaDetails", [{ key: comicId, id: comicId }], SLOW_CALL_TIMEOUT_MS, priority)
     const mangaId = String(raw?.key ?? raw?.id ?? comicId)
-    const chapters = await call(source, "getChapterList", [{ key: mangaId, id: mangaId }], SLOW_CALL_TIMEOUT_MS)
+    const chapters = await call(source, "getChapterList", [{ key: mangaId, id: mangaId }], SLOW_CALL_TIMEOUT_MS, priority)
     return {
       id: comicId,
       title: String(raw?.title ?? t("sources.untitled")),

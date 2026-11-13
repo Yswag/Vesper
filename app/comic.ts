@@ -38,11 +38,7 @@ import { hasPro } from "../engine/pro"
 import {
   createPageAspects,
   displayPixels,
-  findPage,
-  findSharpenedPage,
   pageName,
-  writePage,
-  writeSharpenedPage,
   type PageFrame,
   type PageRender,
 } from "../engine/pagefiles"
@@ -465,7 +461,8 @@ export interface ComicLibrary {
   categoryParts(sourceKey: string): Promise<CategoryPart[]>
   /** 分類頁的篩選列（`categoryComics.optionList`／`optionLoader`）。 */
   categoryOptionRows(sourceKey: string, target: JumpTarget): Promise<CategoryOptionRow[]>
-  comic(ref: ComicRef): Promise<ComicPage>
+  /** `background`：沒人在等的查詢（追更），源那邊排在使用者的操作後面。 */
+  comic(ref: ComicRef, opts?: { background?: boolean }): Promise<ComicPage>
   /**
    * 開一話的 session。**逐話選來源**：這一話下載完就讀本機檔（先查本機、不碰源，
    * 源被移除或飛航模式也開得起來），否則走線上。
@@ -749,9 +746,9 @@ export function createComicLibrary(): ComicLibrary {
   /**
    * 詳情（`comic()` 與 `resumePlan()` 共用）；來源名稱與留言能力都由這裡給，呼叫端不必再碰 registry。
    */
-  const loadComic = async (ref: ComicRef): Promise<ComicPage> => {
+  const loadComic = async (ref: ComicRef, opts?: { background?: boolean }): Promise<ComicPage> => {
     const { source, handle } = handleOf(ref.sourceKey)
-    const detail = await handle.detail(ref.comicId)
+    const detail = await handle.detail(ref.comicId, opts?.background ? { background: true } : undefined)
     // 線上拿到清單就覆寫快取（只在這部有離線內容時留檔，見 engine/offline 的 cacheChapterList）。
     cacheChapterList(ref.sourceKey, ref.comicId, chapterListOf(detail.chapters))
     return {
@@ -789,6 +786,12 @@ export function createComicLibrary(): ComicLibrary {
     }
   }
 
+  /**
+   * 現在正在讀的那一話的快取目錄（開章時換、收攤時清）。
+   * 淘汰延到第一頁之後才跑，排隊期間可能已經換話或關掉了，所以它只在真正要刪的時候被讀。
+   */
+  let activeChapterDir: string | null = null
+
   async function openChapter(ref: ChapterRef): Promise<ChapterSession> {
     const key = { sourceKey: ref.sourceKey, comicId: ref.comicId, epId: ref.epId }
     // 先查本機：這一話在手機上就讀離線 manifest，整條路不碰源（源被移除也開得起來）。
@@ -800,13 +803,23 @@ export function createComicLibrary(): ComicLibrary {
     // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
     const imageKeys = await handle.chapter(ref.comicId, ref.epId)
     // 這一話的跨 session 快取目錄：同一話重開就是這個目錄，命中就不必問源、不必下載。
-    // 開章順手淘汰一次（背景），保留話數與容量都在設定裡。
+    // 目錄只列舉這一次，清舊檔與頁面索引都用同一份清單。
     const chapterCache = openChapterCache(key, imageKeys)
     const renderDir = chapterCache.dir
-    void sweepPageCache(renderDir, {
-      chapters: getPageCacheChapters(),
-      bytes: getPageCacheBytes(),
-    })
+    const pageIndex = chapterCache.pages
+    activeChapterDir = renderDir
+    // 淘汰等第一頁備好之後才開始：開章那一刻不跟首圖搶主執行緒（本票不搬落地，只挪淘汰）。
+    // 正在讀的是哪一話在真正執行時才問（見 `activeChapterDir`）：排隊期間可能已經換話或關掉了。
+    let sweepAfterFirstPage: (() => void) | null = () => {
+      sweepAfterFirstPage = null
+      setTimeout(() => {
+        void sweepPageCache(() => activeChapterDir, {
+          chapters: getPageCacheChapters(),
+          bytes: getPageCacheBytes(),
+        })
+      }, 0)
+    }
+    const markFirstPage = () => sweepAfterFirstPage?.()
     // 一個 session 包含獨立取消範圍、預取佇列與正文記憶體快取，生命週期隨 session dispose 釋放。
     const controller = new AbortController()
     const pageCache = createPageCache()
@@ -821,13 +834,17 @@ export function createComicLibrary(): ComicLibrary {
     const loadPageBytes = async (index: number) => {
       // 磁碟命中就不必問源、不必下載。放在這一層而不是 `loadPage`：預取也吃這條路，
       // 不然重開同一話時 ahead 的預取還是會全部重抓一次。
-      const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
+      const name = pageName(index, imageKeyOf(index))
+      const hit = pageIndex.find(name)
       const cached = hit ? readBytes(hit) : null
       if (cached) {
+        markFirstPage()
         log("debug", "image", `正文命中磁碟（第 ${index + 1} 頁）`)
         return cached
       }
-      return readerImageBytes(
+      // 索引說有、檔案卻不在了（另一個 session 收攤、設定頁清了快取）：忘掉它才不會一直落空。
+      if (hit) pageIndex.forget(name)
+      const bytes = await readerImageBytes(
         {
           ...key,
           pageIndex: index,
@@ -838,6 +855,8 @@ export function createComicLibrary(): ComicLibrary {
         pageCache,
         controller.signal
       )
+      markFirstPage()
+      return bytes
     }
     // 解碼過的頁比例：頁面重掛時可以直接沿用，不必先出佔位再跳成真尺寸。
     const aspects = createPageAspects()
@@ -890,12 +909,15 @@ export function createComicLibrary(): ComicLibrary {
       if (!hardwareSharpenEnabled) {
         const ready = renders.get(String(index))
         if (ready) return ready
-        const hit = findPage(renderDir, pageName(index, imageKeyOf(index)))
+        const name = pageName(index, imageKeyOf(index))
+        const hit = pageIndex.find(name)
         const aspect = hit ? aspectOfFile(hit) : null
         if (hit && aspect !== null) {
           aspects.set(index, aspect)
           return memoRender(index, { path: hit, aspect })
         }
+        // 索引說有、檔案卻被刪了：忘掉它，下面那條路會重抓。
+        if (hit) pageIndex.forget(name)
       }
 
       const bytes = await loadPageBytes(index)
@@ -922,14 +944,14 @@ export function createComicLibrary(): ComicLibrary {
       }
       // 超分圖已經算過就先給它（回捲／重新掛載不必重跑，也不會先閃原圖再換）。
       if (target) {
-        const cached = findSharpenedPage(renderDir, sharpenedName, aspect)
+        const cached = pageIndex.findSharpened(sharpenedName, aspect)
         if (cached) return memoRender(index, { ...cached, half })
       }
 
       if (disposed) return null
       // 已經在磁碟上就不必再寫（命中時走的就是這條路），只有新寫入的才算進這一話的用量。
-      const existed = findPage(renderDir, name) !== null
-      const render = writePage(renderDir, name, bytes, aspect)
+      const existed = pageIndex.find(name) !== null
+      const render = pageIndex.write(name, bytes, aspect)
       if (!render) return null
       if (!existed) chapterCache.account(bytes.byteLength)
 
@@ -947,18 +969,19 @@ export function createComicLibrary(): ComicLibrary {
             } else {
               log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
             }
-            const payload = new Uint8Array(result.data.toArrayBuffer())
+            const size = result.data.size
             const limit = getPageCacheBytes()
             // 單章自己就把上限吃滿時，超分圖不落地（這就是「一話超過 1GB」的保命符）：
             // 原圖照留，重開同一話仍然零網路，只是超分要重算。
-            if (limit > 0 && chapterCache.bytes() + payload.byteLength > limit) {
+            if (limit > 0 && chapterCache.bytes() + size > limit) {
               log("debug", "cache", `第 ${index + 1} 頁超分圖不落地（這一話已達正文快取上限）`)
               return
             }
-            const hadSharpened = findSharpenedPage(renderDir, sharpenedName, aspect) !== null
-            const sharpened = writeSharpenedPage(renderDir, sharpenedName, payload, aspect)
+            const hadSharpened = pageIndex.findSharpened(sharpenedName, aspect) !== null
+            // 超分結果是 `Data`：直接寫檔，不再先複製一整張到 JS。
+            const sharpened = pageIndex.writeSharpened(sharpenedName, result.data, aspect)
             if (sharpened) {
-              if (!hadSharpened) chapterCache.account(payload.byteLength)
+              if (!hadSharpened) chapterCache.account(size)
               // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
               const render = { ...sharpened, half }
               memoRender(index, render)
@@ -1010,6 +1033,10 @@ export function createComicLibrary(): ComicLibrary {
         prefetch.clear()
         controller.abort()
         pageCache.clear()
+        // 用量寫回標記：下一次開章不必逐檔量大小。
+        chapterCache.close()
+        pageIndex.clear()
+        if (activeChapterDir === renderDir) activeChapterDir = null
         // 檔案不刪：那是這一話的跨 session 快取，下次進來直接命中；
         // 何時收掉由開章時的 sweepPageCache 決定（保留話數與容量）。
       },
@@ -1076,8 +1103,8 @@ export function createComicLibrary(): ComicLibrary {
     onChange,
 
     // 詳情是「源現在怎麼宣告」的最新事實：順手更新，續讀的快速路徑才有新的方向可用。
-    comic: async ref => {
-      const page = await loadComic(ref)
+    comic: async (ref, opts) => {
+      const page = await loadComic(ref, opts)
       setSourceViewer(ref, page.viewer)
       return page
     },
