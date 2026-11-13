@@ -83,14 +83,15 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
   /**
    * 同步量好一頁的比例並記住原圖渲染：頁面掛上去時 `renderOf` 就有值，
    * 不必先出轉圈、高度也不會從估計值跳成真值。讀不到就略過，由 `loadPage` 報錯。
+   * 走 `UIImage.fromFile`：只讀檔頭（與線上 session 的 `aspectOfFile` 同一條路），
+   * 預熱不該把整張圖拉進記憶體。
    */
   const prepare = (index: number): void => {
     if (index < 0 || index >= imageKeys.length || renders.has(String(index))) return
     const path = sourcePath(index)
-    const bytes = path ? readBytes(path) : null
-    if (!path || !bytes || bytes.length === 0) return
-    const decoded = UIImage.fromData(Data.fromUint8Array(bytes)!)
-    if (!decoded) return
+    if (!path) return
+    const decoded = UIImage.fromFile(path)
+    if (!decoded || !decoded.width || !decoded.height) return
     const aspect = decoded.width / decoded.height
     aspects.set(index, aspect)
     renders.set(String(index), { path, aspect })
@@ -165,7 +166,8 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
             const sharpened = writeSharpenedPage(
               renderDir,
               sharpenedName,
-              new Uint8Array(result.data.toArrayBuffer()),
+              // 超分結果是 `Data`：直接落地，不再先複製一整張到 JS。
+              result.data,
               aspect
             )
             if (sharpened) {

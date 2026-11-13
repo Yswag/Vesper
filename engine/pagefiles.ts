@@ -2,7 +2,7 @@
 // 將圖片位元組寫入專屬 session 暫存目錄，供 Canvas.drawImage 讀取以避免 UIImage 點陣記憶體累積。
 
 import { Convert } from "./convert"
-import { appDataRoot, exists, join, listDir, remove, writeBytes } from "./fs"
+import { appDataRoot, ensureDir, exists, join, listDir, remove, writeBytes } from "./fs"
 import { log } from "./log"
 import type { SlotHalf } from "./pageslots"
 
@@ -139,7 +139,7 @@ export function writePage(dir: string, name: string, bytes: Uint8Array, aspect: 
 export function writeSharpenedPage(
   dir: string,
   name: string,
-  bytes: Uint8Array,
+  bytes: PagePayload,
   aspect: number
 ): PageRender | null {
   return writeInto(dir, name, "-hi", bytes, aspect)
@@ -153,14 +153,17 @@ export function findSharpenedPage(dir: string, name: string, aspect: number): Pa
   return exists(path) ? { path, aspect } : null
 }
 
+/** 寫入用的位元組。超分結果留在原生 `Data` 裡直接寫，不必先複製一份到 JS。 */
+export type PagePayload = Uint8Array | Data
+
 function writeInto(
   dir: string,
   name: string,
   suffix: string,
-  bytes: Uint8Array,
+  bytes: PagePayload,
   aspect: number
 ): PageRender | null {
-  const extension = sniffImageExtension(bytes)
+  const extension = sniffImageExtension(prefixOf(bytes))
   const path = join(dir, `${name}${suffix}.${extension}`)
   if (exists(path)) return { path, aspect }
   if (extension === "bin") {
@@ -168,7 +171,7 @@ function writeInto(
   }
   // 先寫半成品再改名：這些檔會跨 session 存活，不能讓「寫到一半」被下一次當成好檔。
   const temp = `${path}.part`
-  if (!writeBytes(temp, bytes)) return null
+  if (!writePayload(temp, bytes)) return null
   try {
     if (exists(path)) remove(path)
     FileManager.renameSync(temp, path)
@@ -177,6 +180,27 @@ function writeInto(
     return null
   }
   return { path, aspect }
+}
+
+/** 嗅探只看檔頭；`Data` 也只切出那幾個位元組，不把整張複製過來。 */
+function prefixOf(bytes: PagePayload): Uint8Array {
+  return isData(bytes) ? new Uint8Array(bytes.slice(0, 12).toArrayBuffer()) : bytes
+}
+
+/** 看行為而不是 `instanceof`：跨執行環境拿到的 `Data` 一樣算。 */
+function isData(bytes: PagePayload): bytes is Data {
+  return !(bytes instanceof Uint8Array) && typeof (bytes as Data).toArrayBuffer === "function"
+}
+
+function writePayload(path: string, bytes: PagePayload): boolean {
+  if (!isData(bytes)) return writeBytes(path, bytes)
+  try {
+    ensureDir(path.replace(/\/[^/]*$/, ""))
+    FileManager.writeAsDataSync(path, bytes)
+    return true
+  } catch {
+    return false
+  }
 }
 
 /** 這一刻還在使用中的目錄（開場清理不碰它們）。App 被殺時整個 Set 隨 process 消失。 */
@@ -205,6 +229,77 @@ export function closeRenderDir(dir: string): void {
 /** 閱讀器暫存檔的根目錄（一個 session 一個子目錄）。 */
 export function readerRenderRoot(): string {
   return join(appDataRoot(), "cache", "reader")
+}
+
+/**
+ * 一話快取目錄的索引：開章時拿一份目錄清單建好，之後每一頁都查它，不再列舉目錄。
+ *
+ * 為什麼要有它：連續模式每往下滑一頁都要決定「這一頁在不在磁碟上」，以前每次都要掃整個目錄，
+ * 目錄一大就變成翻頁掉幀的來源。
+ *
+ * 它只是「上次看到什麼」的快照：檔案可能被別人刪掉（另一個 session 收攤、設定頁清快取），
+ * 所以查得到不代表讀得到——讀失敗要 `forget()` 之後回去重抓，不能卡在「有索引沒檔」。
+ * 檔案仍然只在磁碟上，`dropCache()`（放掉記憶體）不影響它。
+ */
+export interface PageIndex {
+  readonly dir: string
+  /** 這一頁的原圖路徑（不含超分圖）。`name` 是 `pageName()` 的結果。 */
+  find(name: string): string | null
+  /** 這一頁的超分圖（`name` 不含 `-hi`）。 */
+  findSharpened(name: string, aspect: number): PageRender | null
+  /** 寫原圖，成功就補進索引。 */
+  write(name: string, bytes: Uint8Array, aspect: number): PageRender | null
+  /** 寫超分圖，成功就補進索引。 */
+  writeSharpened(name: string, bytes: PagePayload, aspect: number): PageRender | null
+  /** 忘掉一頁（讀檔失敗時用；`name` 與 `find()` 相同）。 */
+  forget(name: string): void
+  /** 整份丟掉（目錄被清掉、session 收攤）。 */
+  clear(): void
+  /** 索引裡有幾個檔（除錯與探針用）。 */
+  size(): number
+}
+
+/**
+ * 用一份目錄清單建索引。預設自己列舉一次；`openChapterCache` 會把清理舊檔用的那份清單直接交給它。
+ */
+export function createPageIndex(dir: string, entries: string[] = listDir(dir)): PageIndex {
+  /** 檔名去掉副檔名 → 路徑。同一頁有多種副檔名（或原圖與超分圖並存）時各佔一筆。 */
+  const paths = new Map<string, string>()
+  const remember = (path: string): void => {
+    const entry = path.slice(path.lastIndexOf("/") + 1)
+    // `.part` 是寫到一半的、`.` 開頭是標記檔：兩者都不是可以畫的頁。
+    if (!entry || entry.startsWith(".") || entry.endsWith(".part")) return
+    const stem = entry.slice(0, entry.lastIndexOf("."))
+    // 同一個檔名有多種副檔名：留第一個（跟以前掃目錄取第一筆一致）。
+    if (!stem || paths.has(stem)) return
+    paths.set(stem, path)
+  }
+  for (const entry of entries) remember(join(dir, entry))
+  return {
+    dir,
+    find: name => paths.get(name) ?? null,
+    findSharpened: (name, aspect) => {
+      const path = paths.get(`${name}-hi`)
+      return path ? { path, aspect } : null
+    },
+    write: (name, bytes, aspect) => {
+      const render = writePage(dir, name, bytes, aspect)
+      if (render) remember(render.path)
+      return render
+    },
+    writeSharpened: (name, bytes, aspect) => {
+      const render = writeSharpenedPage(dir, name, bytes, aspect)
+      if (render) remember(render.path)
+      return render
+    },
+    forget: name => {
+      paths.delete(name)
+    },
+    clear: () => {
+      paths.clear()
+    },
+    size: () => paths.size,
+  }
 }
 
 function sweepOrphans(root: string, keep: string): void {
