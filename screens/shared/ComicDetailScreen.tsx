@@ -37,6 +37,7 @@ import { comicUpdateRecord, pauseUpdates, resumeUpdates } from "../../app/update
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import {
+  getProgress,
   isFavorite,
   markAllChaptersRead,
   markChapterRead,
@@ -88,6 +89,24 @@ export function chapterDownloadStates(
 /** 「全部已讀」算的章節：鎖定的看不到內容，標了也沒意義，直接排除。 */
 export function readableChapters<T extends { locked?: boolean }>(chapters: readonly T[]): T[] {
   return chapters.filter(chapter => chapter.locked !== true)
+}
+
+/**
+ * 選取模式的「待下載」：非鎖定、而且沒下載完的章節 id（保留傳入順序）。
+ * 章節查表由呼叫端建好重用：這裡只走一輪，不對章節陣列逐筆線性找。
+ */
+export function pendingChapterIds<T extends { locked?: boolean }>(
+  chaptersById: Map<string, T>,
+  epIds: readonly string[],
+  states: Record<string, ChapterDownloadState>
+): string[] {
+  const pending: string[] = []
+  for (const epId of epIds) {
+    if (chaptersById.get(epId)?.locked === true) continue
+    if (states[epId]?.state === "done") continue
+    pending.push(epId)
+  }
+  return pending
 }
 
 /** 連載狀態的介面字（源只給代碼，畫面負責翻）。 */
@@ -337,7 +356,18 @@ export function ComicDetailScreen({
   }, [sourceKey, comicId])
 
   // 章節清單的轉換只有一份（`ComicLibrary.readerChapters`）：詳情頁與續讀拿到的是同一個形狀。
-  const chapters: ChapterRef[] = detail ? library.readerChapters(detail) : []
+  // 重繪不代表章節換了：`detail` 沒換就沿用同一份陣列，下游的分組與目前分組才不必重算。
+  const chapters: ChapterRef[] = useMemo(
+    () => (detail ? library.readerChapters(detail) : []),
+    [detail, library]
+  )
+
+  // 章節 id → 章節：待下載計數與鎖定判斷都查這裡，重繪時不線性掃整份清單。
+  const chaptersById = useMemo(() => {
+    const index = new Map<string, ChapterRef>()
+    for (const chapter of chapters) if (!index.has(chapter.id)) index.set(chapter.id, chapter)
+    return index
+  }, [chapters])
 
   // 續讀點：ComicLibrary 會把越界的頁碼 clamp 到合法範圍；沒讀過就是 null。
   const resumed = library.resume({ sourceKey, comicId })
@@ -364,7 +394,9 @@ export function ComicDetailScreen({
   }, [isGrouped, chapterGroups, activeGroup, chapters])
 
   // 已讀章節：手動標記與閱讀結算共用同一份紀錄（`Progress.readEpIds`）。
-  const readIds = readChapterIds(sourceKey, comicId)
+  // 寫入一定換一份新陣列，所以陣列參考就是「已讀清單變了」的訊號：沒變就不重建 Set。
+  const readEpIds = getProgress(sourceKey, comicId)?.readEpIds
+  const readIds = useMemo(() => readChapterIds(sourceKey, comicId), [sourceKey, comicId, readEpIds])
 
   useEffect(() => {
     if (!comicCover) {
@@ -417,30 +449,39 @@ export function ComicDetailScreen({
 
   const isLongDescription = cleanDescription.length > 60 || cleanDescription.split("\n").length > 2
 
-  // 章節排序（針對當前分組）
-  const displayChapters = reverseOrder ? [...currentGroupChapters].reverse() : currentGroupChapters
+  // 章節排序（針對當前分組）；倒序清單只有分組或排序換了才重排。
+  const displayChapters = useMemo(
+    () => (reverseOrder ? [...currentGroupChapters].reverse() : currentGroupChapters),
+    [currentGroupChapters, reverseOrder]
+  )
 
-  // 依當前重繪單一快照查詢章節下載狀態表
+  // 下載狀態會隨下載進度與訂閱變，所以每次重繪都重查；範圍只有畫面上讀得到的：
+  // 目前分組的章節（章節列與「全部下載」）＋已選取的章節（選取列的下載數）。
   const chapterStates = chapterDownloadStates(library, { sourceKey, comicId }, [
-    ...chapters.map(chapter => chapter.id),
+    ...currentGroupChapters.map(chapter => chapter.id),
     ...selectedIds,
   ])
 
   // 選取模式的兩個數字：都只算「尚未下載」且非鎖定的章節（鎖定的不能下載）。
-  function pendingOf(epIds: string[]): string[] {
-    return epIds.filter(epId => {
-      if (chapters.find(chapter => chapter.id === epId)?.locked) return false
-      return chapterStates[epId].state !== "done"
-    })
-  }
-
-  const pendingAll = pendingOf(currentGroupChapters.map(chapter => chapter.id))
-  const pendingSelected = pendingOf(selectedIds)
+  const pendingAll = pendingChapterIds(
+    chaptersById,
+    currentGroupChapters.map(chapter => chapter.id),
+    chapterStates
+  )
+  const pendingSelected = pendingChapterIds(chaptersById, selectedIds, chapterStates)
 
   // 「全部已讀」只看當前分組裡沒被源鎖定的章節。
-  const readable = readableChapters(currentGroupChapters)
-  const unreadCount = readable.filter(chapter => !readIds.has(chapter.id)).length
-  const allSelected = readable.length > 0 && readable.every(chapter => selectedIds.includes(chapter.id))
+  const readable = useMemo(() => readableChapters(currentGroupChapters), [currentGroupChapters])
+  const unreadCount = useMemo(
+    () => readable.filter(chapter => !readIds.has(chapter.id)).length,
+    [readable, readIds]
+  )
+  // 勾選集合：每列與選取列都查 Set，不對陣列 includes。
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
+  const allSelected = useMemo(
+    () => readable.length > 0 && readable.every(chapter => selectedSet.has(chapter.id)),
+    [readable, selectedSet]
+  )
 
   /** 選取模式：「全選 / 取消全選」切換。 */
   function toggleSelectAll() {
@@ -477,10 +518,13 @@ export function ComicDetailScreen({
 
   /** 選取模式：點列＝切換勾選（不是進閱讀器）；鎖定的章節不能選。 */
   function toggleSelected(epId: string) {
-    if (chapters.find(chapter => chapter.id === epId)?.locked) return
-    setSelectedIds(previous =>
-      previous.includes(epId) ? previous.filter(item => item !== epId) : [...previous, epId]
-    )
+    if (chaptersById.get(epId)?.locked) return
+    setSelectedIds(previous => {
+      const next = new Set(previous)
+      if (next.has(epId)) next.delete(epId)
+      else next.add(epId)
+      return [...next]
+    })
   }
 
   /** 「下載 (n)」：只送還沒下載的章節，送出後退出選取模式。 */
@@ -1034,7 +1078,7 @@ export function ComicDetailScreen({
                   // 這一列的狀態是上面那一輪算好的（與「下載 (n)」共用），不再自己問一次。
                   const download = chapterStates[chapter.id]
                   const settled = isActive(download.state) || download.state === "done"
-                  const checked = selectedIds.includes(chapter.id)
+                  const checked = selectedSet.has(chapter.id)
                   const highlight = selecting ? checked : isCurrent
                   const markVisible = selecting && !locked
 
