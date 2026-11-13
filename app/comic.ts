@@ -11,6 +11,7 @@ import {
   cacheChapterList,
   cachedChapterList,
   chapterOf,
+  comicCount,
   comicGroupKey,
   listChapters,
   mergeChapterList,
@@ -1219,7 +1220,7 @@ export function createComicLibrary(): ComicLibrary {
         }
       },
 
-      comicCount: () => offlineComics().length,
+      comicCount: () => comicCount(),
 
       totalBytes: () => totalBytes(),
 

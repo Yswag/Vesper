@@ -108,6 +108,11 @@ let revision = 0
 let favoritesCache: { revision: number; items: Favorite[] } | null = null
 let progressCache: { revision: number; items: Progress[] } | null = null
 
+/** 書庫的版本號（寫入當下就前進，不等去抖的通知）：從書庫算出來的東西靠它判定失效。 */
+export function libraryRevision(): number {
+  return revision
+}
+
 /** 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。 */
 const bus = createEmitter({ debounceMs: 250 })
 

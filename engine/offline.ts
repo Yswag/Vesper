@@ -257,6 +257,7 @@ export function removeChapter(key: OfflineKey): void {
   if (!hasOfflineChapters(key.sourceKey, key.comicId)) {
     remove(chapterListFile(key.sourceKey, key.comicId))
     chapterLists.delete(comicGroupKey(key))
+    chapterListsChanged++
   }
   bus.emitDebounced()
 }
@@ -347,6 +348,14 @@ interface ChapterListCache {
 
 const chapterLists = new Map<string, ChapterListCache>()
 
+/** 任一部的章節清單換了內容就加一（寫入、刪除、發現檔案被另一個實例改過）。 */
+let chapterListsChanged = 0
+
+/** 章節清單的版本號：從清單算出來的東西（書架的未讀數）靠它判定失效。 */
+export function chapterListsRevision(): number {
+  return chapterListsChanged
+}
+
 /** 唯讀觀測點：這一支 process 讀過幾次章節清單檔（回歸探針用，不是畫面或源的介面）。 */
 let chapterListReads = 0
 
@@ -402,6 +411,7 @@ export function saveChapterList(sourceKey: string, comicId: string, chapters: Re
   const path = chapterListFile(sourceKey, comicId)
   const group = comicGroupKey({ sourceKey, comicId })
   const payload = JSON.stringify({ updatedAt: Date.now(), order: CHAPTER_LIST_ORDER, chapters })
+  chapterListsChanged++
   if (!writeText(path, payload)) {
     log("warning", "offline", `章節清單快取寫入失敗：${comicId}`)
     // 盤上的那份可能還是舊的：丟快取比留著一份錯的好。
@@ -431,6 +441,7 @@ export function cachedChapterList(sourceKey: string, comicId: string): ReaderCha
   else {
     chapters = readChapterList(path)
     chapterLists.set(group, { mtime: chapterListMtime(path), chapters })
+    if (cached) chapterListsChanged++
   }
   // 每次回一份新的：呼叫端排序、加東西都不會汙染下一次。
   return chapters ? chapters.map(chapter => ({ ...chapter })) : null

@@ -14,10 +14,17 @@ import {
   VStack,
   ZStack,
   useEffect,
+  useRef,
   useState,
 } from "scripting"
 
-import { shelfItems, type ShelfFilter, type ShelfItem, type ShelfSort } from "../../app/shelf"
+import {
+  shelfFavoriteCount,
+  shelfItems,
+  type ShelfFilter,
+  type ShelfItem,
+  type ShelfSort,
+} from "../../app/shelf"
 import { comicLibrary } from "../../app/services"
 import { PageBackground, useTint } from "../../app/theme"
 import { updatesScheduler } from "../../app/updates"
@@ -32,7 +39,7 @@ import { EmptyState } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
 import { formatBytes } from "../../engine/format"
 import { subscribe as subscribeLocale, t, type MessageKey } from "../../i18n"
-import { listFavorites, removeFavorite } from "../../library/bookshelf"
+import { removeFavorite } from "../../library/bookshelf"
 import { OfflineLibraryPage } from "./OfflineLibraryScreen"
 
 const SORTS: { value: ShelfSort; key: MessageKey }[] = [
@@ -46,6 +53,64 @@ const FILTERS: { value: ShelfFilter; key: MessageKey }[] = [
   { value: "read", key: "bookshelf.filterRead" },
   { value: "unread", key: "bookshelf.filterUnread" },
 ]
+
+interface CheckProgress {
+  done: number
+  total: number
+}
+
+/**
+ * 檢查更新的進度（null＝沒在跑）：純 JS 訊號，只有下面的進度條重繪。
+ * 做法同 components/pageSignal.ts——`onProgress` 每完成一部就回報一次，
+ * 不該讓整個書架跟著重跑一遍。
+ */
+function createCheckProgress() {
+  let current: CheckProgress | null = null
+  const listeners = new Set<(value: CheckProgress | null) => void>()
+  return {
+    get value() {
+      return current
+    },
+    set(value: CheckProgress | null) {
+      if (value === current) return
+      if (value && current && value.done === current.done && value.total === current.total) return
+      current = value
+      for (const listener of listeners) listener(value)
+    },
+    subscribe(listener: (value: CheckProgress | null) => void) {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  }
+}
+
+const checkProgress = createCheckProgress()
+
+function useCheckProgress(): CheckProgress | null {
+  const [value, setValue] = useState<CheckProgress | null>(checkProgress.value)
+  useEffect(() => {
+    // 訂閱前可能已經變過（掛載與 effect 之間），先對齊一次。
+    setValue(checkProgress.value)
+    return checkProgress.subscribe(setValue)
+  }, [])
+  return value
+}
+
+/** 檢查更新的進度條：自己訂閱訊號，書架本體只留「有沒有在檢查」。 */
+function CheckingUpdates() {
+  const progress = useCheckProgress()
+  if (!progress || progress.total <= 0) return null
+  return (
+    <VStack spacing={6} padding={{ horizontal: pageInsets.horizontal, bottom: 4 }}>
+      <ProgressView value={progress.done / progress.total} progressViewStyle="linear" />
+      <Text font="caption2" foregroundStyle="secondaryLabel" monospacedDigit>
+        {t("bookshelf.checkingUpdates", { done: progress.done, total: progress.total })}
+      </Text>
+    </VStack>
+  )
+}
 
 function gridEntry({ favorite, progress, readFraction, removed, unreadCount }: ShelfItem, removing: boolean): ComicGridEntry {
   return {
@@ -68,20 +133,26 @@ export function BookshelfScreen() {
   const tint = useTint()
   const [sort, setSort] = useState<ShelfSort>("recent")
   const [filter, setFilter] = useState<ShelfFilter>("all")
-  /** 手動檢查的進度（null＝沒在跑，進度列不出現）。 */
-  const [checking, setChecking] = useState<{ done: number; total: number } | null>(null)
+  /** 有沒有在跑手動檢查（進度由 CheckingUpdates 自己訂閱，不放進這裡）。 */
+  const [checking, setChecking] = useState(false)
+  const checkingRef = useRef(false)
   /** 移除收藏：那一格先退場，演完才真的從書架刪掉（見 components/gridRemoval.ts）。 */
   const removal = useGridRemoval()
 
-  // 源清單、書架（收藏／歷史／追更）、離線層與語言一變就重繪（`onChange` 已含離線層與書架）；回傳的 refresh 給 onAppear 用。
-  const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
+  const refresh = useSubscription(subscribeLocale)
 
-  useEffect(() => {
-    refresh()
-  }, [])
+  // 源清單、書架（收藏／歷史／追更）與離線層一變就重繪（`onChange` 已含離線層與書架）。
+  // 檢查更新期間先壓住：每完成一部都會通知書庫，書架本體不必跟著跑（結束時 refresh 一次）。
+  useEffect(
+    () =>
+      comicLibrary().onChange(() => {
+        if (!checkingRef.current) refresh()
+      }),
+    []
+  )
 
   const library = comicLibrary()
-  const favoriteCount = listFavorites().length
+  const favoriteCount = shelfFavoriteCount()
   const items = shelfItems(sort, filter)
   const offlineCount = library.offline.comicCount()
   const downloadingCount = library.offline.activeChapterCount()
@@ -91,15 +162,20 @@ export function BookshelfScreen() {
    * 不重啟、不重複連線，只是把並行升到前台速度並把進度接到這裡。
    */
   async function checkUpdates() {
-    if (checking) return
-    setChecking({ done: 0, total: favoriteCount })
+    if (checkingRef.current) return
+    checkingRef.current = true
+    checkProgress.set({ done: 0, total: favoriteCount })
+    setChecking(true)
     try {
       await updatesScheduler().checkUpdates({
         force: true,
-        onProgress: (done, total) => setChecking({ done, total }),
+        onProgress: (done, total) => checkProgress.set({ done, total }),
       })
     } finally {
-      setChecking(null)
+      checkingRef.current = false
+      checkProgress.set(null)
+      setChecking(false)
+      // 檢查期間壓住的變更（每一部的追更紀錄）在這裡一次反映，角標才是新的。
       refresh()
     }
   }
@@ -184,17 +260,7 @@ export function BookshelfScreen() {
             </VStack>
           ) : null}
 
-          {checking && checking.total > 0 ? (
-            <VStack spacing={6} padding={{ horizontal: pageInsets.horizontal, bottom: 4 }}>
-              <ProgressView
-                value={checking.done / checking.total}
-                progressViewStyle="linear"
-              />
-              <Text font="caption2" foregroundStyle="secondaryLabel" monospacedDigit>
-                {t("bookshelf.checkingUpdates", { done: checking.done, total: checking.total })}
-              </Text>
-            </VStack>
-          ) : null}
+          {checking ? <CheckingUpdates /> : null}
 
           {items.length > 0 ? (
             <ComicGridLayout

@@ -4,9 +4,10 @@
 import { canResumeOffline } from "./offlineReading"
 import { comicLibrary } from "./services"
 import { parseUpdateTime } from "./updates"
-import { cachedChapterList, comicGroupKey, type ReaderChapter } from "../engine/offline"
+import { cachedChapterList, chapterListsRevision, comicGroupKey, type ReaderChapter } from "../engine/offline"
 import {
   getComicUpdate,
+  libraryRevision,
   listFavorites,
   listProgress,
   readChapterIds,
@@ -14,6 +15,7 @@ import {
   type Favorite,
   type Progress,
 } from "../library/bookshelf"
+import { sourcesRevision } from "../sources/registry"
 
 export type ShelfSort = "recent" | "added" | "title"
 /** `updates`＝有新話（見 {@link newCountOf}）。 */
@@ -134,21 +136,60 @@ export interface ShelfItem {
   newCount: number
 }
 
+// ------------------------------------------------------------------ 書架項目快取
+//
+// 一次書架重繪的成本幾乎都在「每部收藏算一次未讀數」：要讀章節清單、比對追更紀錄與已讀清單。
+// 輸入沒變就整批重用。判準是三個輸入各自的版本號（收藏／進度／追更紀錄、源清單、章節清單），
+// 都在寫入當下就前進——不靠變更通知，書庫的通知有去抖，等它會先畫到舊的。
+
+let itemCache: { revision: string; items: ShelfItem[] } | null = null
+let builds = 0
+
+function inputsRevision(): string {
+  return `${libraryRevision()}:${sourcesRevision()}:${chapterListsRevision()}`
+}
+
+/** 唯讀觀測點：書架基底（每部收藏的未讀數等）重建了幾次（回歸探針用，不是畫面或源的介面）。 */
+export function debugShelfBuilds(): number {
+  return builds
+}
+
+/**
+ * 全書架的基底項目（篩選、排序之前）：同一個版本內只建一次。
+ * 回傳的陣列與項目都共用，呼叫端不得就地修改。
+ */
+function baseItems(): ShelfItem[] {
+  const revision = inputsRevision()
+  if (!itemCache || itemCache.revision !== revision) {
+    builds++
+    const progress = new Map(listProgress().map(entry => [comicGroupKey(entry), entry]))
+    itemCache = {
+      revision,
+      items: listFavorites().map(favorite => {
+        const read = progress.get(comicGroupKey(favorite))
+        return {
+          favorite,
+          progress: read,
+          readFraction: readFraction(read),
+          removed: comicLibrary().source(favorite.sourceKey) === undefined,
+          unreadCount: unreadCountOf(favorite),
+          newCount: newCountOf(favorite),
+        }
+      }),
+    }
+  }
+  return itemCache.items
+}
+
+/** 收藏總數（與 {@link shelfItems} 共用同一份基底：一次重繪只讀一次收藏清單）。 */
+export function shelfFavoriteCount(): number {
+  return baseItems().length
+}
+
 /** 收藏接閱讀紀錄（同一部一個鍵），再篩選、排序。 */
 export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
-  const progress = new Map(listProgress().map(entry => [comicGroupKey(entry), entry]))
-  const items = listFavorites()
-    .map(favorite => {
-      const read = progress.get(comicGroupKey(favorite))
-      return {
-        favorite,
-        progress: read,
-        readFraction: readFraction(read),
-        removed: comicLibrary().source(favorite.sourceKey) === undefined,
-        unreadCount: unreadCountOf(favorite),
-        newCount: newCountOf(favorite),
-      }
-    })
+  // `filter` 一定回新陣列，排序才不會動到共用的基底。
+  const items = baseItems()
     .filter(item =>
       filter === "read"
         ? item.progress !== undefined
