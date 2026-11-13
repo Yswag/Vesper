@@ -42,18 +42,13 @@ function GlassDots({ children }: { children: VirtualNode }) {
 }
 
 export function HomeScreen() {
-  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
-  const tint = useTint()
-  const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [topRank, setTopRank] = useState<BangumiSubject[]>([])
   const [trending, setTrending] = useState<BangumiSubject[]>([])
   const [following, setFollowing] = useState<BangumiSubject[]>([])
   const [loadingFeed, setLoadingFeed] = useState(true)
   const [popularPool, setPopularPool] = useState<BangumiSubject[]>([])
+  // 輪播的索引與計時器在 `HeroCarousel` 裡：換頁只重繪那個子元件，不重繪整頁。
   const [heroItems, setHeroItems] = useState<BangumiSubject[]>([])
-  const [heroIndex, setHeroIndex] = useState(0)
-  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錐位。
-  const [heroActive, setHeroActive] = useState(true)
 
   // 繼續閱讀卡片長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
   const [detailOf, setDetailOf] = useState<Progress | null>(null)
@@ -71,7 +66,6 @@ export function HomeScreen() {
     if (source.length >= 8) {
       const shuffled = [...source].sort(() => Math.random() - 0.5)
       setHeroItems(shuffled.slice(0, 8))
-      setHeroIndex(0)
     }
   }
 
@@ -98,33 +92,13 @@ export function HomeScreen() {
     void loadFeed(false).finally(() => setLoadingFeed(false))
   }, [])
 
-  // 輪播計時器（runtime 無 setInterval，且 setTimeout handle 0 為合法值需比對 !== null）
-  useEffect(() => {
-    if (!heroActive || heroItems.length <= 1) return
-
-    const timer = setTimeout(() => {
-      setHeroIndex(prev => (prev + 1) % heroItems.length)
-    }, 4000)
-
-    return () => {
-      if (timer !== null) {
-        clearTimeout(timer)
-      }
-    }
-  }, [heroIndex, heroItems.length, heroActive])
-
+  // 一次重繪只讀一次閱讀歷史；下面所有區塊都用這一份。
   const progress = listProgress()
 
   return (
     <NamespaceReader>
       {homeNs => (
-        <ZStack
-          onAppear={() => {
-            refresh()
-            setHeroActive(true)
-          }}
-          onDisappear={() => setHeroActive(false)}
-        >
+        <ZStack onAppear={refresh}>
           <PageBackground />
       <VStack
         spacing={0}
@@ -145,207 +119,8 @@ export function HomeScreen() {
         >
           <VStack spacing={24} padding={{ bottom: 44 }}>
 
-            {/* Hero 輪播區塊 */}
-            {heroItems.length > 0 && (
-              <VStack
-                spacing={8}
-                frame={{ maxWidth: "infinity" }}
-                // 氛圍光作為 background 裝飾層，不參與版面高度計算
-                background={
-                  <ZStack alignment="top" frame={{ maxWidth: "infinity" }}>
-                    {heroItems.map((item, idx) => {
-                      const isCurrent = idx === heroIndex
-                      if (!item.image) return null
-                      return (
-                        <Image
-                          key={item.id}
-                          imageUrl={item.image}
-                          resizable={true}
-                          scaleToFill={true}
-                          frame={{ maxWidth: "infinity", height: 260 }}
-                          blur={60}
-                          opacity={isCurrent ? 0.35 : 0}
-                          animation={{ animation: Animation.smooth({ duration: 0.55 }), value: isCurrent }}
-                        />
-                      )
-                    })}
-                  </ZStack>
-                }
-              >
-                {/* 輪播主體：高度 207（封面 179 + 上下緩衝各 14），讓半徑 10 的立體陰影在 TabView 內自然淡出不被裁切 */}
-                <TabView
-                  tabViewStyle="pageNeverDisplayIndex"
-                  tabIndex={heroIndex}
-                  onTabIndexChanged={setHeroIndex}
-                  frame={{ height: 207 }}
-                  animation={{ animation: Animation.smooth({ duration: 0.45 }), value: heroIndex }}
-                >
-                  {heroItems.map((item, index) => (
-                    <NavigationLink
-                      key={item.id}
-                      tag={index}
-                      destination={
-                        <BangumiDetailScreen
-                          subject={item}
-                          zoomTransition={{ sourceID: `hero:${item.id}`, namespace: homeNs }}
-                        />
-                      }
-                      buttonStyle="plain"
-                    >
-                      {/* TabView 翻頁要固定高度：字級夹在 xxxLarge，輔助字級下右欄不被裁。 */}
-                      <HStack
-                        spacing={15}
-                        alignment="center"
-                        frame={{ maxWidth: "infinity", height: 207 }}
-                        padding={{ horizontal: 16, vertical: 14 }}
-                        dynamicTypeSize={{ to: "xxxLarge" }}
-                      >
-                        {/* 封面立體卡片：124×179（＝詳情頁 hero 的上限寬 `HERO_MAX_WIDTH`、同一組 1.44 比例）。
-                            舊值 106×150 比下面那排卡片（112×161）還小，四周又留白 → 看起來很迷你。
-                            179 加上卡片上下內距 8×2 剛好填滿 195 的輪播條，版面高度不變。 */}
-                        {item.image ? (
-                          <ZStack
-                            frame={{ width: 124, height: 179 }}
-                            matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
-                          >
-                            <CoverShadow>
-                              <Image
-                                imageUrl={item.image}
-                                resizable={true}
-                                scaleToFill={true}
-                                frame={{ width: 124, height: 179 }}
-                                clipShape={rect(radius.md)}
-                                overlay={
-                                  <RoundedRectangle
-                                    cornerRadius={radius.md}
-                                    stroke={coverStroke}
-                                  />
-                                }
-                              />
-                            </CoverShadow>
-                          </ZStack>
-                        ) : (
-                          <ZStack
-                            frame={{ width: 124, height: 179 }}
-                            matchedTransitionSource={{ id: `hero:${item.id}`, namespace: homeNs }}
-                          >
-                            <CoverShadow>
-                              <CoverPlaceholder
-                                title={item.name_cn || item.name}
-                                width={124}
-                                height={179}
-                                cornerRadius={radius.md}
-                              />
-                            </CoverShadow>
-                          </ZStack>
-                        )}
-
-                        {/* 右側資訊區 */}
-                        <VStack
-                          alignment="leading"
-                          spacing={6}
-                          frame={{ maxWidth: "infinity" }}
-                        >
-                          {/* 評分與榜單徽章 */}
-                          <HStack spacing={6} alignment="center">
-                            {item.rank && item.rank > 0 ? (
-                              <HStack
-                                spacing={3}
-                                padding={{ horizontal: 6, vertical: 2 }}
-                                background={tint.tint}
-                                clipShape={rect(radius.sm)}
-                              >
-                                <Text font="caption2" fontWeight="heavy" foregroundStyle={tint.onTint}>
-                                  TOP {item.rank}
-                                </Text>
-                              </HStack>
-                            ) : null}
-
-                            {item.score && item.score > 0 ? (
-                              <Tag icon="star.fill" tone="warning" text={item.score.toFixed(1)} />
-                            ) : null}
-                          </HStack>
-
-                          {/* 大標題（2 行上限，不遮擋）
-                              用 title3 而不是 headline：它是這一頁最大的一本書，
-                              不該比「繼續閱讀／熱門新作」那些區塊標題（同為 title3）還小。
-                              字色吃系統語意色：hero 背後的模糊封面只有 0.35，淺色主題時白字讀不到。 */}
-                          <Text
-                            font="title3"
-                            fontWeight="bold"
-                            foregroundStyle="label"
-                            lineLimit={2}
-                          >
-                            {item.name_cn || item.name}
-                          </Text>
-
-                          {/* 標籤 · 作者 */}
-                          <HStack spacing={4} alignment="center">
-                            {item.tags && item.tags.length > 0 ? (
-                              <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
-                                {item.tags.slice(0, 2).join(" · ")}
-                              </Text>
-                            ) : null}
-                            {item.author ? (
-                              <>
-                                <Text font="caption2" foregroundStyle="tertiaryLabel">
-                                  ·
-                                </Text>
-                                <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
-                                  {item.author}
-                                </Text>
-                              </>
-                            ) : null}
-                          </HStack>
-
-                          {/* 簡介預覽（2 行精華） */}
-                          {item.summary ? (
-                            <Text
-                              font="caption2"
-                              foregroundStyle="secondaryLabel"
-                              lineLimit={2}
-                              padding={{ top: 1 }}
-                            >
-                              {item.summary.trim()}
-                            </Text>
-                          ) : null}
-                        </VStack>
-                      </HStack>
-                    </NavigationLink>
-                  ))}
-                </TabView>
-
-                {/* 置中 Liquid Glass 分裂式分頁指示點 */}
-                {heroItems.length > 1 ? (
-                  <HStack frame={{ maxWidth: "infinity" }}>
-                    <Spacer />
-                    <GlassDots>
-                      <ZStack alignment="leading" frame={{ width: (heroItems.length - 1) * 16 + 6, height: 16 }}>
-                        {/* 靜態各圓點底座（極輕灰玻璃，去除厚重折射霧感） */}
-                        <HStack spacing={10} alignment="center" frame={{ height: 16 }}>
-                          {heroItems.map((_, i) => (
-                            <VStack
-                              key={i}
-                              frame={{ width: 6, height: 6 }}
-                              {...glass({ tint: fill.glassNeutral, shape: capsule("circular") })}
-                            />
-                          ))}
-                        </HStack>
-
-                        {/* 活躍藍色液態水滴（翻頁時物理拉絲扯斷，抵達時融入目標點） */}
-                        <VStack
-                          frame={{ width: 6, height: 6 }}
-                          {...glass({ tint: tintColor, shape: capsule("circular") })}
-                          offset={{ x: heroIndex * 16, y: 0 }}
-                          animation={{ animation: Animation.spring({ duration: 0.52, bounce: 0.15 }), value: heroIndex }}
-                        />
-                      </ZStack>
-                    </GlassDots>
-                    <Spacer />
-                  </HStack>
-                ) : null}
-              </VStack>
-            )}
+            {/* Hero 輪播：索引、計時器與分頁點都在子元件裡，換頁不重繪這一頁 */}
+            {heroItems.length > 0 ? <HeroCarousel items={heroItems} namespace={homeNs} /> : null}
             {heroItems.length === 0 && loadingFeed ? <HeroSkeleton /> : null}
 
             {/* 1. 繼續閱讀區塊（若有進度才展示，保留一鍵接續）；標題推完整的閱讀歷史 */}
@@ -471,6 +246,248 @@ export function HomeScreen() {
     </ZStack>
       )}
     </NamespaceReader>
+  )
+}
+
+/**
+ * Hero 輪播：背景氛圍圖、翻頁本體與分頁點。
+ *
+ * 索引、計時器、暫停狀態都在這裡——每 4 秒換一張只重繪這個子元件，
+ * 首頁的根（feed、閱讀歷史、四條橫向清單）不會跟著重跑。
+ */
+function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace: NamespaceID }) {
+  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
+  const tint = useTint()
+  const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
+  const [index, setIndex] = useState(0)
+  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錐位。
+  const [active, setActive] = useState(true)
+
+  // 換一批項目（下拉重整重挑）就從第一張開始。
+  useEffect(() => {
+    setIndex(0)
+  }, [items])
+
+  // 計時器（runtime 無 setInterval，且 setTimeout handle 0 為合法值需比對 !== null）。
+  // 手動滑動後 index 一變就重新起算，自動換頁的節奏跟改動前一樣。
+  useEffect(() => {
+    if (!active || items.length <= 1) return
+
+    const timer = setTimeout(() => {
+      setIndex(prev => (prev + 1) % items.length)
+    }, 4000)
+
+    return () => {
+      if (timer !== null) {
+        clearTimeout(timer)
+      }
+    }
+  }, [index, items.length, active])
+
+  return (
+    <VStack
+      spacing={8}
+      frame={{ maxWidth: "infinity" }}
+      onAppear={() => setActive(true)}
+      onDisappear={() => setActive(false)}
+      // 氛圍光作為 background 裝飾層，不參與版面高度計算
+      background={
+        <ZStack alignment="top" frame={{ maxWidth: "infinity" }}>
+          {items.map((item, idx) => {
+            const isCurrent = idx === index
+            if (!item.image) return null
+            // 只掛目前與前後各一張：遠的那些 opacity 是 0，掛著只是白白解碼一張大圖。
+            // 前後各留一張，進場的那張早就掛著，所以切換時的淡入淡出跟原本一樣。
+            if (Math.min(Math.abs(idx - index), items.length - Math.abs(idx - index)) > 1) return null
+            return (
+              <Image
+                key={item.id}
+                imageUrl={item.image}
+                resizable={true}
+                scaleToFill={true}
+                frame={{ maxWidth: "infinity", height: 260 }}
+                blur={60}
+                opacity={isCurrent ? 0.35 : 0}
+                animation={{ animation: Animation.smooth({ duration: 0.55 }), value: isCurrent }}
+              />
+            )
+          })}
+        </ZStack>
+      }
+    >
+      {/* 輪播主體：高度 207（封面 179 + 上下緩衝各 14），讓半徑 10 的立體陰影在 TabView 內自然淡出不被裁切 */}
+      <TabView
+        tabViewStyle="pageNeverDisplayIndex"
+        tabIndex={index}
+        onTabIndexChanged={setIndex}
+        frame={{ height: 207 }}
+        animation={{ animation: Animation.smooth({ duration: 0.45 }), value: index }}
+      >
+        {items.map((item, itemIndex) => (
+          <NavigationLink
+            key={item.id}
+            tag={itemIndex}
+            destination={
+              <BangumiDetailScreen
+                subject={item}
+                zoomTransition={{ sourceID: `hero:${item.id}`, namespace }}
+              />
+            }
+            buttonStyle="plain"
+          >
+            {/* TabView 翻頁要固定高度：字級夹在 xxxLarge，輔助字級下右欄不被裁。 */}
+            <HStack
+              spacing={15}
+              alignment="center"
+              frame={{ maxWidth: "infinity", height: 207 }}
+              padding={{ horizontal: 16, vertical: 14 }}
+              dynamicTypeSize={{ to: "xxxLarge" }}
+            >
+              {/* 封面立體卡片：124×179（＝詳情頁 hero 的上限寬 `HERO_MAX_WIDTH`、同一組 1.44 比例）。
+                  舊值 106×150 比下面那排卡片（112×161）還小，四周又留白 → 看起來很迷你。
+                  179 加上卡片上下內距 8×2 剛好填滿 195 的輪播條，版面高度不變。 */}
+              {item.image ? (
+                <ZStack
+                  frame={{ width: 124, height: 179 }}
+                  matchedTransitionSource={{ id: `hero:${item.id}`, namespace }}
+                >
+                  <CoverShadow>
+                    <Image
+                      imageUrl={item.image}
+                      resizable={true}
+                      scaleToFill={true}
+                      frame={{ width: 124, height: 179 }}
+                      clipShape={rect(radius.md)}
+                      overlay={
+                        <RoundedRectangle
+                          cornerRadius={radius.md}
+                          stroke={coverStroke}
+                        />
+                      }
+                    />
+                  </CoverShadow>
+                </ZStack>
+              ) : (
+                <ZStack
+                  frame={{ width: 124, height: 179 }}
+                  matchedTransitionSource={{ id: `hero:${item.id}`, namespace }}
+                >
+                  <CoverShadow>
+                    <CoverPlaceholder
+                      title={item.name_cn || item.name}
+                      width={124}
+                      height={179}
+                      cornerRadius={radius.md}
+                    />
+                  </CoverShadow>
+                </ZStack>
+              )}
+
+              {/* 右側資訊區 */}
+              <VStack
+                alignment="leading"
+                spacing={6}
+                frame={{ maxWidth: "infinity" }}
+              >
+                {/* 評分與榜單徽章 */}
+                <HStack spacing={6} alignment="center">
+                  {item.rank && item.rank > 0 ? (
+                    <HStack
+                      spacing={3}
+                      padding={{ horizontal: 6, vertical: 2 }}
+                      background={tint.tint}
+                      clipShape={rect(radius.sm)}
+                    >
+                      <Text font="caption2" fontWeight="heavy" foregroundStyle={tint.onTint}>
+                        TOP {item.rank}
+                      </Text>
+                    </HStack>
+                  ) : null}
+
+                  {item.score && item.score > 0 ? (
+                    <Tag icon="star.fill" tone="warning" text={item.score.toFixed(1)} />
+                  ) : null}
+                </HStack>
+
+                {/* 大標題（2 行上限，不遮擋）
+                    用 title3 而不是 headline：它是這一頁最大的一本書，
+                    不該比「繼續閱讀／熱門新作」那些區塊標題（同為 title3）還小。
+                    字色吃系統語意色：hero 背後的模糊封面只有 0.35，淺色主題時白字讀不到。 */}
+                <Text
+                  font="title3"
+                  fontWeight="bold"
+                  foregroundStyle="label"
+                  lineLimit={2}
+                >
+                  {item.name_cn || item.name}
+                </Text>
+
+                {/* 標籤 · 作者 */}
+                <HStack spacing={4} alignment="center">
+                  {item.tags && item.tags.length > 0 ? (
+                    <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
+                      {item.tags.slice(0, 2).join(" · ")}
+                    </Text>
+                  ) : null}
+                  {item.author ? (
+                    <>
+                      <Text font="caption2" foregroundStyle="tertiaryLabel">
+                        ·
+                      </Text>
+                      <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
+                        {item.author}
+                      </Text>
+                    </>
+                  ) : null}
+                </HStack>
+
+                {/* 簡介預覽（2 行精華） */}
+                {item.summary ? (
+                  <Text
+                    font="caption2"
+                    foregroundStyle="secondaryLabel"
+                    lineLimit={2}
+                    padding={{ top: 1 }}
+                  >
+                    {item.summary.trim()}
+                  </Text>
+                ) : null}
+              </VStack>
+            </HStack>
+          </NavigationLink>
+        ))}
+      </TabView>
+
+      {/* 置中 Liquid Glass 分裂式分頁指示點 */}
+      {items.length > 1 ? (
+        <HStack frame={{ maxWidth: "infinity" }}>
+          <Spacer />
+          <GlassDots>
+            <ZStack alignment="leading" frame={{ width: (items.length - 1) * 16 + 6, height: 16 }}>
+              {/* 靜態各圓點底座（極輕灰玻璃，去除厚重折射霧感） */}
+              <HStack spacing={10} alignment="center" frame={{ height: 16 }}>
+                {items.map((_, i) => (
+                  <VStack
+                    key={i}
+                    frame={{ width: 6, height: 6 }}
+                    {...glass({ tint: fill.glassNeutral, shape: capsule("circular") })}
+                  />
+                ))}
+              </HStack>
+
+              {/* 活躍藍色液態水滴（翻頁時物理拉絲扯斷，抵達時融入目標點） */}
+              <VStack
+                frame={{ width: 6, height: 6 }}
+                {...glass({ tint: tintColor, shape: capsule("circular") })}
+                offset={{ x: index * 16, y: 0 }}
+                animation={{ animation: Animation.spring({ duration: 0.52, bounce: 0.15 }), value: index }}
+              />
+            </ZStack>
+          </GlassDots>
+          <Spacer />
+        </HStack>
+      ) : null}
+    </VStack>
   )
 }
 

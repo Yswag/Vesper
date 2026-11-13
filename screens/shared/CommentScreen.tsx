@@ -11,6 +11,7 @@ import {
   GeometryReader,
   HStack,
   Image,
+  LazyVStack,
   NavigationLink,
   RoundedRectangle,
   ScrollView,
@@ -288,6 +289,45 @@ export function CommentComposer({
   )
 }
 
+/**
+ * 有狀態的輸入列：草稿、送出中、送出結果都留在這裡。
+ *
+ * 打字只重繪這一支，留言清單不動；送出成功才清草稿，失敗留著讓使用者重試。
+ */
+function CommentComposerHost({ onPost }: { onPost: (content: string) => Promise<void> }) {
+  const [draft, setDraft] = useState("")
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState<StatusNotice | null>(null)
+
+  async function send() {
+    if (sending) return
+    const content = draft.trim()
+    if (!content) return
+    setSending(true)
+    setStatus({ kind: "loading", text: t("comments.sending") })
+    try {
+      await onPost(content)
+      setDraft("")
+      Keyboard.hide()
+      setStatus({ kind: "ready", text: t("comments.sent") })
+    } catch (error) {
+      setStatus({ kind: "error", text: t("common.failed", { message: messageOf(error) }) })
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return (
+    <CommentComposer
+      draft={draft}
+      sending={sending}
+      sendStatus={status}
+      onChanged={setDraft}
+      onSend={() => void send()}
+    />
+  )
+}
+
 export function CommentScreen({
   sourceKey,
   comicId,
@@ -304,12 +344,9 @@ export function CommentScreen({
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
-  // 這一頁的兩處訊息狀態：`status` 是讀取失敗的原因（null＝沒話要說，不是空字串）、
-  // `sendStatus` 是底部輸入列那一則。兩者要顯示的字都在 render 時才算。
+  // 這一頁的訊息狀態：`status` 是讀取失敗的原因（null＝沒話要說，不是空字串）。
+  // 送出那一則（送出中／成功／失敗）在輸入列自己身上，打字不重繪這一頁。
   const [status, setStatus] = useState<string | null>(null)
-  const [draft, setDraft] = useState("")
-  const [sending, setSending] = useState(false)
-  const [sendStatus, setSendStatus] = useState<StatusNotice | null>(null)
 
   // 語言一換就重繪：`t()` 讀的是模組層級的當前語言，畫面得自己訂閱。
   useSubscription(subscribeLocale)
@@ -344,34 +381,21 @@ export function CommentScreen({
     void fetchPage(1, true)
   }, [sourceKey, comicId])
 
-  async function submit() {
-    if (sending) return
-    const content = draft.trim()
-    if (!content) return
-    setSending(true)
-    setSendStatus({ kind: "loading", text: t("comments.sending") })
-    try {
-      await library.postComment({ sourceKey, comicId, subId }, content)
-      if (!alive.current) return
-      setDraft("")
-      Keyboard.hide()
-      setSendStatus({ kind: "ready", text: t("comments.sent") })
-      // 源的排序不假設：直接把剛送出的那一則放在最前面（內容與帳號名稱都是我們確定的）。
-      setComments(previous => [
-        {
-          id: `sent:${Date.now()}`,
-          userName: info?.accountName ?? t("comments.me"),
-          content: escapeHtml(content),
-          // 時間記「現在」這個時間戳，不寫「剛剛」——那是顯示字，由 commentTime 算。
-          time: new Date().toISOString(),
-        },
-        ...previous,
-      ])
-    } catch (error) {
-      setSendStatus({ kind: "error", text: t("common.failed", { message: messageOf(error) }) })
-    } finally {
-      if (alive.current) setSending(false)
-    }
+  /** 送出留言；失敗就丟回去讓輸入列照源的原話顯示。成功才清草稿、把本機回音放在最前面。 */
+  async function postComment(content: string) {
+    await library.postComment({ sourceKey, comicId, subId }, content)
+    if (!alive.current) return
+    // 源的排序不假設：直接把剛送出的那一則放在最前面（內容與帳號名稱都是我們確定的）。
+    setComments(previous => [
+      {
+        id: `sent:${Date.now()}`,
+        userName: info?.accountName ?? t("comments.me"),
+        content: escapeHtml(content),
+        // 時間記「現在」這個時間戳，不寫「剛剛」——那是顯示字，由 commentTime 算。
+        time: new Date().toISOString(),
+      },
+      ...previous,
+    ])
   }
 
   const needsLogin = info?.needsLogin === true
@@ -395,15 +419,7 @@ export function CommentScreen({
               {...scrollTopBar(null)}
               safeAreaInset={{
                 bottom: {
-                  content: (
-                    <CommentComposer
-                      draft={draft}
-                      sending={sending}
-                      sendStatus={sendStatus}
-                      onChanged={setDraft}
-                      onSend={() => void submit()}
-                    />
-                  ),
+                  content: <CommentComposerHost onPost={postComment} />,
                 },
               }}
             >
@@ -432,15 +448,19 @@ export function CommentScreen({
                 ) : null}
 
                 {comments.length > 0 ? (
+                  // 卡片底留給 Card，惰性交给 LazyVStack（跟設定頁的長清單同一套）：
+                  // 留言再多也只建畫面上的那幾列。
                   <Card>
-                    {comments.map((comment, index) => (
-                      <CommentRow
-                        key={`${index}:${comment.id}`}
-                        sourceKey={sourceKey}
-                        comment={comment}
-                        isLast={index === comments.length - 1}
-                      />
-                    ))}
+                    <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
+                      {comments.map((comment, index) => (
+                        <CommentRow
+                          key={`${index}:${comment.id}`}
+                          sourceKey={sourceKey}
+                          comment={comment}
+                          isLast={index === comments.length - 1}
+                        />
+                      ))}
+                    </LazyVStack>
                   </Card>
                 ) : null}
 
