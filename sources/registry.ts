@@ -119,7 +119,7 @@ export function findSource(key: string): InstalledSource | undefined {
   return found && withFailure(found)
 }
 
-/** 從盤上重新載入全部源。啟動時呼叫一次，匯入/刪除後再呼叫。 */
+/** 從盤上重新載入全部源。啟動時呼叫一次，安裝／移除／切換語言後再呼叫。 */
 export function reloadRegistry() {
   revision++
   initTasks.clear()
@@ -127,10 +127,57 @@ export function reloadRegistry() {
   bus.emit()
 }
 
+/** Venera 源的載入次數（探針用；每建一次沙箱實例算一次，失敗也算）。 */
+const veneraLoads = new Map<string, number>()
+
+/** 開發探針用：目前為止各源被載入（重新編譯）了幾次。唯讀，不影響生產行為。 */
+export function debugSourceLoads(): { total: number; byKey: Record<string, number> } {
+  const byKey: Record<string, number> = {}
+  let total = 0
+  for (const [key, count] of veneraLoads) {
+    byKey[key] = count
+    total += count
+  }
+  return { total, byKey }
+}
+
+/** 從盤上建一個源的實例；這個鍵在盤上（含 Aidoku 的目錄）都不存在就回 undefined。 */
+function buildSource(key: string): InstalledSource | undefined {
+  const raw = store.getSource(key)
+  if (raw) return loadVenera(raw)
+  return aidoku.installedSources().find(entry => entry.stored.key === key)
+}
+
+/**
+ * 只重建一個源：改設定、啟用停用、登入登出都只影響它自己。
+ *
+ * 邊界：鍵已經不在盤上就從清單拿掉（位置不變、其他源不動）；編譯失敗與全量重載對同一個
+ * 壞源一致（entry 帶 error）；清單順序照舊（這個鍵本來在哪就留在哪）。
+ */
+export function reloadSource(key: string) {
+  const index = current.findIndex(entry => entry.stored.key === key)
+  const rebuilt = buildSource(key)
+  if (!rebuilt) {
+    if (index < 0) return
+    current = current.filter(entry => entry.stored.key !== key)
+  } else if (index >= 0) {
+    current = current.map((entry, at) => (at === index ? rebuilt : entry))
+  } else {
+    // 清單上沒有這個鍵：只會發生在「剛裝好、還沒進清單」，那條路本來就是全量重載。
+    reloadRegistry()
+    return
+  }
+  // 只有這個鍵的初始化要重跑；其他源已經跑完的 init() 留著。
+  initTasks.delete(key)
+  revision++
+  bus.emit()
+}
+
 /** Venera 源：原始碼在 store 裡，這裡建沙箱實例。 */
 function loadVenera(rawEntry: store.StoredSource): InstalledSource {
   let entry = rawEntry
   const enabled = entry.enabled
+  veneraLoads.set(entry.key, (veneraLoads.get(entry.key) ?? 0) + 1)
   const code = store.getSourceCode(entry.key)
   if (!code) {
     return { stored: entry, enabled, error: t("sources.codeMissing") }
@@ -172,7 +219,7 @@ export function setSourceEnabled(key: string, enabled: boolean) {
   const source = findSource(key)
   if (source && aidoku.isAidoku(source)) aidoku.setEnabled(key, enabled)
   else store.setEnabled(key, enabled)
-  reloadRegistry()
+  reloadSource(key)
 }
 
 /**
@@ -220,14 +267,14 @@ export function ensureSourceReady(key: string): Promise<void> {
 }
 
 /**
- * 改一個設定值。寫回 index.json 後重建實例，所以源下次被用到時會用新設定重跑 init()。
+ * 改一個設定值。寫回 index.json 後只重建這一個源，所以它下次被用到時會用新設定重跑 init()。
  * 這對自架類的源（komga / kavita / lanraragi 的伺服器位址）是能不能用的前提。
  */
 export function updateSourceSetting(key: string, id: string, value: unknown) {
   const source = findSource(key)
   const next = { ...(source?.stored.settings ?? {}), [id]: value }
   store.updateSettings(key, next)
-  reloadRegistry()
+  reloadSource(key)
 }
 
 /** 源詳情要不要顯示「源設定」列：Aidoku 源有設定 schema 或多語言。 */
@@ -244,43 +291,43 @@ export function hasAidokuSettings(source: InstalledSource): boolean {
  */
 export function updateAidokuSetting(key: string, id: string, value: unknown) {
   aidoku.setSetting(key, id, value)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "basic"` 登入：寫入三個設定鍵後重載源。 */
+/** Aidoku 源的 `method: "basic"` 登入：寫入三個設定鍵後只重建這一個源。 */
 export function loginAidokuBasic(key: string, settingKey: string, username: string, password: string) {
   aidoku.loginBasic(key, settingKey, username, password)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "basic"` 登出：移除那三個鍵。 */
+/** Aidoku 源的 `method: "basic"` 登出：移除那三個鍵，只重建這一個源。 */
 export function logoutAidokuBasic(key: string, settingKey: string) {
   aidoku.logoutBasic(key, settingKey)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "web"` 登入：寫入 cookie／localStorage 後重載源。 */
+/** Aidoku 源的 `method: "web"` 登入：寫入 cookie／localStorage 後只重建這一個源。 */
 export function loginAidokuWebview(key: string, settingKey: string, data: aidoku.AidokuWebLoginData) {
   aidoku.loginWebview(key, settingKey, data)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "web"` 登出：移除 cookie、localStorage 與狀態鍵。 */
+/** Aidoku 源的 `method: "web"` 登出：移除 cookie、localStorage 與狀態鍵，只重建這一個源。 */
 export function logoutAidokuWebview(key: string, settingKey: string) {
   aidoku.logoutWebview(key, settingKey)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "oauth"` 登入：寫入 token 原文（或 callback URL）後重載源。 */
+/** Aidoku 源的 `method: "oauth"` 登入：寫入 token 原文（或 callback URL）後只重建這一個源。 */
 export function loginAidokuOAuth(key: string, settingKey: string, value: string) {
   aidoku.loginOAuth(key, settingKey, value)
-  reloadRegistry()
+  reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "oauth"` 登出：token 與 codeVerifier 一起拿掉。 */
+/** Aidoku 源的 `method: "oauth"` 登出：token 與 codeVerifier 一起拿掉，只重建這一個源。 */
 export function logoutAidokuOAuth(key: string, settingKey: string) {
   aidoku.logoutOAuth(key, settingKey)
-  reloadRegistry()
+  reloadSource(key)
 }
 
 /** 叫源自己的 `handle_notification`（登入／設定完成後）；源沒匯出就是 no-op。 */
@@ -290,10 +337,10 @@ export async function notifyAidokuSource(key: string, notification: string) {
   await aidoku.notify(source, notification)
 }
 
-/** 把 Aidoku 源的設定全部拿掉（回到 schema 預設）。 */
+/** 把 Aidoku 源的設定全部拿掉（回到 schema 預設），只重建這一個源。 */
 export function resetAidokuSettings(key: string) {
   aidoku.resetSettings(key)
-  reloadRegistry()
+  reloadSource(key)
 }
 
 /** 把某個設定回復成源宣告的預設值。 */
@@ -622,7 +669,7 @@ export async function loginWithPassword(key: string, account: string, password: 
   await login.call(source.instance, account, password)
   saveCredentials(key, { account, password })
   store.setAccount(key, { loggedIn: true, accountName: account })
-  reloadRegistry()
+  reloadSource(key)
   log("info", "account", `${key} 已登入（${account}）`)
 }
 
@@ -637,7 +684,7 @@ export async function loginWithCookies(key: string, values: string[]): Promise<v
   if (!valid) throw new Error(t("sources.login.validateFailed"))
   saveCredentials(key, { cookies: values })
   store.setAccount(key, { loggedIn: true })
-  reloadRegistry()
+  reloadSource(key)
   log("info", "account", `${key} 已登入（cookie 欄位）`)
 }
 
@@ -666,7 +713,7 @@ export async function loginWithWebview(key: string): Promise<string> {
 
   if (result.outcome === "cancelled") return t("sources.login.cancelled")
   store.setAccount(key, { loggedIn: true, accountName: t("sources.login.webAccount") })
-  reloadRegistry()
+  reloadSource(key)
   log("info", "account", `${key} 已登入（瀏覽器，${result.cookies} 個 cookie）`)
   return result.outcome === "manual" ? t("sources.login.cookiesSaved", { count: result.cookies }) : t("sources.login.done")
 }
@@ -684,7 +731,7 @@ export async function logoutSource(key: string): Promise<void> {
   clearCredentials(key)
   clearCookies(key)
   store.setAccount(key, { loggedIn: false })
-  reloadRegistry()
+  reloadSource(key)
 }
 
 // ------------------------------------------------------------------ 自動重登
