@@ -9,10 +9,30 @@ import { installOfflineSession } from "./app/offlineSession"
 import { installComicLibrary } from "./app/services"
 import { composeImage } from "./components/ModifyImageRenderer"
 import { ensureFileAccess } from "./engine/fs"
-import { autoCleanImageCache, purgeLegacyImageCacheOnce, setImageCompositor } from "./engine/imagecache"
+import { purgeLegacyImageCacheOnce, scheduleImageCacheCleanup, setImageCompositor } from "./engine/imagecache"
 import { onLocaleChange } from "./i18n"
 import { flushLibrary, reloadLibraryFromDisk } from "./library/bookshelf"
 import { reloadRegistry } from "./sources/registry"
+
+/**
+ * 第一個畫面出現之後多久才量縮圖快取（ms）。
+ *
+ * 清理要逐檔 `statSync` 整個快取目錄，擺在 `present()` 之前就吃掉第一幀；
+ * 600ms 是轉場（約 0.35s）加首頁第一次排版之後、使用者還來不及捲到列表的時間。
+ */
+const FIRST_FRAME_CLEANUP_DELAY = 600
+
+/** 首幀清單只排一次（不是 null 就是排了）。 */
+let firstFrameCleanup: number | null = null
+
+/** 把縮圖快取的策略清理挪到第一個畫面之後（走跟寫入後同一條守衛）。 */
+function scheduleFirstFrameCleanup(): void {
+  if (firstFrameCleanup !== null) return
+  firstFrameCleanup = setTimeout(() => {
+    firstFrameCleanup = null
+    scheduleImageCacheCleanup()
+  }, FIRST_FRAME_CLEANUP_DELAY)
+}
 
 async function run() {
   // 書架/進度是去抖寫入的，退出前一定要落盤。
@@ -36,8 +56,8 @@ async function run() {
 
   // 舊版的圖片快取（正文與縮圖混在同一個目錄）整個清掉一次；縮圖會自己重建。
   purgeLegacyImageCacheOnce()
-  // 啟動時非同步觸發一次縮圖快取策略清理（過期天數與容量上限淘汰）。
-  void autoCleanImageCache()
+  // 策略清理（過期天數與容量上限淘汰）要量整個目錄，等第一個畫面出現再說。
+  scheduleFirstFrameCleanup()
 
   // 圖片管線的 modifyImage 需要離屏渲染，engine 不碰 UI，所以由這裡把合成器接上去。
   setImageCompositor(composeImage)

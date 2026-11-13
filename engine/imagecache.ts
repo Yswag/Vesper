@@ -168,7 +168,7 @@ export function cachedImagePath(spec: ImageRequestSpec, sourceKey: string): Prom
         }
 
         noteWritten(bytes.byteLength)
-        scheduleCleanup()
+        scheduleImageCacheCleanup()
         return path
       } catch (error) {
         if (retryLimit < 0 || !onLoadFailed) throw error
@@ -262,7 +262,7 @@ function makeThumbnail(fullPath: string, spec: ImageRequestSpec): string | null 
   const path = thumbBase(spec) + (png ? ".thumb.png" : ".thumb.jpg")
   if (!writeBytes(path, bytesOut)) return null
   noteWritten(bytesOut.byteLength)
-  scheduleCleanup()
+  scheduleImageCacheCleanup()
   return path
 }
 
@@ -339,10 +339,13 @@ function noteWritten(size: number) {
 }
 
 /**
- * 寫入之後問一次「該不該掃」：沒有任何策略就不管；量過且沒超標、也還沒到掃描間隔就跳過。
+ * 問一次「該不該掃」：沒有任何策略就不管；量過且沒超標、也還沒到掃描間隔就跳過。
  * 真正的掃描在背景做，不卡寫入路徑。
+ *
+ * 入口（`index.tsx`）也在第一個畫面出現之後叫這一個——開機要跟寫入後走同一條守衛，
+ * 不要直接 `autoCleanImageCache()`（那條無條件掃目錄）。
  */
-function scheduleCleanup() {
+export function scheduleImageCacheCleanup(): void {
   const maxBytes = getMaxSizeBytes()
   const maxAgeDays = getMaxAgeDays()
   if (maxBytes === 0 && maxAgeDays === 0) return
