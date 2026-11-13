@@ -15,7 +15,7 @@ import type { SourceViewer } from "../library/readerSettings"
 import * as aidoku from "./aidoku"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
-import { ensureSourceReady, reloginSource, type ReloginOutcome } from "./registry"
+import { ensureSourceReady, reloginSource, sourcesRevision, type ReloginOutcome } from "./registry"
 import { sourceText } from "./translation"
 
 export interface ExploreEntry {
@@ -95,6 +95,8 @@ export interface SourceScope {
   filters?: unknown[]
   /** 沒人在等的呼叫（追更）：Aidoku 源的隊列把它排在使用者的呼叫後面。目前只有詳情認它。 */
   background?: boolean
+  /** 一定要問源（詳情頁下拉重整、手動檢查更新）：不沿用任何快取。目前只有詳情認它。 */
+  fresh?: boolean
 }
 
 /**
@@ -440,7 +442,100 @@ export async function searchSource(
   }
 }
 
+// ---------------------------------------------------------------- 詳情短時快取
+
+/**
+ * 詳情的有效期。只為了接住「背景追更剛查過、使用者接著點進詳情」這個時間差：
+ * 兩次呼叫通常相隔不到一分鐘，卻要重付 Aidoku 源的兩次序列呼叫與兩次網路往返。
+ * 再久之後的更新交給使用者拉的 `fresh` 與下一輪追更，不必在這裡等。
+ */
+export const DETAIL_CACHE_TTL_MS = 45_000
+
+/** 條目上限：一份詳情含完整章節清單（千話作品一份就不小），所以只留最近用到的幾份。 */
+export const DETAIL_CACHE_LIMIT = 4
+
+interface CachedDetail {
+  /** 產生這一份的源實例：源被重建（改設定、全量重載）就是另一個物件，自然不命中。 */
+  source: InstalledSource
+  /** 產生這一份時的 `sourcesRevision()`：登入狀態這種就地更新不換實例，靠它失效。 */
+  revision: number
+  at: number
+  /** 快取自己的一份：呼叫端怎麼就地改都回寫不到這裡。 */
+  detail: ComicDetail
+}
+
+/** 鍵＝源鍵＋作品；失效（實例、版本號、有效期）在命中時另外比對。 */
+const detailCache = new Map<string, CachedDetail>()
+
+function detailCacheKey(sourceKey: string, comicId: string): string {
+  return `${sourceKey}\n${comicId}`
+}
+
+/**
+ * 複本的深度只到「呼叫端會就地改」的那一層：物件本身、`tags`／`chapters`／`recommend` 三個陣列，
+ * 以及陣列裡每個元素（`values`／`tags` 再下一層）。再往裡都是字串與數字，沒有共用參考了。
+ */
+function copyDetail(detail: ComicDetail): ComicDetail {
+  const copy: ComicDetail = {
+    ...detail,
+    tags: detail.tags.map(tag => ({ ...tag, values: [...tag.values] })),
+    chapters: detail.chapters.map(chapter => ({ ...chapter })),
+  }
+  if (detail.recommend) copy.recommend = detail.recommend.map(item => ({ ...item, tags: [...item.tags] }))
+  return copy
+}
+
+/** 有效期內就回一份複本（從快取拿的呼叫端改它不會回頭汙染快取）；沒有、過期或失效就回 undefined。 */
+function readCachedDetail(source: InstalledSource, comicId: string): ComicDetail | undefined {
+  const key = detailCacheKey(source.stored.key, comicId)
+  const entry = detailCache.get(key)
+  if (!entry) return undefined
+  const valid =
+    entry.source === source &&
+    entry.revision === sourcesRevision() &&
+    Date.now() - entry.at < DETAIL_CACHE_TTL_MS
+  if (!valid) {
+    detailCache.delete(key)
+    return undefined
+  }
+  // 重新排到最後＝最近用過；淘汰從最前面（最久沒用）開始。
+  detailCache.delete(key)
+  detailCache.set(key, entry)
+  return copyDetail(entry.detail)
+}
+
+function writeCachedDetail(source: InstalledSource, comicId: string, detail: ComicDetail): void {
+  const key = detailCacheKey(source.stored.key, comicId)
+  detailCache.delete(key)
+  detailCache.set(key, {
+    source,
+    revision: sourcesRevision(),
+    at: Date.now(),
+    detail: copyDetail(detail),
+  })
+  while (detailCache.size > DETAIL_CACHE_LIMIT) {
+    const oldest = detailCache.keys().next().value
+    if (oldest === undefined) break
+    detailCache.delete(oldest)
+  }
+}
+
+/**
+ * 詳情。有效期內剛有同一部的就沿用那一份（背景追更剛查過、使用者接著點進來），
+ * `fresh` 或過期才真的問源。**失敗不進快取**：壞掉的源下一輪要能自己重試。
+ */
 export async function loadDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
+  if (scope?.fresh !== true) {
+    const cached = readCachedDetail(source, comicId)
+    if (cached) return cached
+  }
+  const detail = await fetchDetail(source, comicId, scope)
+  writeCachedDetail(source, comicId, detail)
+  return detail
+}
+
+/** 真的問源（分岔點）：Venera 的 `comic.loadInfo`／Aidoku 的 `getMangaDetails` ＋ `getChapterList`。 */
+async function fetchDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
   if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId, scope?.background === true)
   const instance = await requireInstance(source)
   if (!instance.comic?.loadInfo) throw new Error(t("sources.unsupported.detail"))

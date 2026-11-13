@@ -219,7 +219,7 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     rankingOptions: () => [],
     hasRanking: () => false,
     list: (target, cursor) => aidokuList(source, target, cursor),
-    detail: comicId => aidoku.detail(source, comicId),
+    detail: (comicId, scope) => loadDetail(source, comicId, scope),
     chapter: (comicId, epId) => openChapterImages(source, comicId, epId),
     comments: () => Promise.reject(new Error(t("sources.unsupported.comments"))),
     canPostComment: () => false,

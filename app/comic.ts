@@ -71,6 +71,7 @@ import {
 import type { AidokuSettingsSpec } from "../sources/aidoku"
 import {
   hasMoreComments,
+  loadDetail,
   type ComicDetail,
   type ComicStatus,
   type ContentRating,
@@ -461,8 +462,11 @@ export interface ComicLibrary {
   categoryParts(sourceKey: string): Promise<CategoryPart[]>
   /** 分類頁的篩選列（`categoryComics.optionList`／`optionLoader`）。 */
   categoryOptionRows(sourceKey: string, target: JumpTarget): Promise<CategoryOptionRow[]>
-  /** `background`：沒人在等的查詢（追更），源那邊排在使用者的操作後面。 */
-  comic(ref: ComicRef, opts?: { background?: boolean }): Promise<ComicPage>
+  /**
+   * `background`：沒人在等的查詢（追更），源那邊排在使用者的操作後面。
+   * `fresh`：一定要問源（下拉重整、手動檢查更新），不沿用剛剛拿到的詳情。
+   */
+  comic(ref: ComicRef, opts?: { background?: boolean; fresh?: boolean }): Promise<ComicPage>
   /**
    * 開一話的 session。**逐話選來源**：這一話下載完就讀本機檔（先查本機、不碰源，
    * 源被移除或飛航模式也開得起來），否則走線上。
@@ -746,9 +750,13 @@ export function createComicLibrary(): ComicLibrary {
   /**
    * 詳情（`comic()` 與 `resumePlan()` 共用）；來源名稱與留言能力都由這裡給，呼叫端不必再碰 registry。
    */
-  const loadComic = async (ref: ComicRef, opts?: { background?: boolean }): Promise<ComicPage> => {
+  const loadComic = async (ref: ComicRef, opts?: { background?: boolean; fresh?: boolean }): Promise<ComicPage> => {
     const { source, handle } = handleOf(ref.sourceKey)
-    const detail = await handle.detail(ref.comicId, opts?.background ? { background: true } : undefined)
+    // 詳情一律走 `sources/operations.ts` 的 `loadDetail`：快取與 Venera／Aidoku 的分岔都在那裡。
+    const background = opts?.background === true
+    const fresh = opts?.fresh === true
+    const scope = background || fresh ? { background, fresh } : undefined
+    const detail = await loadDetail(source, ref.comicId, scope)
     // 線上拿到清單就覆寫快取（只在這部有離線內容時留檔，見 engine/offline 的 cacheChapterList）。
     cacheChapterList(ref.sourceKey, ref.comicId, chapterListOf(detail.chapters))
     return {
