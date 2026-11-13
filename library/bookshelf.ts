@@ -103,6 +103,11 @@ const FLUSH_DELAY = 500
 let cache: Library | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
 
+/** 每次真的寫入或重讀磁碟就加一；排序快取靠它失效。 */
+let revision = 0
+let favoritesCache: { revision: number; items: Favorite[] } | null = null
+let progressCache: { revision: number; items: Progress[] } | null = null
+
 /** 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。 */
 const bus = createEmitter({ debounceMs: 250 })
 
@@ -135,6 +140,7 @@ export function reloadLibraryFromDisk(): void {
   if (!raw) return
   try {
     cache = normalize(JSON.parse(raw))
+    revision++
     bus.emitDebounced()
   } catch {
     // 忽略格式錯誤
@@ -157,7 +163,7 @@ export function flushLibrary(): void {
     clearTimeout(timer)
     timer = null
   }
-  const payload = JSON.stringify(cache, null, 2)
+  const payload = JSON.stringify(cache)
   // 能寫檔案就寫檔案，寫不進去才存 KV。
   if (!writeText(libraryPath(), payload)) kv.set(KV_KEY, payload)
 }
@@ -176,6 +182,7 @@ type NotifyMode = "now" | "debounced" | "none"
  */
 function mutate(fn: (library: Library) => boolean | void, notify: NotifyMode = "debounced"): void {
   if (fn(load()) === false) return
+  revision++
   schedule()
   if (notify === "now") {
     bus.cancelPending()
@@ -244,8 +251,9 @@ function cleanIds(ids: readonly string[] | undefined): string[] | undefined {
   return unique.size > 0 ? [...unique] : undefined
 }
 
-function withReadIds(entry: Progress, ids: readonly string[] | undefined): Progress {
-  return { ...entry, readEpIds: cleanIds(ids) }
+/** 呼叫端傳進來的已讀清單都已經清過（或沿用上一筆的同一個陣列），這裡不再重配一份。 */
+function withReadIds(entry: Progress, ids: string[] | undefined): Progress {
+  return { ...entry, readEpIds: ids && ids.length > 0 ? ids : undefined }
 }
 
 /**
@@ -264,7 +272,11 @@ function recordFor(library: Library, sourceKey: string, comicId: string): Progre
 // ------------------------------------------------------------------ 收藏
 
 export function listFavorites(): Favorite[] {
-  return [...load().favorites].sort((a, b) => b.addedAt - a.addedAt)
+  if (favoritesCache?.revision !== revision) {
+    favoritesCache = { revision, items: [...load().favorites].sort((a, b) => b.addedAt - a.addedAt) }
+  }
+  // 回拷貝：呼叫端拿去排序、splice 都不會動到快取。
+  return [...favoritesCache.items]
 }
 
 export function isFavorite(sourceKey: string, comicId: string): boolean {
@@ -307,9 +319,15 @@ export function getProgress(sourceKey: string, comicId: string): Progress | unde
  * 沒有 `epId` 的紀錄只是已讀清單的殼，不是閱讀歷史，不列出來。
  */
 export function listProgress(): Progress[] {
-  return Object.values(load().progress)
-    .filter(entry => Boolean(entry.epId))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
+  if (progressCache?.revision !== revision) {
+    progressCache = {
+      revision,
+      items: Object.values(load().progress)
+        .filter(entry => Boolean(entry.epId))
+        .sort((a, b) => b.updatedAt - a.updatedAt),
+    }
+  }
+  return [...progressCache.items]
 }
 
 /**
@@ -326,18 +344,18 @@ export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notif
       entry.pageCount !== undefined &&
       entry.pageCount > 0 &&
       entry.page === entry.pageCount - 1
-    // 換話／開啟章節時呼叫端不一定帶已讀清單：一律沿用上一筆，別把已讀洗掉。
-    const readEpIds = cleanIds(entry.readEpIds ?? previous?.readEpIds)
+    // 換話／開啟章節時呼叫端不一定帶已讀清單：要求沒帶就沿用上一筆的同一個陣列，
+    // 只換頁碼的寫入不必重配一份已讀清單（也不必每次去重）。
+    const base = entry.readEpIds !== undefined ? cleanIds(entry.readEpIds) : previous?.readEpIds
+    const readEpIds = base && base.length > 0 ? base : undefined
     const turnedPage =
       entry.page !== undefined && (previous?.epId !== entry.epId || previous?.page !== entry.page)
     const newlyFinished = finished && Boolean(entry.epId) && !(readEpIds ?? []).includes(entry.epId)
     if (turnedPage || newlyFinished) {
       recordActivity(library, { chapters: newlyFinished ? 1 : 0, pages: turnedPage ? 1 : 0 }, entry)
     }
-    library.progress[key] = withReadIds(
-      { ...entry, updatedAt: Date.now() },
-      finished && entry.epId ? [...(readEpIds ?? []), entry.epId] : readEpIds
-    )
+    const ids = newlyFinished ? cleanIds([...(readEpIds ?? []), entry.epId]) : readEpIds
+    library.progress[key] = withReadIds({ ...entry, updatedAt: Date.now() }, ids)
     markSeen(library, entry.sourceKey, entry.comicId)
   }, options.notify === false ? "none" : "debounced")
 }
@@ -378,9 +396,24 @@ export function markAllChaptersRead(sourceKey: string, comicId: string, allEpIds
   markChapterRead(sourceKey, comicId, allEpIds, true)
 }
 
-/** 已讀章節集合（呼叫端要算未讀數／比對目錄時用）。 */
-export function readChapterIds(sourceKey: string, comicId: string): Set<string> {
-  return new Set(cleanIds(getProgress(sourceKey, comicId)?.readEpIds) ?? [])
+/** 沒有紀錄時共用一份空集合，不必每次配一個新的。 */
+const NO_READ_IDS: ReadonlySet<string> = new Set()
+
+/**
+ * 已讀章節集合依進度紀錄的物件參考快取：所有寫入都換新紀錄（`withReadIds` 展開），
+ * 紀錄一換這個快取就自然失效。
+ */
+const readIdsCache = new WeakMap<Progress, ReadonlySet<string>>()
+
+/** 已讀章節集合（呼叫端要算未讀數／比對目錄時用；不要改它）。 */
+export function readChapterIds(sourceKey: string, comicId: string): ReadonlySet<string> {
+  const record = getProgress(sourceKey, comicId)
+  if (!record) return NO_READ_IDS
+  const cached = readIdsCache.get(record)
+  if (cached) return cached
+  const ids: ReadonlySet<string> = new Set(cleanIds(record.readEpIds) ?? [])
+  readIdsCache.set(record, ids)
+  return ids
 }
 
 export function isChapterRead(sourceKey: string, comicId: string, epId: string): boolean {
