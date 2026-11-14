@@ -42,7 +42,7 @@ import {
   type PageFrame,
   type PageRender,
 } from "../engine/pagefiles"
-import { openChapterCache, sweepPageCache } from "../engine/pagecache"
+import { cachedChapterImageKeys, openChapterCache, sweepPageCache } from "../engine/pagecache"
 import { readBytes } from "../engine/fs"
 import { createPageCache } from "../engine/pageimages"
 import { readImageSize } from "../engine/imagesize"
@@ -809,7 +809,10 @@ export function createComicLibrary(): ComicLibrary {
     // 只拿這一話的頁面清單。詳情不在這裡抓：每個入口進來之前都已經抓過一輪
     // （詳情頁的 `comic()`、續讀的 `resumePlan()`），擋在這裡等它只會把首圖往後推一個往返；
     // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
-    const imageKeys = await handle.chapter(ref.comicId, ref.epId)
+    // 整話都在磁碟上就連清單也不問源：有的源問一次清單就算一次額度。
+    const cachedKeys = cachedChapterImageKeys(key)
+    if (cachedKeys) log("debug", "reader", `${ref.epId} 整話命中磁碟（${cachedKeys.length} 頁），不問源`)
+    const imageKeys = cachedKeys ?? (await handle.chapter(ref.comicId, ref.epId))
     // 這一話的跨 session 快取目錄：同一話重開就是這個目錄，命中就不必問源、不必下載。
     // 目錄只列舉這一次，清舊檔與頁面索引都用同一份清單。
     const chapterCache = openChapterCache(key, imageKeys)

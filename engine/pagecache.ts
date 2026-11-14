@@ -19,6 +19,9 @@ import { createPageIndex, pageName, type PageIndex } from "./pagefiles"
  */
 const USED_MARKER = ".used"
 
+/** 這一話的圖片鍵清單（JSON 陣列）；整話都在磁碟上時，重開靠它就不必問源。 */
+const KEYS_MARKER = ".keys"
+
 /** 池的根目錄（與離線 session 的 `cache/reader` 分開）。 */
 export function pageCacheRoot(): string {
   return join(appDataRoot(), "cache", "pages")
@@ -31,6 +34,42 @@ export function chapterCacheDir(
 ): string {
   const key = [ref.sourceKey, ref.comicId, ref.epId].join("\n")
   return join(root, Convert.hexEncode(Convert.md5(Convert.encodeUtf8(key))).slice(0, 16))
+}
+
+/**
+ * 上次開章存下的圖片鍵。**每一頁的原圖都還在磁碟上**才回；缺任何一頁就回 null，讓呼叫端照舊問源
+ * （舊清單的網址可能帶已過期的簽名，不能拿去抓缺的頁）。
+ *
+ * 有的源問一次頁面清單就要算一次額度（komiic 取整話 ticket），整話都在手上時不該再問。
+ */
+export function cachedChapterImageKeys(
+  ref: { sourceKey: string; comicId: string; epId: string },
+  root: string = pageCacheRoot()
+): string[] | null {
+  const dir = chapterCacheDir(ref, root)
+  const imageKeys = readImageKeys(dir)
+  if (!imageKeys) return null
+  const pages = createPageIndex(dir)
+  return imageKeys.every((key, index) => pages.find(pageName(index, key)) !== null) ? imageKeys : null
+}
+
+function readImageKeys(dir: string): string[] | null {
+  const text = readText(join(dir, KEYS_MARKER))
+  if (!text) return null
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (!Array.isArray(parsed) || parsed.length === 0) return null
+    return parsed.every(key => typeof key === "string") ? (parsed as string[]) : null
+  } catch {
+    return null
+  }
+}
+
+/** 清單沒變就不重寫（重開同一話是常態）。寫不進去不是致命的：下一次開章照舊問源。 */
+function writeImageKeys(dir: string, imageKeys: string[]): void {
+  const path = join(dir, KEYS_MARKER)
+  const text = JSON.stringify(imageKeys)
+  if (readText(path) !== text) writeText(path, text)
 }
 
 export interface ChapterCache {
@@ -69,6 +108,8 @@ export function openChapterCache(
   // 寫入頻率與以前相同：開章一次（收攤再一次，只寫十幾個位元組）。
   const usedAt = Date.now()
   writeMarker(dir, usedAt, used, files)
+  // 量完用量才寫：清單檔跟標記檔一樣不算進這一話的用量。
+  writeImageKeys(dir, imageKeys)
   const pages = createPageIndex(dir, kept)
   return {
     dir,
