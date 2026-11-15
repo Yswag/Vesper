@@ -67,6 +67,8 @@ import { clearUpscaleCache, disposeUpscaleEngine } from "../../engine/upscale"
 
 /** 單擊翻頁的滑動動畫（需以 withAnimation 包覆捲動指令）。 */
 const TURN_ANIM = Animation.spring({ duration: 0.15, bounce: 0 })
+/** 落定多久後才預備下一格（毫秒）：要晚於翻頁動畫，運算才不會跟它搶主執行緒。 */
+const PREPARE_DELAY = 400
 
 /** 距末頁還剩幾頁就開始把下一話前幾頁抓到磁碟（太早會跟當前話的預取搶頻寬、多耗流量）。 */
 const NEXT_CHAPTER_TRIGGER = 3
@@ -560,6 +562,9 @@ function ReaderContent({
   const restoreTimer = useRef<number | null>(null)
   const scrubTimer = useRef<number | null>(null)
   const turnTimer = useRef<number | null>(null)
+  // 預備下一格：計時器與「已經為哪一格排過」（同一格的重複回報不重排）。
+  const prepareTimer = useRef<number | null>(null)
+  const prepareBase = useRef<number | null>(null)
 
   // 末頁拉動進入下一話的 overscroll 進度與門檻（支援畫廊與連續模式）
   // 拉籤的位移是純 JS 訊號：拉動的每一幀只重繪拉籤自己，閱讀器根層不跟著重跑。
@@ -689,6 +694,8 @@ function ReaderContent({
       clearGate(restoreTimer)
       clearGate(scrubTimer)
       clearGate(turnTimer)
+      clearGate(prepareTimer)
+      prepareBase.current = null
       // 換話／離開閱讀器：清掉預取佇列 + 中止在飛的請求 + 把正文的記憶體快取放掉。
       opened?.dispose()
       const extra = followupsRef.current
@@ -844,11 +851,33 @@ function ReaderContent({
     const hit = slots.locate(slot)
     if (!hit) return
     anchorSlotId.current = slots.slots[slot]?.id ?? null
+    prepareAfter(slot)
     if (focusEpRef.current !== hit.epId) {
       focusEpRef.current = hit.epId
       setFocusEpId(hit.epId)
     }
     if (leadingPageRef.current !== hit.page) setLeadingPage(hit.page)
+  }
+
+  /**
+   * 畫廊落定在這一格之後，先把下一格備好（原圖落地；開了超分就連超分一起算完）。
+   * 沒看過的頁翻過去時第一幀就是成品，解碼、超分、換圖都不會落在翻頁動畫中途。
+   */
+  function prepareAfter(slot: number) {
+    if (!paginated || prepareBase.current === slot) return
+    prepareBase.current = slot
+    clearGate(prepareTimer)
+    prepareTimer.current = setTimeout(() => {
+      prepareTimer.current = null
+      const next = slotsRef.current.slots[slot + 1]
+      const owner = next ? sessionOfRef.current.get(next.epId) : undefined
+      const { width, height } = pageSizeRef.current
+      if (!next || !owner || !(width > 0) || !(height > 0)) return
+      // 框要跟頁面上 ChapterImage 的 size 相同：超分檔名帶輸出尺寸，不同就對不上。
+      void owner
+        .loadPage(next.page, () => {}, undefined, { width, height, zoom: MAX_ZOOM }, next.half)
+        .catch(() => {})
+    }, PREPARE_DELAY)
   }
 
   /** 要看哪一格來算目標：自己剛下的目標（動畫還在飛）／還原中的目標／畫面上的實際位置。 */
@@ -1094,6 +1123,12 @@ function ReaderContent({
   }, [session, currentEpId, followups])
   const slotsRef = useRef(pageSlots)
   slotsRef.current = pageSlots
+  const sessionOfRef = useRef(sessionOf)
+  sessionOfRef.current = sessionOf
+  // 開章／換模式後停在某一格、還沒翻過頁：照樣先備下一格。
+  useEffect(() => {
+    if (session && status === null) prepareAfter(focusSlotOf(leadingPageRef.current ?? 0))
+  }, [session, status, paginated])
 
   // 前面插了格（或切割開關／順序變了）：畫面還停在舊位移，不帶動畫捲回同一頁。
   const previousSlots = useRef(pageSlots)

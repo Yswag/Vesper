@@ -45,7 +45,6 @@ import {
 import { cachedChapterImageKeys, openChapterCache, sweepPageCache } from "../engine/pagecache"
 import { readBytes } from "../engine/fs"
 import { createPageCache } from "../engine/pageimages"
-import { readImageSize } from "../engine/imagesize"
 import { halfRect, halfSuffix, slotAspect, type SlotHalf } from "../engine/pageslots"
 import { createPrefetchQueue } from "../engine/prefetch"
 import {
@@ -874,10 +873,10 @@ export function createComicLibrary(): ComicLibrary {
     const prefetch = createPrefetchQueue({
       total: imageKeys.length,
       signal: controller.signal,
-      // 預取到的頁先讀檔頭記比例：畫廊切寬圖要在翻到之前就知道。
+      // 預取到的頁直接備成可以畫的：比例先知道（畫廊切寬圖要在翻到之前決定），
+      // 翻到時第一幀就是圖——寫檔與「佔位→圖」的交換不會擠在翻頁動畫裡。
       load: async page => {
-        const size = readImageSize(await loadPageBytes(page))
-        if (size && aspects.get(page) === null) aspects.set(page, size.width / size.height)
+        if (!renders.has(String(page))) await loadPage(page)
       },
       ahead: getPrefetchPages,
       // 預取失敗是靜默的：只留一筆 debug（使用者沒看到那一頁，不該被打擾）。
@@ -1003,6 +1002,8 @@ export function createComicLibrary(): ComicLibrary {
         }
       }
 
+      // 沒有顯示框的呼叫（預取）不蓋掉已經記住的超分圖。
+      if (!frame) return renders.get(String(index)) ?? memoRender(index, render)
       return memoRender(index, render)
     }
 
