@@ -636,6 +636,8 @@ export async function sharpenImage(
             setCachedUpscaleData(key, native.data, "coreml")
             return { data: native.data, fromCache: false, backend: "coreml" }
           }
+          // 被取消也是回 null：不是「不適用」，別為了一張已經翻走的頁冷啟動 wasm 引擎。
+          if (isCancelled && isCancelled()) return null
           log("debug", "upscale", "[Core ML] 不適用這張，退回 ONNX")
         } catch (error) {
           log("warning", "upscale", "[Core ML] 出錯，退回 ONNX", error)
