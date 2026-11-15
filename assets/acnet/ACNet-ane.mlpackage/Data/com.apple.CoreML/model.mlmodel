@@ -1,0 +1,1624 @@
+	÷
+
+data*
+†††ÄR
+output*
+¿¿êÄ¢†¢:
+,com.github.apple.coremltools.conversion_date
+2026-11-13¢2
+#com.github.apple.coremltools.sourcemilinternal¢+
+$com.github.apple.coremltools.version9.0≤¿põo
+mainío
+(
+data 
+
+
+
+†
+†CoreML8‹n
+CoreML8–noutputq
+const 
+var_20_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_20_strides_0^
+const
+var_20_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_20_groups_0u
+const"
+var_20_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_20_dilations_0g
+const
+var_20_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_20_pad_type_0k
+const
+var_20_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_20_pad_0l
+const
+data_to_fp16_dtype_0
+*
+val
+
+
+"
+fp16**
+name"
+
+"
+data_to_fp16_dtype_0∆
+const=
+sequential_0_weight_to_fp16
+
+
+
+
+
+*K
+valD
+
+
+
+
+
+*"
+@model_path/weights/weight.bin@*1
+name)
+!
+"
+sequential_0_weight_to_fp16í
+const)
+sequential_0_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+∫_•x'’§≥%Y(≥#âú*/
+name'
+
+"
+sequential_0_bias_to_fp16à
+cast!
+dtype
+
+data_to_fp16_dtype_0
+x
+
+data0
+data_to_fp16 
+
+
+
+
+†
+†*
+name
+
+
+"
+cast_0Ì
+conv
+strides
+
+var_20_strides_0
+groups
+
+var_20_groups_0#
+	dilations
+
+var_20_dilations_0!
+pad_type
+
+var_20_pad_type_0
+pad
+
+var_20_pad_0)
+weight
+
+sequential_0_weight_to_fp16
+x
+
+data_to_fp16%
+bias
+
+sequential_0_bias_to_fp164
+var_20_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_20_cast_fp16~
+relu
+x
+
+var_20_cast_fp164
+var_21_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_21_cast_fp16q
+const 
+var_22_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_22_strides_0^
+const
+var_22_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_22_groups_0u
+const"
+var_22_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_22_dilations_0g
+const
+var_22_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_22_pad_type_0k
+const
+var_22_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_22_pad_0«
+const=
+sequential_2_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.bin¿*1
+name)
+!
+"
+sequential_2_weight_to_fp16í
+const)
+sequential_2_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+Ù&ò∏C®G®1 º¶‡úD§*/
+name'
+
+"
+sequential_2_bias_to_fp16Ò
+conv
+strides
+
+var_22_strides_0
+groups
+
+var_22_groups_0#
+	dilations
+
+var_22_dilations_0!
+pad_type
+
+var_22_pad_type_0
+pad
+
+var_22_pad_0)
+weight
+
+sequential_2_weight_to_fp16
+x
+
+var_21_cast_fp16%
+bias
+
+sequential_2_bias_to_fp164
+var_22_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_22_cast_fp16~
+relu
+x
+
+var_22_cast_fp164
+var_23_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_23_cast_fp16q
+const 
+var_24_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_24_strides_0^
+const
+var_24_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_24_groups_0u
+const"
+var_24_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_24_dilations_0g
+const
+var_24_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_24_pad_type_0k
+const
+var_24_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_24_pad_0«
+const=
+sequential_4_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.binÄ*1
+name)
+!
+"
+sequential_4_weight_to_fp16í
+const)
+sequential_4_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+¶Ô®Sa'ø•5 ‰§º§*/
+name'
+
+"
+sequential_4_bias_to_fp16Ò
+conv
+strides
+
+var_24_strides_0
+groups
+
+var_24_groups_0#
+	dilations
+
+var_24_dilations_0!
+pad_type
+
+var_24_pad_type_0
+pad
+
+var_24_pad_0)
+weight
+
+sequential_4_weight_to_fp16
+x
+
+var_23_cast_fp16%
+bias
+
+sequential_4_bias_to_fp164
+var_24_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_24_cast_fp16~
+relu
+x
+
+var_24_cast_fp164
+var_25_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_25_cast_fp16q
+const 
+var_26_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_26_strides_0^
+const
+var_26_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_26_groups_0u
+const"
+var_26_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_26_dilations_0g
+const
+var_26_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_26_pad_type_0k
+const
+var_26_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_26_pad_0«
+const=
+sequential_6_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.bin¿*1
+name)
+!
+"
+sequential_6_weight_to_fp16í
+const)
+sequential_6_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+¯ùä≠h)ë©µíÀÓ°Ä*/
+name'
+
+"
+sequential_6_bias_to_fp16Ò
+conv
+strides
+
+var_26_strides_0
+groups
+
+var_26_groups_0#
+	dilations
+
+var_26_dilations_0!
+pad_type
+
+var_26_pad_type_0
+pad
+
+var_26_pad_0)
+weight
+
+sequential_6_weight_to_fp16
+x
+
+var_25_cast_fp16%
+bias
+
+sequential_6_bias_to_fp164
+var_26_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_26_cast_fp16~
+relu
+x
+
+var_26_cast_fp164
+var_27_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_27_cast_fp16q
+const 
+var_28_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_28_strides_0^
+const
+var_28_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_28_groups_0u
+const"
+var_28_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_28_dilations_0g
+const
+var_28_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_28_pad_type_0k
+const
+var_28_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_28_pad_0«
+const=
+sequential_8_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.binÄ*1
+name)
+!
+"
+sequential_8_weight_to_fp16í
+const)
+sequential_8_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+pùh◊°Ö¢Áõu©h"ó*/
+name'
+
+"
+sequential_8_bias_to_fp16Ò
+conv
+strides
+
+var_28_strides_0
+groups
+
+var_28_groups_0#
+	dilations
+
+var_28_dilations_0!
+pad_type
+
+var_28_pad_type_0
+pad
+
+var_28_pad_0)
+weight
+
+sequential_8_weight_to_fp16
+x
+
+var_27_cast_fp16%
+bias
+
+sequential_8_bias_to_fp164
+var_28_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_28_cast_fp16~
+relu
+x
+
+var_28_cast_fp164
+var_29_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_29_cast_fp16q
+const 
+var_30_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_30_strides_0^
+const
+var_30_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_30_groups_0u
+const"
+var_30_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_30_dilations_0g
+const
+var_30_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_30_pad_type_0k
+const
+var_30_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_30_pad_0…
+const>
+sequential_10_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.bin¿(*2
+name*
+"
+ "
+sequential_10_weight_to_fp16î
+const*
+sequential_10_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+≥úU°s†ú‰.r(:§÷9*0
+name(
+ 
+"
+sequential_10_bias_to_fp16Û
+conv
+strides
+
+var_30_strides_0
+groups
+
+var_30_groups_0#
+	dilations
+
+var_30_dilations_0!
+pad_type
+
+var_30_pad_type_0
+pad
+
+var_30_pad_0*
+weight 
+
+sequential_10_weight_to_fp16
+x
+
+var_29_cast_fp16&
+bias
+
+sequential_10_bias_to_fp164
+var_30_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_30_cast_fp16~
+relu
+x
+
+var_30_cast_fp164
+var_31_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_31_cast_fp16q
+const 
+var_32_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_32_strides_0^
+const
+var_32_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_32_groups_0u
+const"
+var_32_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_32_dilations_0g
+const
+var_32_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_32_pad_type_0k
+const
+var_32_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_32_pad_0…
+const>
+sequential_12_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.binÄ2*2
+name*
+"
+ "
+sequential_12_weight_to_fp16î
+const*
+sequential_12_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+õ-ª8»Ä¸%ÄÄ¿(*0
+name(
+ 
+"
+sequential_12_bias_to_fp16Û
+conv
+strides
+
+var_32_strides_0
+groups
+
+var_32_groups_0#
+	dilations
+
+var_32_dilations_0!
+pad_type
+
+var_32_pad_type_0
+pad
+
+var_32_pad_0*
+weight 
+
+sequential_12_weight_to_fp16
+x
+
+var_31_cast_fp16&
+bias
+
+sequential_12_bias_to_fp164
+var_32_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_32_cast_fp16~
+relu
+x
+
+var_32_cast_fp164
+var_33_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_33_cast_fp16q
+const 
+var_34_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_34_strides_0^
+const
+var_34_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_34_groups_0u
+const"
+var_34_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_34_dilations_0g
+const
+var_34_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_34_pad_type_0k
+const
+var_34_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_34_pad_0…
+const>
+sequential_14_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.bin¿;*2
+name*
+"
+ "
+sequential_14_weight_to_fp16î
+const*
+sequential_14_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+Äq£¨ -@°*¢*0
+name(
+ 
+"
+sequential_14_bias_to_fp16Û
+conv
+strides
+
+var_34_strides_0
+groups
+
+var_34_groups_0#
+	dilations
+
+var_34_dilations_0!
+pad_type
+
+var_34_pad_type_0
+pad
+
+var_34_pad_0*
+weight 
+
+sequential_14_weight_to_fp16
+x
+
+var_33_cast_fp16&
+bias
+
+sequential_14_bias_to_fp164
+var_34_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_34_cast_fp16~
+relu
+x
+
+var_34_cast_fp164
+var_35_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_35_cast_fp16q
+const 
+var_36_strides_0
+
+
+*
+val
+
+
+
+
+*%
+name
+
+"
+op_36_strides_0^
+const
+var_36_groups_0
+*
+val
+
+
+*$
+name
+
+"
+op_36_groups_0u
+const"
+var_36_dilations_0
+
+
+*
+val
+
+
+
+
+*'
+name
+
+"
+op_36_dilations_0g
+const
+var_36_pad_type_0
+*
+val
+
+
+"
+custom*&
+name
+
+"
+op_36_pad_type_0k
+const
+var_36_pad_0
+
+
+*!
+val
+
+
+
+
+
+*!
+name
+
+"
+op_36_pad_0…
+const>
+sequential_16_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.binÄE*2
+name*
+"
+ "
+sequential_16_weight_to_fp16î
+const*
+sequential_16_bias_to_fp16
+
+
+
+*-
+val&
+
+
+
+
+:
+öê "F d,¡ú…ü
+ *0
+name(
+ 
+"
+sequential_16_bias_to_fp16Û
+conv
+strides
+
+var_36_strides_0
+groups
+
+var_36_groups_0#
+	dilations
+
+var_36_dilations_0!
+pad_type
+
+var_36_pad_type_0
+pad
+
+var_36_pad_0*
+weight 
+
+sequential_16_weight_to_fp16
+x
+
+var_35_cast_fp16&
+bias
+
+sequential_16_bias_to_fp164
+var_36_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_36_cast_fp16~
+relu
+x
+
+var_36_cast_fp164
+var_37_cast_fp16 
+
+
+
+
+†
+†*%
+name
+
+"
+op_37_cast_fp16r
+const 
+output_strides_0
+
+
+*
+val
+
+
+
+
+*&
+name
+
+"
+output_strides_0_
+const
+output_groups_0
+*
+val
+
+
+*%
+name
+
+"
+output_groups_0v
+const"
+output_dilations_0
+
+
+*
+val
+
+
+
+
+*(
+name 
+
+"
+output_dilations_0l
+const
+output_pad_0
+
+
+*!
+val
+
+
+
+
+
+    *"
+name
+
+"
+output_pad_0g
+const
+output_pad_type_0
+*
+val
+
+	"
+valid*'
+name
+
+"
+output_pad_type_0¢
+const6
+&output_has_output_shape_output_shape_0
+
+
+*#
+val
+
+
+
+
+
+¿¿*<
+name4
+,
+*"(
+&output_has_output_shape_output_shape_0…
+const>
+sequential_18_weight_to_fp16
+
+
+
+
+
+*L
+valE
+
+
+
+
+
+*#
+@model_path/weights/weight.bin¿N*2
+name*
+"
+ "
+sequential_18_weight_to_fp16ô
+conv_transpose
+strides
+
+output_strides_0:
+output_shape*
+(
+&output_has_output_shape_output_shape_0!
+pad_type
+
+output_pad_type_0#
+	dilations
+
+output_dilations_0
+pad
+
+output_pad_0*
+weight 
+
+sequential_18_weight_to_fp16
+x
+
+var_37_cast_fp16
+groups
+
+output_groups_0*
+output 
+
+
+
+
+¿
+¿*7
+name/
+'
+%"#
+!output_has_output_shape_cast_fp16"ù
+	buildInfoè"
+
+
+}"{
+6
+!
+
+"
+coremltools-version
+	
+"
+9.0
+A
+/
+'
+%"#
+!coremltools-component-milinternal
+
+"
+ 

@@ -6,6 +6,10 @@ import { Script } from "scripting"
 import { join, readBytes } from "./fs"
 import { log } from "./log"
 import { requirePro } from "./pro"
+import { coreMLAvailable, disposeCoreML, upscaleWithCoreML } from "./upscaleCoreML"
+
+/** 臨時開關：true 走 Core ML + Metal，失敗或超大頁自動退回 wasm。 */
+const CORE_ML_UPSCALE = true
 
 let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
@@ -13,9 +17,15 @@ let currentPort = 0
 
 // Session 記憶體快取（LRU 上限 6 張，儲存 JPEG 原始位元組避免點陣常駐消耗）。
 const MAX_UPSCALE_CACHE_SIZE = 6
-const sessionCache = new Map<string, Data>()
+export type UpscaleBackend = "coreml" | "onnx"
+export interface UpscaleResult {
+  data: Data
+  fromCache: boolean
+  backend: UpscaleBackend
+}
+const sessionCache = new Map<string, { data: Data; backend: UpscaleBackend }>()
 
-function getCachedUpscaleData(key: string): Data | undefined {
+function getCachedUpscaleData(key: string): { data: Data; backend: UpscaleBackend } | undefined {
   const item = sessionCache.get(key)
   if (item) {
     // LRU: 重新放入尾端標記為最近使用
@@ -25,7 +35,7 @@ function getCachedUpscaleData(key: string): Data | undefined {
   return item
 }
 
-function setCachedUpscaleData(key: string, data: Data): void {
+function setCachedUpscaleData(key: string, data: Data, backend: UpscaleBackend): void {
   if (sessionCache.has(key)) {
     sessionCache.delete(key)
   } else if (sessionCache.size >= MAX_UPSCALE_CACHE_SIZE) {
@@ -36,7 +46,7 @@ function setCachedUpscaleData(key: string, data: Data): void {
       log("debug", "upscale", `超分快取觸發 LRU 淘汰: ${oldestKey}`)
     }
   }
-  sessionCache.set(key, data)
+  sessionCache.set(key, { data, backend })
 }
 
 /**
@@ -433,7 +443,7 @@ async function ensureServer(): Promise<number> {
   if (err) throw new Error(`HttpServer start failed: ${err}`)
   currentPort = server.port ?? 0
   serverInstance = server
-  log("info", "upscale", `ACNet 本地靜態伺服器啟動於埠號 ${currentPort}`)
+  log("info", "upscale", `[ONNX] 本地靜態伺服器啟動於埠號 ${currentPort}`)
   return currentPort
 }
 
@@ -460,9 +470,9 @@ async function ensureEngine(): Promise<void> {
     // 初始化 ONNX 會話
     await controller.evaluateJavaScript(`return window.initSession();`)
     controllerInstance = controller
-    log("info", "upscale", `ONNX ACNet 神經網絡引擎就緒 (連接埠號 ${port})`)
+    log("info", "upscale", `[ONNX] 引擎就緒（連接埠號 ${port}）`)
   } catch (e) {
-    log("warning", "upscale", "ONNX ACNet 引擎初始化失敗", e)
+    log("warning", "upscale", "[ONNX] 引擎初始化失敗", e)
     if (createdController) {
       try {
         createdController.dispose()
@@ -490,6 +500,7 @@ function resetEngineInstances(): void {
 }
 
 export function disposeUpscaleEngine(): void {
+  disposeCoreML()
   // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS
   queuePromise = queuePromise.then(
     () => resetEngineInstances(),
@@ -553,7 +564,7 @@ async function executeInference(
   const outData = Data.fromArrayBuffer(uploadedBuffer)
   if (!outData) return null
 
-  log("debug", "upscale", `頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
+  log("debug", "upscale", `[ONNX] 頁面 ${key} 神經網路計算與傳輸耗時 ${Date.now() - inferStart}ms`)
   return outData
 }
 
@@ -601,28 +612,41 @@ export async function sharpenImage(
   sourceData: Data,
   isCancelled?: () => boolean,
   target?: UpscaleTarget
-): Promise<{ data: Data; fromCache: boolean } | null> {
+): Promise<UpscaleResult | null> {
   const key = cacheKey(pageKey, target)
   const cached = getCachedUpscaleData(key)
-  if (cached) return { data: cached, fromCache: true }
+  if (cached) return { data: cached.data, fromCache: true, backend: cached.backend }
 
   // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
-  const runTask = async (): Promise<{ data: Data; fromCache: boolean } | null> => {
+  const runTask = async (): Promise<UpscaleResult | null> => {
     // 檢查呼叫端元件是否已翻走或 unmount；若是，直接跳過神經網路計算，避免翻頁時隊列堆積拖垮 GPU
     if (isCancelled && isCancelled()) return null
 
     // 二次檢查快取
     const doubleCheck = getCachedUpscaleData(key)
-    if (doubleCheck) return { data: doubleCheck, fromCache: true }
+    if (doubleCheck) return { data: doubleCheck.data, fromCache: true, backend: doubleCheck.backend }
 
     try {
       let sharpened: Data | null = null
+
+      if (CORE_ML_UPSCALE && coreMLAvailable()) {
+        try {
+          const native = await upscaleWithCoreML(sourceData, target, isCancelled)
+          if (native) {
+            setCachedUpscaleData(key, native.data, "coreml")
+            return { data: native.data, fromCache: false, backend: "coreml" }
+          }
+          log("debug", "upscale", "[Core ML] 不適用這張，退回 ONNX")
+        } catch (error) {
+          log("warning", "upscale", "[Core ML] 出錯，退回 ONNX", error)
+        }
+      }
 
       try {
         // 第一次嘗試：樂觀執行（平時 0 額外心跳/檢查開銷）
         sharpened = await executeInference(key, sourceData, isCancelled, target)
       } catch (firstError) {
-        log("warning", "upscale", `推論遇到異常（可能剛自墓碑/背景喚醒），重置引擎並冷啟動重試...`, firstError)
+        log("warning", "upscale", `[ONNX] 頁面 ${key} 推論異常（可能剛自背景喚醒），重置引擎後重試`, firstError)
         resetEngineInstances()
 
         // 第二次嘗試：全新冷啟動重試
@@ -632,11 +656,11 @@ export async function sharpenImage(
       }
 
       if (sharpened) {
-        setCachedUpscaleData(key, sharpened)
-        return { data: sharpened, fromCache: false }
+        setCachedUpscaleData(key, sharpened, "onnx")
+        return { data: sharpened, fromCache: false, backend: "onnx" }
       }
     } catch (finalError) {
-      log("warning", "upscale", `頁面 ${key} ACNet 超分重試後仍失敗，降級原圖`, finalError)
+      log("warning", "upscale", `[ONNX] 頁面 ${key} 重試後仍失敗，降級原圖`, finalError)
       resetEngineInstances()
     } finally {
       activeSourceData = null

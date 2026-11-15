@@ -975,10 +975,11 @@ export function createComicLibrary(): ComicLibrary {
             // `disposed` 一起擋：晚到的結果再寫檔會把 dispose 剛刪掉的目錄又建回來。
             if (!result || disposed || (isCancelled && isCancelled())) return
             const costMs = Date.now() - t0
+            const engineLabel = result.backend === "coreml" ? "Core ML" : "ONNX"
             if (result.fromCache) {
-              log("debug", "upscale", `第 ${index + 1} 頁 ACNet ONNX [快取命中]，0ms 直接顯示`)
+              log("debug", "upscale", `第 ${index + 1} 頁 ${engineLabel} [快取命中]，0ms 直接顯示`)
             } else {
-              log("info", "upscale", `第 ${index + 1} 頁 ACNet ONNX 超分完成 ${sizes}，耗時 ${costMs}ms`)
+              log("info", "upscale", `第 ${index + 1} 頁 ${engineLabel} 超分完成 ${sizes}，耗時 ${costMs}ms`)
             }
             const size = result.data.size
             const limit = getPageCacheBytes()
