@@ -21,6 +21,7 @@ import {
 import {
   shelfFavoriteCount,
   shelfItems,
+  shelfSources,
   type ShelfFilter,
   type ShelfItem,
   type ShelfSort,
@@ -112,10 +113,15 @@ function CheckingUpdates() {
   )
 }
 
-function gridEntry({ favorite, progress, readFraction, removed, unreadCount }: ShelfItem, removing: boolean): ComicGridEntry {
+function gridEntry(
+  { favorite, progress, readFraction, removed, unreadCount, sameTitle, sourceName }: ShelfItem,
+  removing: boolean,
+  showSource: boolean
+): ComicGridEntry {
   return {
     sourceKey: favorite.sourceKey,
     removed,
+    coverSource: showSource && sameTitle ? sourceName : undefined,
     removing,
     readFraction,
     unreadCount,
@@ -133,6 +139,7 @@ export function BookshelfScreen() {
   const tint = useTint()
   const [sort, setSort] = useState<ShelfSort>("recent")
   const [filter, setFilter] = useState<ShelfFilter>("all")
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null)
   /** 有沒有在跑手動檢查（進度由 CheckingUpdates 自己訂閱，不放進這裡）。 */
   const [checking, setChecking] = useState(false)
   const checkingRef = useRef(false)
@@ -153,7 +160,12 @@ export function BookshelfScreen() {
 
   const library = comicLibrary()
   const favoriteCount = shelfFavoriteCount()
-  const items = shelfItems(sort, filter)
+  const sources = shelfSources()
+  // 選著的來源已經不在書架上（最後一本被移出）就當沒選。
+  const activeSource: string | undefined = sources.some(source => source.sourceKey === sourceFilter)
+    ? (sourceFilter ?? undefined)
+    : undefined
+  const items = shelfItems(sort, filter, activeSource)
   const offlineCount = library.offline.comicCount()
   const downloadingCount = library.offline.activeChapterCount()
 
@@ -180,7 +192,7 @@ export function BookshelfScreen() {
     }
   }
 
-  const isFiltered = filter !== "all"
+  const isFiltered = filter !== "all" || activeSource !== undefined
 
   function removeFromShelf(sourceKey: string, comicId: string) {
     HapticFeedback.lightImpact()
@@ -222,6 +234,23 @@ export function BookshelfScreen() {
                   />
                 ))}
               </Menu>
+              {sources.length > 1 ? (
+                <Menu title={t("bookshelf.sourceGroup")}>
+                  <Button
+                    title={t("bookshelf.filterAll")}
+                    systemImage={activeSource === undefined ? "checkmark" : undefined}
+                    action={() => setSourceFilter(null)}
+                  />
+                  {sources.map(source => (
+                    <Button
+                      key={source.sourceKey}
+                      title={source.name ?? t("bookshelf.sourceRemovedTitle")}
+                      systemImage={activeSource === source.sourceKey ? "checkmark" : undefined}
+                      action={() => setSourceFilter(source.sourceKey)}
+                    />
+                  ))}
+                </Menu>
+              ) : null}
               <Menu title={t("bookshelf.sortGroup")}>
                 {SORTS.map(option => (
                   <Button
@@ -266,7 +295,8 @@ export function BookshelfScreen() {
             <ComicGridLayout
               entries={items.map(item => {
                 const { sourceKey, comicId } = item.favorite
-                return gridEntry(item, removal.isRemoving(`${sourceKey}:${comicId}`))
+                // 已經只看一個來源時，同名的也不必再標。
+                return gridEntry(item, removal.isRemoving(`${sourceKey}:${comicId}`), activeSource === undefined)
               })}
               menuItems={entry => (
                 <Button

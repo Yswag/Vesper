@@ -17,6 +17,7 @@ export default {
   /** 導覽列右上的排序與篩選選單。 */
   sortGroup: "排序",
   filterGroup: "顯示範圍",
+  sourceGroup: "來源",
   sortRecent: "最近閱讀",
   sortAdded: "最近收藏",
   sortTitle: "標題",

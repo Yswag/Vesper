@@ -130,6 +130,10 @@ export interface ShelfItem {
   readFraction?: number
   /** 源被移除了（封面只能用標題佔位）。 */
   removed: boolean
+  /** 源還在時的顯示名稱。 */
+  sourceName?: string
+  /** 書架上還有別本同名的（多半是同一部收了兩個源）：格子靠來源名分辨。 */
+  sameTitle: boolean
   /** 未讀章節數：封面角標畫這個數字。 */
   unreadCount: number
   /** 新話數：「更新」篩選看它。 */
@@ -154,6 +158,11 @@ export function debugShelfBuilds(): number {
   return builds
 }
 
+/** 同名判斷用的鍵：只抹掉大小寫與頭尾空白，不做模糊比對。 */
+function titleKey(title: string): string {
+  return title.trim().toLowerCase()
+}
+
 /**
  * 全書架的基底項目（篩選、排序之前）：同一個版本內只建一次。
  * 回傳的陣列與項目都共用，呼叫端不得就地修改。
@@ -163,15 +172,24 @@ function baseItems(): ShelfItem[] {
   if (!itemCache || itemCache.revision !== revision) {
     builds++
     const progress = new Map(listProgress().map(entry => [comicGroupKey(entry), entry]))
+    const favorites = listFavorites()
+    const titleCounts = new Map<string, number>()
+    for (const favorite of favorites) {
+      const key = titleKey(favorite.title)
+      titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1)
+    }
     itemCache = {
       revision,
-      items: listFavorites().map(favorite => {
+      items: favorites.map(favorite => {
         const read = progress.get(comicGroupKey(favorite))
+        const source = comicLibrary().source(favorite.sourceKey)
         return {
           favorite,
           progress: read,
           readFraction: readFraction(read),
-          removed: comicLibrary().source(favorite.sourceKey) === undefined,
+          removed: source === undefined,
+          sourceName: source?.name,
+          sameTitle: (titleCounts.get(titleKey(favorite.title)) ?? 0) > 1,
           unreadCount: unreadCountOf(favorite),
           newCount: newCountOf(favorite),
         }
@@ -186,10 +204,32 @@ export function shelfFavoriteCount(): number {
   return baseItems().length
 }
 
-/** 收藏接閱讀紀錄（同一部一個鍵），再篩選、排序。 */
-export function shelfItems(sort: ShelfSort, filter: ShelfFilter): ShelfItem[] {
+/** 書架上出現過的來源（篩選選單用）。 */
+export interface ShelfSource {
+  sourceKey: string
+  /** 源還在時的顯示名稱；被移除的沒有。 */
+  name?: string
+}
+
+/** 書架上有收藏的來源：照名稱排，被移除的排最後。 */
+export function shelfSources(): ShelfSource[] {
+  const sources = new Map<string, ShelfSource>()
+  for (const item of baseItems()) {
+    const { sourceKey } = item.favorite
+    if (!sources.has(sourceKey)) sources.set(sourceKey, { sourceKey, name: item.sourceName })
+  }
+  return [...sources.values()].sort((a, b) =>
+    a.name === undefined || b.name === undefined
+      ? Number(a.name === undefined) - Number(b.name === undefined)
+      : a.name.localeCompare(b.name)
+  )
+}
+
+/** 收藏接閱讀紀錄（同一部一個鍵），再篩選、排序。`sourceKey` 有給就只留那個來源。 */
+export function shelfItems(sort: ShelfSort, filter: ShelfFilter, sourceKey?: string): ShelfItem[] {
   // `filter` 一定回新陣列，排序才不會動到共用的基底。
   const items = baseItems()
+    .filter(item => sourceKey === undefined || item.favorite.sourceKey === sourceKey)
     .filter(item =>
       filter === "read"
         ? item.progress !== undefined

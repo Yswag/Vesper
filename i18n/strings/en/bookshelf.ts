@@ -8,6 +8,7 @@ export default {
 
   sortGroup: "Sort by",
   filterGroup: "Filter",
+  sourceGroup: "Source",
   sortRecent: "Recently read",
   sortAdded: "Recently added",
   sortTitle: "Title",

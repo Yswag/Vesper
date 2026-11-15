@@ -35,6 +35,8 @@ export interface ComicGridEntry {
   sourceName?: string
   /** 來源已被移除：封面下緣掛 danger 角標，下面那行來源名就不再重複。 */
   removed?: boolean
+  /** 封面左下的來源角標（書架同名的收藏才給）；掛在封面上，格子高度不變。 */
+  coverSource?: string
   /** 0–1，這一話讀到哪：封面下方一條進度（跟首頁「繼續閱讀」同一種）。 */
   readFraction?: number
   /** 未讀章節數：> 0 時封面右上角掛數字膠囊。 */
@@ -286,6 +288,13 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
                       >
                         <CoverBadge text={t("bookshelf.sourceRemoved")} tone="danger" maxWidth={cellWidth - 12} alignment="leading" />
+                      </HStack>
+                    ) : entry.coverSource ? (
+                      <HStack
+                        offset={{ x: 6, y: -6 }}
+                        frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
+                      >
+                        <CoverBadge text={entry.coverSource} maxWidth={cellWidth - 12} alignment="leading" />
                       </HStack>
                     ) : null}
                     {entry.comic.updateTime ? (

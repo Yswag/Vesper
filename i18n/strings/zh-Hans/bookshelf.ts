@@ -8,6 +8,7 @@ export default {
 
   sortGroup: "排序",
   filterGroup: "显示范围",
+  sourceGroup: "来源",
   sortRecent: "最近阅读",
   sortAdded: "最近收藏",
   sortTitle: "标题",
