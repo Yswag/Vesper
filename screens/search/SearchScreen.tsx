@@ -215,7 +215,8 @@ export function createSearchStore(deps: SearchStoreDeps): SearchStore {
       }
       deps.setDraft(text)
       history = deps.history.push(text)
-      if (typeof Keyboard !== "undefined" && Keyboard.visible) Keyboard.hide()
+      // 不看 `Keyboard.visible`：鍵盤還在升起時它可能仍是 false，會漏收。
+      if (typeof Keyboard !== "undefined") Keyboard.hide()
       void runRound(text)
     },
     clear() {
@@ -619,7 +620,7 @@ function HistoryPanel({
                 background={fill.invisible}
                 frame={{ maxWidth: "infinity", minHeight: 44 }}
                 onTapGesture={() => {
-                  if (Keyboard.visible) Keyboard.hide()
+                  Keyboard.hide()
                   onPick(term)
                 }}
               >
