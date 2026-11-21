@@ -99,7 +99,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     }
   }
 
-  /** 一鍵安裝：掃描衝突、彈窗確認、循序/受控安裝 */
+  /** 一鍵安裝：掃描衝突、彈窗確認、裝至多 3 條並發。 */
   async function installAll() {
     if (entries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
     if (!repository || (await blockedByPro(repository))) return

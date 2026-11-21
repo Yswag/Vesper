@@ -52,7 +52,7 @@ export function App({ pendingInstall = null }: {
   const [installTarget, setInstallTarget] = useState<string | null>(pendingInstall)
   const [installBusy, setInstallBusy] = useState(false)
 
-  // 実例活著時再被 run scheme 觸發：入口不會重跑，只能從這裡收。
+  // 實例活著時再被 run scheme 觸發：入口不會重跑，只能從這裡收。
   useEffect(() => {
     setInstallListener(url => setInstallTarget(url))
     return () => setInstallListener(null)

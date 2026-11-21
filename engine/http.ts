@@ -89,7 +89,7 @@ function guardRunaway(sourceKey: string, url: string): () => void {
 }
 
 /**
- * 探針用：失控防護表目前還記著哪些源、各幾次（驗「不再被使用的源不會殘留」）。
+ * 唯讀觀測點：失控防護表目前還記著哪些源、各幾次（驗「不再被使用的源不會殘留」）。
  * 只看殘留、不做 prune——斷言的判準就是「表裡還有沒有這個源」。
  */
 export function runawayTableSnapshot(): Record<string, number> {
@@ -242,7 +242,7 @@ function storeCached(key: string, response: { status: number; headers: Record<st
   responseCacheBytes += size
 }
 
-/** 探針用：這條路徑的狀態不能流到下一次測試。 */
+/** 唯讀觀測點：這條路徑的狀態不能流到下一次測試。 */
 export function clearResponseCache() {
   responseCache.clear()
   responseCacheBytes = 0

@@ -63,7 +63,7 @@ export interface SearchSnapshot {
   history: string[]
 }
 
-/** 搜尋歷史的讀寫（畫面接真的儲存，探針接假的）。 */
+/** 搜尋歷史的讀寫（畫面接真的儲存，驗証接假的）。 */
 export interface SearchHistoryStore {
   load: () => string[]
   push: (term: string) => string[]
@@ -71,7 +71,7 @@ export interface SearchHistoryStore {
 }
 
 /**
- * store 對外的依賴。畫面接真的 `ComicLibrary`，探針接假的——
+ * store 對外的依賴。畫面接真的 `ComicLibrary`，驗証接假的——
  * 「換了關鍵字之後晚到的結果寫不進來」就是在這一層驗的。
  */
 export interface SearchStoreDeps {
@@ -241,7 +241,7 @@ export function createSearchStore(deps: SearchStoreDeps): SearchStore {
   }
 }
 
-/** 把這一頁接到共用的搜尋引擎（store 只認這幾個函式，探針換假的也能跑）。 */
+/** 把這一頁接到共用的搜尋引擎（store 只認這幾個函式，換假的也能跑）。 */
 function depsFor(library: ComicLibrary, setDraft: (keyword: string) => void): SearchStoreDeps {
   // 每個源存下來的篩選（"sourceKey" → 送去源的 options 陣列）。
   // 這頁只讀不寫：篩選入口在單源搜尋頁，這裡只負責把存過的值帶進請求。

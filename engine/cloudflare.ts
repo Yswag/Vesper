@@ -70,7 +70,6 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
         log("warning", "cf", `預清理 CF Cookie 失敗（繼續嘗試導航）: ${origin}`, { error: String(err) })
       }
 
-      // 導航到目標網址
       await controller.loadURL(url)
 
       // 檢查 DOM 與 Cookie 的輔助腳本
@@ -87,7 +86,6 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
       })()`
 
       while (Date.now() - startedAt < CF_TIMEOUT_MS) {
-        // 先等一拍
         await sleep(POLL_INTERVAL_MS)
 
         // 檢查是否超過離屏等待時間（2.5 秒），若尚未放行且未彈窗，主動 present 升級可見

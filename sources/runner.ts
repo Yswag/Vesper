@@ -201,7 +201,7 @@ export function openSource(source: InstalledSource, deps: RunnerDeps = {}): Sour
   }
 }
 
-/** Aidoku 源：四段查詢走 `sources/aidoku.ts`，沒有登入、排行、留言與離線。 */
+/** Aidoku 源：四段查詢走 `sources/aidoku.ts`，登入狀態在 registry、這裡不轉發；沒有排行、留言與離線。 */
 function aidokuHandle(source: InstalledSource): SourceHandle {
   return {
     key: source.stored.key,
@@ -225,7 +225,7 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     canPostComment: () => false,
     postComment: () => Promise.reject(new Error(t("sources.unsupported.sendComment"))),
     loggedIn: () => false,
-    // v1 不做登入：重登永遠是「沒有憑證」，圖片重試就是直接再跑一次。
+    // handle 不回報登入狀態：重登永遠是「沒有憑證」，圖片重試就是直接再跑一次。
     relogin: () => Promise.resolve("no-credentials"),
     imageRetry: () => call => Promise.resolve(call()),
     comicModule: aidoku.comicModule(source),

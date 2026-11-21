@@ -127,10 +127,10 @@ export function reloadRegistry() {
   bus.emit()
 }
 
-/** Venera 源的載入次數（探針用；每建一次沙箱實例算一次，失敗也算）。 */
+/** Venera 源的載入次數，依 key 累加。 */
 const veneraLoads = new Map<string, number>()
 
-/** 開發探針用：目前為止各源被載入（重新編譯）了幾次。唯讀，不影響生產行為。 */
+/** 唯讀觀測點：目前為止各源被載入（重新編譯）了幾次，不影響生產行為。 */
 export function debugSourceLoads(): { total: number; byKey: Record<string, number> } {
   const byKey: Record<string, number> = {}
   let total = 0

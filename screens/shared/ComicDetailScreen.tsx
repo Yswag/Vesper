@@ -125,7 +125,7 @@ function statusText(status: NonNullable<ComicPage["status"]>): string {
   }
 }
 
-/** 選取圓點的欄位寬：平常 0，選取時擐開把標題推向右，圓點從卡片左緣外滑入。 */
+/** 選取圓點的欄位寬：平常 0，選取時撐開把標題推向右，圓點從卡片左緣外滑入。 */
 const markSlotWidth = 28
 
 /** 只有 `suggestive`／`nsfw` 會走到這裡（safe 不占位置）。 */
@@ -603,7 +603,7 @@ export function ComicDetailScreen({
     })
   }
 
-  // 封面尺寸：容器給多少寬度就用多少（見 comicHeroMetrics 與 docs/ui-ux-liquid-glass.md）。
+  // 封面尺寸：容器給多少寬度就用多少（見 comicMetrics 與 docs/ui-ux-liquid-glass.md）。
   const hero = heroCoverSize(heroContainerWidth)
 
   return (
@@ -623,10 +623,7 @@ export function ComicDetailScreen({
     >
       <PageBackground />
 
-      {/* 頂部封面 Ambient Glow 氛圍漫射光暈。
-          氛圍圖一定要用「量到的容器寬」：`maxWidth: "infinity"` 會讓圖片拿自己的寬高比
-          （380 × 寬/高）當理想寬度，橫式封面就變成整頁寬度，把整頁推歪（內容偏左、標題切到右緣）。
-          實測：同一個橫式封面，量寬前 798、量寬後 402。 */}
+      {/* 頂部封面 Ambient Glow 氛圍漫射光暈（為什麼用寬度量測見下方 WidthReporter）。 */}
       {ambientImage ? (
         <GeometryReader>
           {geometry => (
@@ -802,7 +799,7 @@ export function ComicDetailScreen({
               <ComicHeroMeta meta={detail} onSwitchSource={() => void openSwitch()} />
             </HStack>
 
-            {/* 閱讀入口與動作列（開始閱讀 + 收藏 + 評論留言） */}
+            {/* 2. 閱讀入口與動作列（開始閱讀 + 收藏 + 評論留言） */}
             <HStack spacing={10} alignment="center" frame={{ maxWidth: "infinity" }}>
               {targetEpId ? (
                 // 閱讀器一律用全螢幕呈現（不是推入）：推入的話狀態列與 tab bar 的修飾子會被導覽容器吃掉。
@@ -972,7 +969,7 @@ export function ComicDetailScreen({
               </VStack>
             ) : null}
 
-            {/* 4.5 相關推薦漫畫（若源有提供，置於簡介下方與章節列表上方） */}
+            {/* 5. 相關推薦漫畫（若源有提供，置於簡介下方與章節列表上方） */}
             {detail.recommend && detail.recommend.length > 0 ? (
               <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}>
                 <HStack alignment="firstTextBaseline" spacing={6}>
@@ -1029,7 +1026,7 @@ export function ComicDetailScreen({
               </VStack>
             ) : null}
 
-            {/* 5. 章節列表頭部（緊湊合一工具列，大幅減少垂直佔位） */}
+            {/* 6. 章節列表頭部（緊湊合一工具列，大幅減少垂直佔位） */}
             <VStack spacing={12}>
               <ChapterListHeader
                 selecting={selecting}
@@ -1068,7 +1065,7 @@ export function ComicDetailScreen({
                 </ScrollView>
               ) : null}
 
-              {/* 章節卡片流（左滑＝切換已讀 ／ 單章下載；自訂列的滑動要外層 swipeActionsContainer） */}
+              {/* 章節卡片流（左滑＝切換已讀 ／ 單章下載；說明見 design/layout 的 `swipeActionsContainer`） */}
               <LazyVStack spacing={8} swipeActionsContainer={true}>
                 {displayChapters.map(chapter => {
                   const isCurrent = resumed?.chapter.epId === chapter.id
@@ -1277,7 +1274,6 @@ export function ComicDetailScreen({
   )
 }
 
-/** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
 /** 詳情頁動作列：兩顆方形按鈕 54×64，中間間距 10；剩下的寬是「開始閱讀」。 */
 const ACTION_BUTTON = 54
 const ACTION_HEIGHT = 64
@@ -1357,6 +1353,7 @@ export function DetailSkeleton({ cover }: { cover: { width: number; height: numb
   )
 }
 
+/** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
 function DownloadStateText({ state }: { state: ChapterDownloadState }) {
   const tint = useTint()
   if (state.state === "queued") {

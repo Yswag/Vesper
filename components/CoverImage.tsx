@@ -155,7 +155,7 @@ export function CoverImage({
 }: CoverImageProps) {
   // 只留「這個格子尺寸要用的點陣」；原圖／1024 縮圖在管線與磁碟那邊，不進 state。
   const [image, setImage] = useState<UIImage | null>(null)
-  // 沒給網址就是「沒有圖」：第一帧直接畫佔位，不要先轉一圈才變成佔位。
+  // 沒給網址就是「沒有圖」：第一幀直接畫佔位，不要先轉一圈才變成佔位。
   const [failed, setFailed] = useState(!url)
   /** 換了網址才清掉舊圖；只是尺寸變（旋轉、版面重排）就讓舊圖頂著，不要閃回佔位。 */
   const lastUrl = useRef<string | undefined>(url)

@@ -86,7 +86,7 @@ export function CountBadge({ count }: { count: number }) {
   )
 }
 
-/** 列表右侧的箭頭。只在「會進下一頁」時用。 */
+/** 列表右側的箭頭。只在「會進下一頁」時用。 */
 export function Chevron() {
   return <Image systemName="chevron.right" font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
 }

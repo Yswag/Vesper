@@ -100,7 +100,7 @@ export function setAidokuSettingWriter(writer: (key: string, name: string, value
   settingsWriter = writer
 }
 
-/** 頁面被建立過幾次（探針用它數「只重建一次」）。 */
+/** 頁面被建立過幾次（回歸驗証用它數「只重建一次」）。 */
 let generation = 0
 let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
 /** setTimeout 的第一個 handle 是 0，所以不能用 truthy 判斷。 */
@@ -119,7 +119,7 @@ export interface AidokuQueueItem {
 
 /**
  * 下一個該跑誰：**最早的使用者任務**先跑；沒有使用者任務才輪到最早的背景任務。
- * 純函式、不碰宿主（離線探針驗這支）。回 -1 表示隊列是空的。
+ * 純函式、不碰宿主（離線驗証驗這支）。回 -1 表示隊列是空的。
  */
 export function nextAidokuTaskIndex(items: readonly AidokuQueueItem[]): number {
   let background = -1
@@ -308,7 +308,7 @@ async function disposeWhenIdle(): Promise<void> {
   scheduleIdle()
 }
 
-/** 閒置多久之後 dispose（預設 10 分鐘；探針用短的值）。 */
+/** 閒置多久之後 dispose（預設 10 分鐘；驗証用短的值）。 */
 export function setAidokuIdleTimeout(ms: number): void {
   idleTimeoutMs = Math.max(0, ms)
   scheduleIdle()
@@ -882,7 +882,7 @@ async function load(sourceKey: string, start: (id: number) => string, prepare: (
   }
 }
 
-/** 從 `.aix` 原封不動載入（探針與舊路徑用）。 */
+/** 從 `.aix` 原封不動載入（舊路徑用）。 */
 export async function loadAidokuSource(
   aix: Uint8Array,
   sourceKey: string,

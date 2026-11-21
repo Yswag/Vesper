@@ -33,9 +33,8 @@ export function switchToTab(tabIndex: number) {
 export function navigateToSearch(keyword: string) {
   const trimmed = keyword.trim()
   if (!trimmed) return
-  // 1. 切換至搜尋 tab（tab 4）
   switchToTab(4)
-  // 2. 觸發搜尋
+  // 搜尋頁還沒掛上時先排隊，掛好再跑（`takePendingSearchKeyword`）
   if (searchListener) {
     searchListener(trimmed)
   } else {

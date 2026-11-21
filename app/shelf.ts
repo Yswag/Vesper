@@ -153,7 +153,7 @@ function inputsRevision(): string {
   return `${libraryRevision()}:${sourcesRevision()}:${chapterListsRevision()}`
 }
 
-/** 唯讀觀測點：書架基底（每部收藏的未讀數等）重建了幾次（回歸探針用，不是畫面或源的介面）。 */
+/** 唯讀觀測點：書架基底（每部收藏的未讀數等）重建了幾次（回歸驗証用，不是畫面或源的介面）。 */
 export function debugShelfBuilds(): number {
   return builds
 }

@@ -1,3 +1,6 @@
+// 閱讀器的 HUD：底部控制列（頁碼／滑桿／目錄／設定）與自己的收放動畫。
+// 顯示狀態由 `ReaderScreen` 給；頁碼訂閱 `pageSignal`，HUD 重繪不會拖整頁。
+
 import {
   Button,
   HStack,

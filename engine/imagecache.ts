@@ -17,8 +17,8 @@ import { getMaxAgeDays, getMaxSizeBytes } from "../app/cacheSetting"
 
 const inflight = new Map<string, Promise<string>>()
 /**
- * 快取目前佔用的位元組（-1＝還沒量過）。寫入時累加，只有超標或到期才真的掃目錄——
- * 每 N 次寫入就 `statSync` 整個資料夾，書架幾千張時那一下會卡住主執行緒。
+ * 快取目前佔用的位元組（-1＝還沒量過）。寫入只在帳面上累加；量過且沒超標、也還沒到
+ * 掃描間隔就跳過（以前是每 N 次寫入就 statSync 整個資料夾，書架幾千張時會卡主執行緒）。
  * 上次量到的值存在 KV，重開 App 也不必先掃一遍。
  */
 const CACHE_BYTES_KEY = "vesper.imagecache.bytes"
@@ -472,5 +472,5 @@ export function cacheFileCount(): number | null {
   }
 }
 
-/** 縮圖快取目錄（探針拿它算「這個鍵的檔案在不在」）。 */
+/** 縮圖快取目錄（驗証拿它算「這個鍵的檔案在不在」）。 */
 export { cacheDir }

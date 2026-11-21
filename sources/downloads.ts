@@ -331,7 +331,7 @@ export async function deleteChapterDownload(key: OfflineKey): Promise<void> {
   removeChapter(key)
 }
 
-/** 唯讀觀測點：現在還有幾個任務握著 source／deps（dev 探針用，不是給畫面或源的介面）。 */
+/** 唯讀觀測點：現在還有幾個任務握著 source／deps（離線驗証用，不是給畫面或源的介面）。 */
 export function debugRetainedSourceCount(): number {
   let count = 0
   for (const task of tasks.values()) if ("source" in task) count++

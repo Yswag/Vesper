@@ -5,7 +5,7 @@
 import { createEmitter } from "../engine/emitter"
 import { kv } from "../engine/storage"
 
-/** 與探針共用的鍵。 */
+/** 與離線驗証共用的鍵。 */
 const KEY = "venera:backgroundDownloads"
 
 const bus = createEmitter()

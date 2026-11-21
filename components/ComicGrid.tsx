@@ -66,7 +66,7 @@ function entryKey(entry: ComicGridEntry): string {
 /**
  * 每格的鍵與「有沒有進度」一次掃完：鍵本來每一格都要用來畫、到處查表，
  * 「有沒有進度」又只是同一次迴圈裡的一個旗標，分兩趟只是白掃一次陣列。
- * 純計算（探針直接 import 來量）。
+ * 純計算（可直接 import 來量）。
  */
 export function gridSurfaces(entries: readonly ComicGridEntry[]): { keys: string[]; hasProgress: boolean } {
   const keys = new Array<string>(entries.length)
@@ -94,7 +94,7 @@ function isSingleRemoval(previous: readonly string[], next: readonly string[]): 
  *
  * 舊位置一次建表：逐格 `previous.indexOf` 最壞是 O(n²)（位移一大就一路往後找），
  * 換成建表就是固定兩趟。重複的鍵取第一次出現的位置，跟 `indexOf` 的語意一致。
- * 純計算（探針逐格比對新舊）。
+ * 純計算（可逐格比對新舊）。
  */
 export function collapseShift(
   previous: readonly string[],
@@ -166,7 +166,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   // 真正貴的只有補位位移表，而它只在「少了一格」時才算：項目沒變時 `isSingleRemoval`
   // 比個長度就回頭，什麼都不重算。
   // 不另外做「內容簽名 memo」：`entries` 每次重繪都是新造的陣列（各畫面的事），
-  // 簽名本身就得把整份鍵串起來，成本跟直接算一樣（探針量過）。
+  // 簽名本身就得把整份鍵串起來，成本跟直接算一樣（實測過）。
   const { keys, hasProgress } = gridSurfaces(entries)
 
   // LazyVGrid 自己不會演「少一格」的補位（版面變化不吃 `withAnimation`，實機是直接跳位）。
@@ -189,7 +189,7 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   const shift = pendingShift.current
 
   // 先讓上面那一輪畫在舊位置，下一輪才收線並出手。
-  // 用 macrotask（16ms 約一個影格）而不是直接設 state：確保「畫在舊位置」這帧真的出現過。
+  // 用 macrotask（16ms 約一個影格）而不是直接設 state：確保「畫在舊位置」這幀真的出現過。
   useEffect(() => {
     if (Object.keys(pendingShift.current).length === 0) return
     const timer = setTimeout(() => {

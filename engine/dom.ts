@@ -67,7 +67,7 @@ function evictOverLimit() {
   }
 }
 
-/** 唯讀觀測點：目前還活著的文件數（dev 探針用，不是給源的功能）。 */
+/** 唯讀觀測點：目前還活著的文件數（離線驗証用，不是給源的功能）。 */
 export function liveDocumentCount(): number {
   return docs.size
 }

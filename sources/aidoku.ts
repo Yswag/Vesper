@@ -387,7 +387,7 @@ export function setEnabled(key: string, enabled: boolean): void {
   clearFailure(key)
 }
 
-/** 移除：整包檔案删掉（`registry.uninstallSource` 會走這裡）。 */
+/** 移除：整包檔案刪掉（`registry.uninstallSource` 會走這裡）。 */
 export function uninstall(key: string): void {
   remove(dirOf(key))
   clearFailure(key)
@@ -879,7 +879,7 @@ function assertAvailable(key: string): void {
 
 const initialized = new Set<string>()
 
-/** 檔案被換掉／删掉了：只丟這個源的 worker，下次用到時重載新檔。 */
+/** 檔案被換掉／刪掉了：只丟這個源的 worker，下次用到時重載新檔。 */
 function forgetLoaded(key: string): void {
   listings.delete(key)
   homes.delete(key)
@@ -1117,8 +1117,8 @@ function toListPage(raw: any, page: number): ComicListPage {
 }
 
 /**
- * 漢化組就是 Vesper 的章節分組（`chapterGrouping.ts` 靠這個切分頁）。
- * 這個 runtime 給的是單一 `scanlator` 字串；`scanlators` 陣列留給之後的 ABI。
+ * 漢化組就是 Vesper 的章節分組（`screens/shared/chapterGrouping.ts` 靠這個切分頁）。
+ * 陣列形式併成「A, B」；只有字串時就那一個。
  */
 function scanlatorOf(raw: any): string {
   if (Array.isArray(raw?.scanlators)) {

@@ -1,6 +1,6 @@
 // Aidoku 源的設定頁：把 `Payload/settings.json` 的 schema 畫成列。
 //
-// 範圍（v1）：group 一張卡片、page 攤平成同一頁（不做巢狀子頁）；
+// 範圍：group 一張卡片、page 攤平成同一頁（不做巢狀子頁）；
 // `login` 做 `method: "basic"`（寫 `<key>.username` / `<key>.password` / `<key>`）
 // 與 `method: "web"`（開登入頁，寫 `<key>.keys` / `.values` / `.ls.*` / `<key>`）；
 // `editable-list` 增刪字串（`inline` 攤在同一頁，否則進子頁），
@@ -93,7 +93,7 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
-  /** 正在執行的 `button`（用標題當 id：這類設定沒有 key）。 */
+  /** 正在執行的 `button`（這類設定不一定有 key，沒有才退回標題）。 */
   const [runningKey, setRunningKey] = useState<string | null>(null)
 
   useEffect(() => {

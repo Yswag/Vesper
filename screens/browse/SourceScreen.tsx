@@ -116,7 +116,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
             }
           : undefined
       }
-      //searchToolbarBehavior="minimize"
       onSubmit={{ triggers: "search", action: handleSubmitSearch }}
       toolbar={
         <Toolbar>

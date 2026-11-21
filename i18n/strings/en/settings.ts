@@ -1,4 +1,4 @@
-// English. **LLM 產出、未經母語者校對**。
+// English. Machine-translated, not reviewed by a native speaker.
 
 export default {
   language: "Language",
@@ -51,7 +51,7 @@ export default {
     homeData: "Home rankings & data",
   },
 
-  /** Mini Hub 管理頁。 */
+  /** Mini Hub management screen. */
   miniHub: {
     title: "Mini Hub",
     enabledGroup: "Shown",

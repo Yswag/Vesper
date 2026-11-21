@@ -1,6 +1,7 @@
-// ONNX ACNet 超解析度服務：透過 Headless WebViewController 執行 anime4k_acnet.onnx 2x 亮度重建。
+// ACNet 超解析度服務。兩條後端：Core ML + Metal（預設）與 ONNX/wasm（後備，超大頁或 Core ML 失敗時走），
+// 契約相同：吃原始位元組、回 JPEG。
 // 切塊推論（每塊帶一圈上下文、輸出只取中間，與整張推論逐像素相同），可只算來源的一部分、縮到指定尺寸輸出。
-// 採串行隊列防重入、LRU session 記憶體快取，並於閱讀器退出時釋放資源。
+// 採串行隊列防重入、LRU 記憶體快取（process 級，換話就清），並於閱讀器退出時釋放資源。
 
 import { Script } from "scripting"
 import { join, readBytes } from "./fs"
@@ -8,14 +9,14 @@ import { log } from "./log"
 import { requirePro } from "./pro"
 import { coreMLAvailable, disposeCoreML, upscaleWithCoreML } from "./upscaleCoreML"
 
-/** 臨時開關：true 走 Core ML + Metal，失敗或超大頁自動退回 wasm。 */
+/** true 走 Core ML + Metal，失敗或超大頁自動退回 wasm。 */
 const CORE_ML_UPSCALE = true
 
 let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
 let currentPort = 0
 
-// Session 記憶體快取（LRU 上限 6 張，儲存 JPEG 原始位元組避免點陣常駐消耗）。
+// 記憶體快取（LRU 上限 6 張，儲存 JPEG 原始位元組避免點陣常駐消耗）。
 const MAX_UPSCALE_CACHE_SIZE = 6
 export type UpscaleBackend = "coreml" | "onnx"
 export interface UpscaleResult {
@@ -54,7 +55,7 @@ function setCachedUpscaleData(key: string, data: Data, backend: UpscaleBackend):
  */
 let queuePromise = Promise.resolve<any>(null)
 
-/** 清理當前話／會話的所有超分圖片記憶體快取（換話時呼叫） */
+/** 清掉整個超分圖片快取（換話時呼叫）。 */
 export function clearUpscaleCache(): void {
   const size = sessionCache.size
   if (size > 0) {
@@ -85,7 +86,7 @@ const PAD = 16
 /** 來源範圍在這個像素數以內就整張一次算（舊版的安全範圍），省掉切塊的 13%。 */
 const SINGLE_PASS_PIXELS = 2_400_000
 
-/** 匯出給探針用；平常只有 `ensureServer` 會呼叫。 */
+/** 匯出給驗証用；平常只有 `ensureServer` 會呼叫。 */
 export function buildACNetHTML(port: number): string {
   return `<!DOCTYPE html>
 <html>

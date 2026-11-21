@@ -23,7 +23,7 @@ export class ProRequiredError extends Error {
   }
 }
 
-/** 沒有 Pro 就丟 `ProRequiredError`。`allowed` 只給探針注入。 */
+/** 沒有 Pro 就丟 `ProRequiredError`。`allowed` 只給回歸驗証注入。 */
 export function requirePro(feature: ProFeature, allowed: boolean = hasPro()): void {
   if (!allowed) throw new ProRequiredError(feature)
 }

@@ -106,7 +106,7 @@ export function normalizeTags(tags: unknown): Array<{ namespace: string; values:
     .filter(group => group.values.length > 0)
 }
 
-/** 追更日期的 tag 命名空間（照上游 `models.dart:298` 的 acceptedNamespaces）。 */
+/** 追更日期的 tag 命名空間（照上游 `models.dart` 的 acceptedNamespaces）。 */
 const UPDATE_NAMESPACES = ["更新", "最後更新", "最后更新", "update", "last update"]
 
 function pad2(value: number): string {

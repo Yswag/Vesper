@@ -70,7 +70,7 @@ async function run() {
   // 放在這裡（而不是設定頁）是因為只有這裡確定「整個 App 只有一份源實例」。
   onLocaleChange(() => reloadRegistry())
 
-  // ComicLibrary 的 production instance（Phase 0：先建好放著，UI 仍走舊入口）。
+  // ComicLibrary 的 production instance；畫面經 comicLibrary() 取用。
   installComicLibrary(createComicLibrary())
 
   // 下載的背景時間與「下載中按退出＝縮小」都由它接手（會註冊退出關卡）。

@@ -1,8 +1,8 @@
 // Aidoku 源首頁的元件版面：橫向捲動列（scroller）、大卡輪播（bigScroller）、漫畫列表／排行（mangaList）。
 //
-// 版面數字照原版 `Home/HomeComponents/*.swift`（出處寫在票 02 的 Comments）：
+// 版面數字照原版 `Home/HomeComponents/*.swift`：
 // 封面高度、ranking 編號、pageSize 分欄、看更多只出現在「有 listing」的元件。
-// 顏色、圓角、字級、間距走 `design/`；imageScroller／links／filters／mangaChapterList 留給 03、04。
+// 顏色、圓角、字級、間距走 `design/`；imageScroller／links／filters／mangaChapterList 各自有自己的版面。
 
 import {
   Button,

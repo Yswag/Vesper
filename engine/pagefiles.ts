@@ -255,7 +255,7 @@ export interface PageIndex {
   forget(name: string): void
   /** 整份丟掉（目錄被清掉、session 收攤）。 */
   clear(): void
-  /** 索引裡有幾個檔（除錯與探針用）。 */
+  /** 索引裡有幾個檔（除錯用）。 */
   size(): number
 }
 

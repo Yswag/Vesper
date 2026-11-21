@@ -7,7 +7,7 @@ export interface CatalogEntry {
   name: string
   key: string
   version: string
-  /** 相對路徑以索引檔的最終 URL 為基準解析。 */
+  /** 索引裡的相對路徑；由呼叫端給的 base 解析（見 resolveEntryUrl）。 */
   url?: string
   fileName?: string
   description?: string

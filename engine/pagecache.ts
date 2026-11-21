@@ -27,7 +27,7 @@ export function pageCacheRoot(): string {
   return join(appDataRoot(), "cache", "pages")
 }
 
-/** 一章一個目錄；三個 id 一起雜湊，不必担心非法字元與長度。 */
+/** 一章一個目錄；三個 id 一起雜湊，不必擔心非法字元與長度。 */
 export function chapterCacheDir(
   ref: { sourceKey: string; comicId: string; epId: string },
   root: string = pageCacheRoot()

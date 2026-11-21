@@ -36,7 +36,7 @@ function estimateAspect(session: ChapterSession, index: number): number {
 }
 
 export function ChapterImage({ session, index, size, half }: ChapterImageProps) {
-  // 重掛的頁直接沿用 session 記住的渲染：第一帧就是圖，不先出佔位再換（那一換就是一次卡頓）。
+  // 重掛的頁直接沿用 session 記住的渲染：第一幀就是圖，不先出佔位再換（那一換就是一次卡頓）。
   const [render, setRender] = useState<PageRender | null>(() => session.renderOf(index, half))
   const [error, setError] = useState("")
   const [retryKey, setRetryKey] = useState(0)

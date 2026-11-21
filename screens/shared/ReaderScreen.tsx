@@ -4,9 +4,9 @@
 // 1. 純黑畫布（fill.canvas），隱藏 TabBar、NavigationBar 與狀態列。
 // 2. 全螢幕 HUD Overlay：以 offset / opacity 屬性動畫收放；目錄走原生 Bottom Sheet，設定走系統 Menu。
 // 3. 閱讀模式：畫廊（分頁吸附）與連續（平滑捲動）；方向支援橫向（LTR/RTL）與縱向（TTB）。
-// 4. 進度追蹤：以 onScrollTargetVisibilityChange 領先可見頁為準，就地換話不堆疊 route。
+// 4. 進度追蹤：畫廊以位移換算領先頁、連續以可見集合；可見回報是畫廊的備援。若地換話不堆疊 route。
 // 5. 逐話選來源：開哪一話由 `comicLibrary().chapter()` 決定（本機讀得到就讀本機），這裡沒有離線分支。
-// 6. 翻頁分區：橫向模式左右 1/4 翻頁、中間 1/2 切換 HUD（手勢採 global 座標系）。
+// 6. 翻頁分區：橫向模式左右 1/4 翻頁、中間 1/2 切換 HUD；縱向畫廊上下 1/4 也翻頁（手勢採 global 座標系）。
 
 import {
   Button,
@@ -659,7 +659,7 @@ function ReaderContent({
         anchorSlotId.current = null
         setLeadingPage(target)
         setSession(result)
-        // session 自己建的时候讀的是全域；這裡對齊畫面看到的值（per-comic 可能不同）。
+        // session 自己建的時候讀的是全域；這裡對齊畫面看到的值（per-comic 可能不同）。
         result.setHardwareSharpen(settingsRef.current.hardwareSharpen)
         setStatus(result.pageCount === 0 ? { kind: "empty" } : null)
         if (target === null) {
@@ -760,7 +760,7 @@ function ReaderContent({
     }, 600)
   }
 
-  /** 丟掉已經接上的下一集；ref 與 state 一定一起換。 */
+  /** 換掉接上的下一集：ref 與 state 一定一起換。 */
   function replaceFollowups(next: FollowupChapter[]) {
     followupsRef.current = next
     setFollowups(next)
@@ -1355,7 +1355,7 @@ function ReaderContent({
     [next, paginated, vertical, slotCount, pageCount, pageSize.width, pageSize.height, onPageTap, endOfBookText]
   )
 
-  // 頁碼：所有模式都看 onScrollTargetVisibilityChange 回報的領先可見頁。
+  // 頁碼：畫廊由位移換算，連續模式看 onScrollTargetVisibilityChange 回報的領先可見頁。
   // 頁碼顯示在 ReaderPageTracker 裡（它訂閱 leadingPage）。
 
   // HUD 的進出場全部走屬性動畫（offset / opacity）+ animation modifier，
@@ -1608,7 +1608,7 @@ function ReaderContent({
           <ReaderPullTab pull={pullSignal} threshold={PULL_THRESHOLD} vertical={vertical} rtl={rtl} />
         ) : null}
 
-        {/* 開章時蓋在畫布上。放在捲動外面，第一帧就看得到，不會先黑一整片再出現轉圈。 */}
+        {/* 開章時蓋在畫布上。放在捲動外面，第一幀就看得到，不會先黑一整片再出現轉圈。 */}
         {status?.kind === "loading" ? (
           <VStack
             frame={{ maxWidth: "infinity", maxHeight: "infinity" }}

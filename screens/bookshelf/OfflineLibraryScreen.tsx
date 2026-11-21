@@ -75,7 +75,7 @@ export function OfflineLibraryScreen() {
   return (
     <NamespaceReader>
       {offlineNs => (
-        // 卡片的左滑要外層容器的 swipeActionsContainer（iOS 27）才生效。
+        // 左滑要外層容器（見 design/layout 的 `swipeActionsContainer`）。
         <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
           {comics.map(comic => {
             const title = comic.title ?? t("bookshelf.unknownComic")

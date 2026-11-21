@@ -149,7 +149,7 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
         if (cached) return memoRender(index, { ...cached, half })
       }
 
-      // 漸進式超分：離線閱讀同樣享受 ACNet ONNX 超分
+      // 漸進式超分：流程同 `app/comic.ts` 的 `loadPage`，差別是原圖直接吃本機檔
       if (target) {
         if (onSharpened) {
           const pageKey = `${key.epId}_p${index}`
@@ -167,12 +167,12 @@ export function createOfflineSession(key: OfflineKey): ChapterSession {
             const sharpened = writeSharpenedPage(
               renderDir,
               sharpenedName,
-              // 超分結果是 `Data`：直接落地，不再先複製一整張到 JS。
+              // 同上：`Data` 直接落地
               result.data,
               aspect
             )
             if (sharpened) {
-              // 超分圖也要記住：下次重掛直接顯示超分版，不會先閃原圖。
+              // 同上：重掛時直接顯示超分版，不會先閃原圖
               const render = { ...sharpened, half }
               memoRender(index, render)
               onSharpened(render)

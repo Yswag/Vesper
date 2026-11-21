@@ -14,7 +14,7 @@
  * 一屏 3 欄 × 3 排（格高 165 + 書名 + 列距，約 205pt 一列，可視高度約 700pt）＝ 9–12 格，
  * 三屏 ≈ 36 格 ≈ 23MB——那是「來回捲動不重解碼」的底。
  * 再留一截給非網格的大圖（詳情頁封面 fit 900×1350 一張就近 4.9MB、留言圖、頭像）→ 40MB。
- * 解碼後的點陣是常駐記憶體，所以停在這裡（上限 64MB）：不為了「不重解碼」無限放大。
+ * 解碼後的點陣是常駐記憶體，所以停在這個上限：不為了「不重解碼」無限放大。
  */
 const MAX_BYTES = 40 * 1024 * 1024
 
@@ -37,13 +37,13 @@ export interface LruCache<T> {
   put: (key: string, value: T, bytes: number) => boolean
   bytes: () => number
   size: () => number
-  /** 由舊到新（探針驗淘汰順序用）。 */
+  /** 由舊到新（驗証淘汰順序用）。 */
   keys: () => string[]
   clear: () => void
 }
 
 /**
- * 兩個上限任一到了就從最舊的開始淘汰。純資料結構，不碰 UIImage（探針用假的小項目驗）。
+ * 兩個上限任一到了就從最舊的開始淘汰。純資料結構，不碰 UIImage（用假的小項目驗）。
  */
 export function createLruCache<T>(maxBytes: number, maxItems: number): LruCache<T> {
   const entries = new Map<string, Entry<T>>()
@@ -107,7 +107,7 @@ export function displayCacheBytes(): number {
   return cache.bytes()
 }
 
-/** 預算（探針拿它換算「一格的位元組 × 幾格」，不另外抄一份數字）。 */
+/** 預算（驗証拿它換算「一格的位元組 × 幾格」，不另外抄一份數字）。 */
 export function displayCacheLimits(): { bytes: number; items: number } {
   return { bytes: MAX_BYTES, items: MAX_ITEMS }
 }

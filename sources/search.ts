@@ -25,7 +25,7 @@ export interface SearchProgress {
   total: number
 }
 
-/** 一次打 30 個源太粗暴，排隊跑。 */
+/** 30+ 個源同時打太粗暴；這裡一次只放 6 個（Aidoku 另受宿主 worker 上限限制），排隊跑。 */
 const CONCURRENCY = 6
 
 /**

@@ -203,7 +203,7 @@ export function clearSourceIconCache(): void {
   remove(iconDir())
 }
 
-/** 探針用：目前記在記憶體快取裡的 key（清空入口的斷言；值可能是 null，這裡只看有沒有這一筆）。 */
+/** 唯讀觀測點：目前記在記憶體快取裡的 key（清空入口的斷言；值可能是 null，這裡只看有沒有這一筆）。 */
 export function sourceIconMemoryKeys(): string[] {
   return [...memCache.keys()]
 }

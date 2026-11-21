@@ -1,7 +1,5 @@
 // composition root 建立的 production instance（index.tsx 在啟動時裝上）。
-//
-// Phase 0 只是把 instance 建好放著：UI 仍走舊入口，所以沒有任何行為改變；
-// 之後的遷移逐步把 screens 的 import 換成這裡拿到的 ComicLibrary。
+// 畫面一律經 comicLibrary() 取用，沒裝就直接拋。
 
 import type { ComicLibrary } from "./comic"
 

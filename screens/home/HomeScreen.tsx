@@ -56,7 +56,7 @@ export function HomeScreen() {
   // 「繼續閱讀」與 Bangumi 兩條 carousel 各自量自己的捲動視窗寬，卡片尺寸照 comicMetrics 算。
   const [resumeCarouselWidth, setResumeCarouselWidth] = useState(0)
   const [bangumiCarouselWidth, setBangumiCarouselWidth] = useState(0)
-  // 繼續閱讀改成跟 Bangumi 一樣大
+  // 兩條 carousel 共用 `bangumiCardSize`，卡片同大小
   const resumeCard = bangumiCardSize(resumeCarouselWidth)
   const bangumiCard = bangumiCardSize(bangumiCarouselWidth)
 
@@ -260,7 +260,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
   const tint = useTint()
   const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [index, setIndex] = useState(0)
-  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錐位。
+  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錯位。
   const [active, setActive] = useState(true)
 
   // 換一批項目（下拉重整重挑）就從第一張開始。
@@ -335,7 +335,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
             }
             buttonStyle="plain"
           >
-            {/* TabView 翻頁要固定高度：字級夹在 xxxLarge，輔助字級下右欄不被裁。 */}
+            {/* TabView 翻頁要固定高度：字級夾在 xxxLarge，輔助字級下右欄不被裁。 */}
             <HStack
               spacing={15}
               alignment="center"
@@ -344,8 +344,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
               dynamicTypeSize={{ to: "xxxLarge" }}
             >
               {/* 封面立體卡片：124×179（＝詳情頁 hero 的上限寬 `HERO_MAX_WIDTH`、同一組 1.44 比例）。
-                  舊值 106×150 比下面那排卡片（112×161）還小，四周又留白 → 看起來很迷你。
-                  179 加上卡片上下內距 8×2 剛好填滿 195 的輪播條，版面高度不變。 */}
+                  179 加上上下內距 14×2 剛好填滿 207 的輪播條。 */}
               {item.image ? (
                 <ZStack
                   frame={{ width: 124, height: 179 }}

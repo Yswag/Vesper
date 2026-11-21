@@ -202,7 +202,7 @@ export async function loadExplorePage(
   }
 }
 
-/** 封面若源給的是相對路徑，用源宣告的網站補成絶對網址。 */
+/** 封面若源給的是相對路徑，用源宣告的網站補成絕對網址。 */
 function withCoverBase(source: InstalledSource, comics: ComicListItem[]): ComicListItem[] {
   return comics.map(item => ({ ...item, cover: resolveUrl(source.meta?.url, item.cover) || undefined }))
 }

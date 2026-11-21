@@ -226,8 +226,7 @@ function hmacOf(name: HashName, key: any, value: any): Bytes {
 type CipherMode = "ecb" | "cbc" | "cfb" | "ofb"
 
 /**
- * AES **裸塊**運算：與 Venera 的 pointycastle 實作一致（`js_engine.dart:442-475` 就是
- * `CBCBlockCipher.processBlock` 逐塊跑），也就是加密不加 padding、解密不剝 padding。
+ * AES **裸塊**運算：與 Venera 的 pointycastle 實作一致（`CBCBlockCipher.processBlock` 逐塊跑），也就是加密不加 padding、解密不剝 padding。
  * 源會自己補／自己剝（ccc 就是這樣），所以 `setAutoPadding(false)` 是必須的。
  */
 function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: any): Bytes {

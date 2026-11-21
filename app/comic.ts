@@ -205,7 +205,7 @@ export interface ChapterSession {
   subscribeAspects(listener: (index: number, aspect: number) => void): () => void
   /**
    * 已經備好的頁面渲染（路徑 + 比例）；還沒載過就是 null。
-   * 重掛的頁拿它當初始值，第一帧就是圖，不必先出佔位再換。
+   * 重掛的頁拿它當初始值，第一幀就是圖，不必先出佔位再換。
    */
   renderOf(index: number, half?: SlotHalf): PageRender | null
   /**
@@ -228,7 +228,7 @@ export interface ChapterSession {
   /** 動態更新當前會話是否啟用 AI 超解析度。 */
   setHardwareSharpen(enabled: boolean): void
   /**
-   * 預取：以這一頁為中心往前 3 頁（當前頁最優先）。畫面只負責在時機點呼叫——
+   * 預取：目前頁最優先，往後 `getPrefetchPages()` 頁（預設 2、上限 10）。畫面只負責在時機點呼叫——
    * 只有 session 知道「第幾頁 ↔ 取圖請求」，畫面不自己算 URL。
    */
   warm(page: number): void
@@ -635,7 +635,7 @@ function offlineChapterRows(ref: ComicRef): OfflineChapterRow[] {
 
 /**
  * 續讀計畫：上次那一話可讀就續、被鎖或不在清單就退第一個沒鎖的章；本機讀得到就秒開不連網。
- * 清單從哪裡來由呼叫端給（production 就是 `comic()`；探針餵 stub 才驗得到「有沒有連網」）。
+ * 清單從哪裡來由呼叫端給（production 就是 `comic()`；換成 stub 才驗得到「有沒有連網」）。
  * 畫面拿到這個就直接開閱讀器，不必自己挑話、也不必自己決定要不要補清單。
  */
 export async function resumePlan(

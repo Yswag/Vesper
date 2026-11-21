@@ -539,7 +539,7 @@ function markSeen(library: Library, sourceKey: string, comicId: string): void {
   library.updates[key] = { ...record, seenChapterCount: record.chapterCount }
 }
 
-/** 整份追更快取（拷貝；呼叫端排序／筛選不會改到 cache）。 */
+/** 整份追更快取（拷貝；呼叫端排序／篩選不會改到 cache）。 */
 export function allComicUpdates(): Record<string, ComicUpdateRecord> {
   return { ...load().updates }
 }

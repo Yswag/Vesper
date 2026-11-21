@@ -27,7 +27,7 @@ export interface HostUI {
 export interface HostContext {
   sourceKey: string
   locale: string
-  /** 源宣告的設定預設值（v1 只讀）。 */
+  /** 源宣告的設定預設值（沙箱只讀）。 */
   settings: SourceSettings
   loadData(key: string): unknown
   saveData(key: string, data: unknown): void

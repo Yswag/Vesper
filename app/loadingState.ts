@@ -3,7 +3,7 @@
 
 import { createEmitter } from "../engine/emitter"
 
-/** 指示的存活上限（毫秒）。理由見檔頭；`showLoading` 的第三個參數可以覆寫它（探針用）。 */
+/** 指示的存活上限（毫秒）。理由見檔頭；`showLoading` 的第三個參數可以覆寫它（給回歸驗証覆寫）。 */
 export const LOADING_TTL_MS = 90_000
 
 export interface LoadingEntry {

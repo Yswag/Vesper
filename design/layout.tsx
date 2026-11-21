@@ -26,7 +26,7 @@ export function PageScroll({
   children,
 }: {
   title?: string
-  /** 導覽列左側的元件（例如 ExitToolbar）。目前沒有頁面需要右側按鈕，要再加。 */
+  /** 導覽列左側的元件（例如 ExitToolbar）。 */
   leading?: () => VirtualNode | null
   /** 導覽列右側的元件（例如加號動作按鈕）。 */
   trailing?: () => VirtualNode | null
@@ -99,6 +99,7 @@ export function Card({
 }: {
   children: StackChildren
   background?: Color | DynamicShapeStyle
+  /** 讓底下的列吃左滑動作；要包在列的外層容器上才生效（iOS 27）。 */
   swipeActionsContainer?: boolean
 }) {
   return (

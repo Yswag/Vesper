@@ -1,4 +1,4 @@
-// English. **LLM 產出、未經母語者校對**.
+// English. Machine-translated, not reviewed by a native speaker.
 
 export default {
   historyTab: "History",

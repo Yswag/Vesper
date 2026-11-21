@@ -115,7 +115,7 @@ export function ZoomableView({
     }
   }
 
-  /** 手勢結束／雙擊／重置後才通知父層（見檔頭 ③），順便決定要不要掛拖曳手勢。 */
+  /** 手勢結束／雙擊／重置後才通知父層（見檔頭 3.），順便決定要不要掛拖曳手勢。 */
   // gestures 只建一次，回呼經 ref 讀最新的 prop。
   const zoomChangeRef = useRef(onZoomChange)
   zoomChangeRef.current = onZoomChange
@@ -197,7 +197,7 @@ export function ZoomableView({
         }),
       drag: DragGesture()
         .onChanged(value => {
-          // 未放大時不平移（手勢仍然掛著：接法固定不變，才不會在捏合途中被引擎重新接管）。
+          // 未放大時不平移（保險：手勢正常不會掛著）。
           if (latest.current.zoom <= 1.001) return
           if (!latest.current.dragging) {
             latest.current.dragging = true

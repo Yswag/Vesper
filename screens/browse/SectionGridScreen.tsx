@@ -99,7 +99,7 @@ export function SectionGridScreen({
     if (entryPaging.kind === "entry") return entry ? entryPaging : NO_MORE
     const base = entryPaging.kind === "target" ? target : section.more
     if (!base) return NO_MORE
-    // target 的頁碼存在 state 裡：直接回 entryPaging 的話永遠停在同①頁。
+    // target 的頁碼存在 state 裡：直接回 entryPaging 的話永遠停在同一頁。
     return targetPage < 0 ? NO_MORE : { kind: "target", target: withOptions(base), page: targetPage }
   }
 

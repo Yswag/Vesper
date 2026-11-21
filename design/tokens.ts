@@ -72,7 +72,7 @@ export const toneText: Record<"danger" | "warning" | "love" | "success", Dynamic
   success: { dark: palette.green, light: "#248A3D" },
 }
 
-/** `toneText` 的舊名（3b／3c 的呼叫端）；新程式碼用 `toneText`。 */
+/** `toneText` 的向後相容別名；新程式碼用 `toneText`。 */
 export const tagText = toneText
 
 /**

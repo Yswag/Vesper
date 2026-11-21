@@ -64,7 +64,7 @@ subscribeRepositories(invalidate)
 /** 可更新清單有變動時通知（源或倉庫變了）。 */
 export const subscribeSourceUpdates = bus.subscribe
 
-/** 可更新的源，依已安裝清單的順序。`pro` 只給探針注入。 */
+/** 可更新的源，依已安裝清單的順序。`pro` 只給回歸驗証注入。 */
 export function availableSourceUpdates(pro: boolean = hasPro()): SourceUpdate[] {
   if (cache && cache.pro === pro) return cache.updates
   const repositories = new Map(listRepositories().map(repository => [repositoryKey(repository.url), repository]))
@@ -104,7 +104,7 @@ export interface SourceCheckOptions {
   force?: boolean
   now?: number
   pro?: boolean
-  /** 只查這些倉庫（探針靠這個不碰真倉庫）；不給就是全部。 */
+  /** 只查這些倉庫（回歸驗証靠這個不碰真倉庫）；不給就是全部。 */
   repositories?: string[]
 }
 

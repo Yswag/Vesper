@@ -72,7 +72,6 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   const [filters, setFilters] = useState<FilterState | null>(null)
   /** Venera 源的篩選值：跟聚合搜尋讀同一份（`search-options.json`）。 */
   const [selections, setSelections] = useState<Record<string, Array<string | null>>>(loadSearchSelections())
-  /** Venera 篩選 sheet 的草稿與開關（按下「套用」才存）。 */
   /** 這一輪搜尋的 epoch：換關鍵字或重試時舊的一輪作廢，在飛的請求真的被中止。 */
   const run = useRef({ id: 0, controller: null as AbortController | null })
 
@@ -83,8 +82,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
   const optionKey = JSON.stringify(optionRequest)
   const optionCount = customOptionCount(optionRows, optionValues)
 
-  /** 開 Venera 篩選 sheet（草稿從現在的值開始，「套用」以外的操作不會寫回）。 */
-  /** 開 Venera 源的篩選 sheet；套用後存回同一份設定，`optionKey` 一變搜尋 effect 就重跑。 */
+  /** 開 Venera 源的篩選 sheet（草稿從現在的值開始）；套用後存回同一份設定，`optionKey` 一變搜尋 effect 就重跑。 */
   async function openOptions() {
     await Navigation.present({
       element: (

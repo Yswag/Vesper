@@ -356,7 +356,7 @@ export function chapterListsRevision(): number {
   return chapterListsChanged
 }
 
-/** 唯讀觀測點：這一支 process 讀過幾次章節清單檔（回歸探針用，不是畫面或源的介面）。 */
+/** 唯讀觀測點：這一支 process 讀過幾次章節清單檔（回歸驗証用，不是畫面或源的介面）。 */
 let chapterListReads = 0
 
 export function debugChapterListReads(): number {

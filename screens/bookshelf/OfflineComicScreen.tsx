@@ -157,7 +157,7 @@ export function OfflineComicScreen({
         <PrimaryAction label={t("bookshelf.noDownloadedChapter")} disabled={true} />
       )}
 
-      {/* 章節卡片的左滑要外層容器的 swipeActionsContainer（iOS 27）才生效。 */}
+      {/* 左滑要外層容器（見 design/layout 的 `swipeActionsContainer`）。 */}
       <LazyVStack spacing={cardGap} frame={{ maxWidth: "infinity" }} swipeActionsContainer={true}>
         {rows.map(row => (
           <ChapterRow

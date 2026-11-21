@@ -1,3 +1,6 @@
+// 閱讀器的章節目錄（原生 Bottom Sheet 的內容）：分組、目前話置中、鎖住的不能點。
+// 開關由 `ReaderScreen` 控制；這裡只管清單與滑到目前話。
+
 import {
   Button,
   Divider,

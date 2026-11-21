@@ -49,7 +49,6 @@ interface CachedData {
   popularPool?: BangumiSubject[]
 }
 
-/** 讀取本地快取 */
 function loadCache(): CachedData | null {
   try {
     const file = cacheFilePath()
@@ -62,7 +61,6 @@ function loadCache(): CachedData | null {
   }
 }
 
-/** 寫入本地快取 */
 function saveCache(data: CachedData): void {
   try {
     writeText(cacheFilePath(), JSON.stringify(data))
@@ -92,7 +90,7 @@ function parseSubject(item: any): BangumiSubject | null {
   const isManga = platform === "漫画" || metaTags.includes("漫画") || tags.includes("漫画") || tags.includes("漫畫")
   if (!isManga) return null
 
-  // 取得作者
+  // 作者可能記在「作者」「作畫」或「原作」三個鍵上，先到先得
   let author = ""
   if (Array.isArray(item.infobox)) {
     for (const info of item.infobox) {
