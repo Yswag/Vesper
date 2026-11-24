@@ -4,8 +4,10 @@
 //
 // 資料流（每帶）：
 //   裁一條（多帶 PAD 列）→ 上傳 GPU → extract 算整帶 Y → 讀回 Y
-//   → 逐塊組 544² 輸入 → Core ML（fp16 輸出）→ 集中寫進槽
-//   → 一次 compose 掃完整帶（2x）→ 需要縮小就再一次 downscale → 分段讀回
+//   → 逐塊組 544² 輸入 → Core ML（fp16 輸出寫進預配的 PixelBuffer）→ gather 從貼圖視圖收進槽
+//   → 一次 compose 掃完整帶（2x）→ 需要縮小就再一次 downscale → 分段讀回 → ffmpeg 編 JPEG
+//
+// 不用 copyToTypedArray／copyToData／UIImage.fromRGBA：這個執行期裡它們每次都留下整份資料不回收。
 //
 // 三個硬限制：
 //   1. Metal 只能在 app 前景工作，背景會以 BackgroundExecutionNotPermitted 拒絕。
@@ -17,6 +19,7 @@
 import { Script } from "scripting"
 
 import { join } from "../engine/fs"
+import { encodeRGBAToJPEG, jpegEncoderAvailable } from "./jpegEncode"
 import { log } from "./log"
 
 import type { UpscaleTarget } from "./upscale"
@@ -41,6 +44,14 @@ kernel void extract_band(device const uchar4 *src [[buffer(0)]],
   if (p.x >= w) return;
   uchar4 c = src[p.y * w + p.x];
   dst[p.y * w + p.x] = (0.299f * c.x + 0.587f * c.y + 0.114f * c.z) * (1.0f / 255.0f);
+}
+
+kernel void gather_tile(texture2d<half, access::read> tile [[texture(0)]],
+                        device half *slots [[buffer(0)]],
+                        constant uint &slot [[buffer(1)]],
+                        uint2 p [[thread_position_in_grid]]) {
+  if (p.x >= ${OUT}u || p.y >= ${OUT}u) return;
+  slots[slot * ${OUT * OUT}u + p.y * ${OUT}u + p.x] = tile.read(p).r;
 }
 
 // 2x 重構：亮度來自模型（fp16 槽），Cb/Cr 從原始像素雙線性取樣。
@@ -155,9 +166,18 @@ kernel void downscale_band(device const uchar4 *src [[buffer(0)]],
 }
 `
 
+interface TileOutput {
+  pixels: PixelBuffer
+  array: CoreML.MultiArray
+  texture: Metal.Texture
+}
+
 interface Engine {
   model: CoreML.Model
+  input: CoreML.MultiArray
+  tiles: TileOutput[]
   extract: Metal.ComputePipeline
+  gather: Metal.ComputePipeline
   compose: Metal.ComputePipeline
   downscale: Metal.ComputePipeline
   library: Metal.Library
@@ -173,8 +193,38 @@ interface Engine {
   narrowBytes: number
 }
 
+interface Scratch {
+  out: Uint8Array
+  yPlane: Float32Array
+  input: Float32Array
+}
+
 let engine: Engine | null = null
 let engineInitFailed = false
+let scratch: Scratch | null = null
+
+function ensureScratch(outBytes: number, yLength: number): Scratch {
+  const current: Scratch = scratch ?? {
+    out: new Uint8Array(0),
+    yPlane: new Float32Array(0),
+    input: new Float32Array(SIDE * SIDE),
+  }
+  if (current.out.length < outBytes) current.out = new Uint8Array(outBytes)
+  if (current.yPlane.length < yLength) current.yPlane = new Float32Array(yLength)
+  scratch = current
+  return current
+}
+
+function ensureTileOutputs(built: Engine, count: number): void {
+  while (built.tiles.length < count) {
+    const pixels = PixelBuffer.create({ width: OUT, height: OUT, format: "gray16Float", metalCompatible: true })
+    built.tiles.push({
+      pixels,
+      array: CoreML.MultiArray.fromPixelBuffer(pixels, [1, 1, OUT, OUT]),
+      texture: built.device.makeTextureView({ pixelBuffer: pixels }),
+    })
+  }
+}
 
 function u32(values: number[]): Uint32Array {
   return new Uint32Array(values)
@@ -183,17 +233,25 @@ function u32(values: number[]): Uint32Array {
 /** Core ML 與 Metal 都在（beta 版才有 CoreML；背景執行時 Metal 會晚一步失敗）。 */
 export function coreMLAvailable(): boolean {
   try {
-    return typeof CoreML !== "undefined" && typeof CoreML.Model?.load === "function"
+    return typeof CoreML !== "undefined" && typeof CoreML.Model?.load === "function" && jpegEncoderAvailable()
   } catch {
     return false
   }
 }
 
 function release(): void {
+  scratch = null
   if (!engine) return
   try {
     engine.library.dispose()
+    for (const tile of engine.tiles) {
+      tile.texture.dispose()
+      tile.array.dispose()
+      tile.pixels.dispose()
+    }
+    engine.input.dispose()
     engine.extract.dispose()
+    engine.gather.dispose()
     engine.compose.dispose()
     engine.downscale.dispose()
     engine.source.dispose()
@@ -230,9 +288,12 @@ async function ensureEngine(wideBytes: number, narrowBytes: number, slotBytes: n
     const library = await device.compileLibrary(SOURCE)
     const built: Engine = {
       model,
+      input: CoreML.MultiArray.create({ dtype: "float32", shape: [1, 1, SIDE, SIDE] }),
+      tiles: [],
       library,
       device,
       extract: await library.makeComputePipeline("extract_band"),
+      gather: await library.makeComputePipeline("gather_tile"),
       compose: await library.makeComputePipeline("compose_band"),
       downscale: await library.makeComputePipeline("downscale_band"),
       source: await device.makeBuffer({ length: srcBytes, storageMode: "shared" }),
@@ -308,8 +369,10 @@ export async function upscaleWithCoreML(
   const started = Date.now()
   const built = await ensureEngine(wideBytes, narrowBytes, slotBytes, srcBytes)
 
-  const out = new Uint8Array(outBytes)
-  const staging = new Uint16Array(tilesPerBand * OUT * OUT)
+  ensureTileOutputs(built, tilesPerBand)
+  const buffers = ensureScratch(outBytes, rect.width * (bandMaxRows + PAD * 2))
+  const out = buffers.out.subarray(0, outBytes)
+  const input = buffers.input
   let tiles = 0
   let bands = 0
 
@@ -337,11 +400,11 @@ export async function upscaleWithCoreML(
         bytes: [{ index: 2, data: u32([rect.width]) }],
       })
 
-      const yPlane = new Float32Array(rect.width * srcRows)
+      const yPlane = buffers.yPlane.subarray(0, rect.width * srcRows)
       for (let off = 0; off < yPlane.byteLength; off += CHUNK) {
         const length = Math.min(CHUNK, yPlane.byteLength - off)
         const piece = await built.y.read({ offset: off, length })
-        new Uint8Array(yPlane.buffer, off, length).set(piece.subarray(0, length))
+        new Uint8Array(yPlane.buffer, yPlane.byteOffset + off, length).set(piece.subarray(0, length))
       }
 
       // 3. 逐塊推論
@@ -356,38 +419,36 @@ export async function upscaleWithCoreML(
           const iw = Math.min(rect.width, tx + cw + PAD) - ix0
           const ih = Math.min(rect.height, ty + ch + PAD) - iy0
 
-          const input = new Float32Array(SIDE * SIDE)
+          if (iw < SIDE || ih < SIDE) input.fill(0)
           for (let r = 0; r < ih; r++) {
             const from = (iy0 - srcY0 + r) * rect.width + ix0
             input.set(yPlane.subarray(from, from + iw), r * SIDE)
           }
 
-          const multi = CoreML.MultiArray.fromTypedArray(input, { dtype: "float32", shape: [1, 1, SIDE, SIDE] })
-          try {
-            const result = await built.model.predict({ data: { type: "multiArray", value: multi } })
-            const feature = result.output
-            if (!feature || feature.type !== "multiArray") throw new Error("模型輸出不是 multiArray")
-            const array = feature.value
-            try {
-              if (array.dtype !== "float16") throw new Error(`模型輸出不是 fp16（${array.dtype}）`)
-              const bits = array.copyToTypedArray() as Uint16Array
-              staging.set(bits, slot * OUT * OUT)
-            } finally {
-              array.dispose()
-            }
-          } finally {
-            multi.dispose()
+          built.input.write(input)
+          const backing = built.tiles[slot].array
+          const result = await built.model.predict(
+            { data: { type: "multiArray", value: built.input } },
+            { outputBackings: { output: backing } }
+          )
+          const feature = result.output
+          if (!feature || feature.type !== "multiArray" || feature.value !== backing) {
+            throw new Error("模型沒有寫進預配的輸出")
           }
           slot++
           tiles++
         }
       }
 
-      // 4. 槽一次寫進 GPU（分段，單次搬運有上限）
-      const stagingBytes = slot * OUT * OUT * 2
-      for (let off = 0; off < stagingBytes; off += CHUNK) {
-        const length = Math.min(CHUNK, stagingBytes - off)
-        await built.slots.write(new Uint8Array(staging.buffer, off, length), { offset: off })
+      // 4. 模型輸出直接從 PixelBuffer 收進槽（不經 JS 拷貝）
+      for (let s = 0; s < slot; s++) {
+        await built.gather.dispatch({
+          threadgroups: { width: OUT / 16, height: OUT / 16 },
+          threadsPerThreadgroup: { width: 16, height: 16 },
+          textures: [{ index: 0, texture: built.tiles[s].texture }],
+          buffers: [{ index: 0, buffer: built.slots }],
+          bytes: [{ index: 1, data: u32([s]) }],
+        })
       }
 
       // 5. 2x 重構
@@ -454,11 +515,11 @@ export async function upscaleWithCoreML(
     }
 
     // 7. 編碼
-    const image = UIImage.fromRGBA(outW, outH, out)
-    const jpeg = image?.toJPEGData(0.92)
+    const jpeg = await encodeRGBAToJPEG(outW, outH, out)
     if (!jpeg) return null
     const ms = Date.now() - started
-    log("debug", "upscale", `[Core ML] ${outW}×${outH}（${bands} 帶 · ${tiles} 塊 · ${ms}ms）`)
+    const freeMB = Math.round(Device.availableMemory / 1048576)
+    log("debug", "upscale", `[Core ML] ${outW}×${outH}（${bands} 帶 · ${tiles} 塊 · ${ms}ms · 剩 ${freeMB}MB）`)
     return { data: jpeg, ms }
   } catch (error) {
     log("warning", "upscale", "[Core ML] 超分途中失敗", error)

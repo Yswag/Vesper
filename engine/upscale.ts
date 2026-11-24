@@ -604,6 +604,13 @@ export function planUpscale(
   }
 }
 
+const MEMORY_HEADROOM_BYTES = 160 * 1024 * 1024
+
+function memoryTooLow(target: UpscaleTarget | undefined): boolean {
+  const pixels = target ? target.outWidth * target.outHeight : MAX_OUTPUT_PIXELS
+  return Device.availableMemory < pixels * 4 * 3 + MEMORY_HEADROOM_BYTES
+}
+
 /**
  * 對原始圖像 Data 執行 ACNet ONNX 2x 神經網路超解析度，返回 JPEG 格式位元組。
  * `target` 指定只算哪一塊、輸出多大；不給就是整張、輸出 2x。
@@ -626,6 +633,11 @@ export async function sharpenImage(
     // 二次檢查快取
     const doubleCheck = getCachedUpscaleData(key)
     if (doubleCheck) return { data: doubleCheck.data, fromCache: true, backend: doubleCheck.backend }
+
+    if (memoryTooLow(target)) {
+      log("warning", "upscale", `記憶體不足（剩 ${Math.round(Device.availableMemory / 1048576)}MB），這頁不超分`)
+      return null
+    }
 
     try {
       let sharpened: Data | null = null
