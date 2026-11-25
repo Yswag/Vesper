@@ -54,6 +54,12 @@ export default {
   },
 
   mihon: {
+    failed: "Source error: {message}",
+    timeout: "The source timed out",
+    initFailed: "The source failed to initialize",
+    unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
+    popular: "Popular",
+    latest: "Latest",
     missing: "This extension's files are missing (reinstall it)",
     invalidPackage: "Not a valid Mihon extension (.apk)",
     noSources: "This extension has no sources",

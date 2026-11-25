@@ -1,18 +1,21 @@
-// 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；下拉可重新整理索引。
+// 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；導覽列可重新整理索引，搜尋與篩選只在本地做。
 // 清單只讀本地快取，重新整理才會連網。
 
-import { Button, Divider, HStack, Image, LazyVStack, Spacer, Text, VStack, ZStack, useEffect, useState } from "scripting"
+import {
+  Button, Divider, HStack, Image, LazyVStack, Menu, Navigation, ProgressView, Spacer, Text, VStack, ZStack, useEffect, useState,
+} from "scripting"
+
+import { contentLanguageName, getContentLanguages, subscribeContentLanguages } from "../../app/contentLanguages"
+import { ThemedNavigationStack, useTint } from "../../app/theme"
+import { useSubscription } from "../../app/useSubscription"
+import { Chip } from "../../design/chip"
 import { CardGroup, PageScroll } from "../../design/layout"
-import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
+import { IconBadge, InfoRow } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
 import { SkeletonCardGroups } from "../../design/skeleton"
 import { Tag } from "../../design/Tag"
-import { Chip } from "../../design/chip"
-import { Caption, Footnote } from "../../design/text"
 import { radius, rect, rowPadding } from "../../design/tokens"
-import { useTint } from "../../app/theme"
 import { hasPro } from "../../engine/pro"
-import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
@@ -24,6 +27,12 @@ import {
   type RepositoryEntryStatus,
 } from "../../sources/registry"
 import {
+  defaultRepositoryFilter,
+  filterRepositoryEntries,
+  isRepositoryFilterActive,
+  type RepositoryFilter,
+} from "../../sources/repositoryFilter"
+import {
   getRepository,
   isFromRepository,
   kindOf,
@@ -33,9 +42,20 @@ import {
   type RepositoryKind,
   type StoredRepository,
 } from "../../sources/repository"
+import { ContentLanguageScreen } from "./ContentLanguageScreen"
 
-export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: string }) {
-  useSubscription(subscribeLocale)
+export function RepositoryDetailScreen({
+  repositoryUrl,
+  initialQuery = "",
+  initialFilter,
+}: {
+  repositoryUrl: string
+  /** 預覽用：一進頁就帶搜尋字串（正式頁面不給）。 */
+  initialQuery?: string
+  /** 預覽用：一進頁就套用的篩選（正式頁面不給）。 */
+  initialFilter?: Partial<RepositoryFilter>
+}) {
+  useSubscription(subscribeLocale, subscribeContentLanguages)
   const tint = useTint()
   const [repository, setRepository] = useState<StoredRepository | undefined>(undefined)
   const [entries, setEntries] = useState<RepositoryEntryStatus[]>([])
@@ -46,6 +66,12 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   const [loaded, setLoaded] = useState(false)
   // 長按網址複製：toast 由這一列自己管。
   const [copied, setCopied] = useState(false)
+  const [searchText, setSearchText] = useState(initialQuery)
+  const [query, setQuery] = useState(initialQuery)
+  const [filter, setFilter] = useState<RepositoryFilter>(() => ({
+    ...defaultRepositoryFilter(getContentLanguages()),
+    ...initialFilter,
+  }))
 
   function sync() {
     setRepository(getRepository(repositoryUrl))
@@ -62,6 +88,38 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       offSources()
     }
   }, [repositoryUrl])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setQuery(searchText), 200)
+    return () => clearTimeout(timer)
+  }, [searchText])
+
+  const defaults = getContentLanguages()
+  const effective = { ...filter, languages: defaults, query }
+  const active = isRepositoryFilterActive(effective, defaults)
+  const result = filterRepositoryEntries(entries, effective, defaults)
+  const visibleEntries = result.groups.flatMap(group => group.items)
+
+  function patch(next: Partial<RepositoryFilter>) {
+    setFilter(current => ({ ...current, ...next }))
+  }
+
+  function resetFilters() {
+    setFilter(defaultRepositoryFilter(defaults))
+    setSearchText("")
+    setQuery("")
+  }
+
+  async function openLanguages() {
+    await Navigation.present({
+      element: (
+        <ThemedNavigationStack>
+          <ContentLanguageScreen />
+        </ThemedNavigationStack>
+      ),
+      modalPresentationStyle: "pageSheet",
+    })
+  }
 
   async function install(item: RepositoryEntryStatus) {
     const { entry } = item
@@ -102,29 +160,24 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     }
   }
 
-  /** 一鍵安裝：掃描衝突、彈窗確認、裝至多 3 條並發。 */
+  /** 一鍵安裝：只作用在篩選後的結果；掃描衝突、彈窗確認、裝至多 3 條並發。 */
   async function installAll() {
-    if (entries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
+    if (visibleEntries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
     if (!repository || (await blockedByPro(repository))) return
 
-    // 1. 同倉重複去重：同一倉庫內同 key 只保留第一筆
     const seenInRepo = new Set<string>()
     const uniqueEntries: RepositoryEntryStatus[] = []
 
-    for (const item of entries) {
+    for (const item of visibleEntries) {
       if (seenInRepo.has(item.entry.key)) continue
       seenInRepo.add(item.entry.key)
       uniqueEntries.push(item)
     }
 
-    // 2. 本地已安裝狀態分流
-    // - newOrUpdate: 全新未安裝，或同倉庫來源且有新版
-    // - conflict: 本地已安裝，但來源不是本倉庫（來自其他倉庫或手動匯入）
     const newOrUpdate: CatalogEntry[] = []
     const conflict: CatalogEntry[] = []
 
     for (const item of uniqueEntries) {
-      // ext-lib 不支援的條目連試都不試（列上也已經是不可按的「不支援」）。
       if (entryUnsupportedReason(item.entry)) continue
       if (!item.installed || item.updateAvailable) {
         newOrUpdate.push(item.entry)
@@ -133,7 +186,6 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       }
     }
 
-    // 3. 衝突確認與使用者決策
     let targetsToInstall: CatalogEntry[] = []
 
     if (conflict.length > 0) {
@@ -150,18 +202,15 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
       if (actionIndex !== 0 && actionIndex !== 1) return
 
       if (actionIndex === 0) {
-        // 跳過衝突：只裝全新與同倉更新
         targetsToInstall = newOrUpdate
         if (targetsToInstall.length === 0) {
           setStatus({ kind: "ready", text: t("settings.repo.allInstalled") })
           return
         }
       } else {
-        // 全部覆蓋：全新 + 同倉更新 + 衝突源
         targetsToInstall = [...newOrUpdate, ...conflict]
       }
 
-      // 二次確認：讓使用者確認最終要安裝/覆蓋的總數
       const confirmed = await Dialog.confirm({
         title: t("settings.repo.installAllConfirmTitle"),
         message: t("settings.repo.installAllConfirmMessage", { n: targetsToInstall.length }),
@@ -188,7 +237,6 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
     if (targetsToInstall.length === 0) return
 
-    // 4. 併發佇列安裝（最多 3 條併發，防 GitHub Rate Limit 與超時）
     setBusy(true)
     const totalCount = targetsToInstall.length
     setBatchProgress({ current: 0, total: totalCount })
@@ -226,7 +274,6 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     const workers = Array.from({ length: Math.min(concurrency, targetsToInstall.length) }, () => worker())
     await Promise.all(workers)
 
-    // 5. 結算反饋
     const skippedCount = uniqueEntries.length - targetsToInstall.length
     const failedPart = failedCount > 0 ? t("settings.repo.batchSummaryFailed", { failed: failedCount }) : ""
     setStatus({
@@ -263,11 +310,24 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     )
   }
 
-  const hasUpdatable = entries.some(item => item.updateAvailable)
-  // 本倉已全安裝且無更新：每一筆都是從本倉裝的，且無可更新版本
+  const hasUpdatable = visibleEntries.some(item => item.updateAvailable)
   const allInstalledFromThisRepo =
-    entries.length > 0 && entries.every(item => item.fromThisRepo && !item.updateAvailable)
+    visibleEntries.length > 0 && visibleEntries.every(item => item.fromThisRepo && !item.updateAvailable)
   const isActionDisabled = busy || busyKey !== null || batchProgress !== null || allInstalledFromThisRepo
+  const installLabel = batchProgress
+    ? t("settings.repo.batchProgress", { current: batchProgress.current, total: batchProgress.total })
+    : hasUpdatable
+      ? t("settings.repo.updateAll")
+      : allInstalledFromThisRepo
+        ? t("settings.repo.allInstalled")
+        : t("settings.repo.installAllCount", { n: result.shown })
+  const grouped = result.groups.length > 1
+
+  function groupTitle(language: string, count: number): string {
+    if (!grouped) return t("settings.repo.sourcesGroup", { n: result.shown })
+    const name = language === "" ? t("settings.repo.otherLanguage") : contentLanguageName(language)
+    return t("settings.repo.languageGroup", { language: name, n: count })
+  }
 
   return (
     // toast 不能傳進 PageScroll：modifier prop 跨元件邊界會被渲染兩次（同 PageScroll 的 toolbar 註解）。
@@ -281,86 +341,192 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
         position: "bottom",
       }}
     >
-    <PageScroll title={repository.name} onRefresh={refresh}>
-      <CardGroup title={t("settings.repo.group")}>
-        <VStack
-          spacing={0}
-          contextMenu={{
-            menuItems: (
+      <PageScroll
+        title={repository.name}
+        searchField={{
+          placement: "navigationBarDrawer",
+          prompt: t("settings.repo.searchPrompt"),
+          value: searchText,
+          onChanged: setSearchText,
+        }}
+        trailing={() => (
+          <HStack spacing={14} alignment="center">
+            {busy ? (
+              <ProgressView controlSize="small" />
+            ) : (
               <Button
-                title={t("common.copy")}
-                action={() => {
-                  void Pasteboard.setString(repository.url)
-                  setCopied(true)
-                }}
-              />
-            ),
-          }}
-        >
-          <InfoRow label={t("settings.shared.url")} value={repository.url} />
-        </VStack>
-        <Divider padding={{ leading: 16 }} />
-        <InfoRow label={t("settings.repo.kind")} value={repositoryKindLabel(kindOf(repository))} />
-        <Divider padding={{ leading: 16 }} />
-        <InfoRow label={t("settings.repo.lastUpdated")} value={formatTime(repository.fetchedAt)} />
-        <Divider padding={{ leading: 16 }} />
-        <InfoRow
-          label={t("settings.shared.source")}
-          value={t("settings.shared.countSources", { n: repository.entries.length })}
-        />
-      </CardGroup>
-
-      {repository.error ? (
-        <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
-          <NoticeBanner tone="error" text={t("settings.shared.readFailed")} detail={repository.error} />
-          <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={() => void refresh()} />
-        </VStack>
-      ) : null}
-
-      <CardGroup
-        title={t("settings.repo.sourcesGroup", { n: entries.length })}
-        headerAccessory={
-          entries.length > 0 ? (
-            <Button
-              title={
-                batchProgress
-                  ? t("settings.repo.batchProgress", { current: batchProgress.current, total: batchProgress.total })
-                  : hasUpdatable
-                    ? t("settings.repo.updateAll")
-                    : allInstalledFromThisRepo
-                      ? t("settings.repo.allInstalled")
-                      : t("settings.repo.installAll")
-              }
-              buttonStyle="bordered"
-              controlSize="regular"
-              tint={allInstalledFromThisRepo ? "secondaryLabel" : tint.tint}
-              disabled={isActionDisabled}
-              action={installAll}
+                buttonStyle="plain"
+                accessibilityLabel={t("settings.repo.refresh")}
+                action={() => void refresh()}
+              >
+                <Image systemName="arrow.clockwise" font="body" fontWeight="medium" foregroundStyle="label" />
+              </Button>
+            )}
+            <FilterMenu
+              filter={filter}
+              active={active}
+              onToggle={(key, value) => patch({ [key]: value } as Partial<RepositoryFilter>)}
+              onLanguages={() => void openLanguages()}
+              onReset={resetFilters}
             />
-          ) : undefined
-        }
+          </HStack>
+        )}
       >
-        {/* 索引可能有上千筆（keiyoushi 1707）：用 LazyVStack，不然一進頁就把每一列連同遠端圖示全建出來。 */}
-        <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
-          {entries.map((item, index) => (
-            <VStack key={`${item.entry.key}:${index}`} spacing={0}>
-              {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
-              <EntryRow
-                status={item}
-                busy={busy || busyKey !== null}
-                label={busyKey === item.entry.key ? t("settings.repo.processing") : actionLabel(item)}
-                onInstall={() => {
-                  if (busyKey === null && !busy) void install(item)
-                }}
-              />
-            </VStack>
-          ))}
-        </LazyVStack>
-      </CardGroup>
+        <CardGroup title={t("settings.repo.group")}>
+          <VStack
+            spacing={0}
+            contextMenu={{
+              menuItems: (
+                <Button
+                  title={t("common.copy")}
+                  action={() => {
+                    void Pasteboard.setString(repository.url)
+                    setCopied(true)
+                  }}
+                />
+              ),
+            }}
+          >
+            <InfoRow label={t("settings.shared.url")} value={repository.url} />
+          </VStack>
+          <Divider padding={{ leading: 16 }} />
+          <InfoRow label={t("settings.repo.kind")} value={repositoryKindLabel(kindOf(repository))} />
+          <Divider padding={{ leading: 16 }} />
+          <InfoRow label={t("settings.repo.lastUpdated")} value={formatTime(repository.fetchedAt)} />
+          <Divider padding={{ leading: 16 }} />
+          <InfoRow
+            label={t("settings.shared.source")}
+            value={t("settings.shared.countSources", { n: repository.entries.length })}
+          />
+        </CardGroup>
 
-      {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
-    </PageScroll>
+        {repository.error ? (
+          <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
+            <NoticeBanner tone="error" text={t("settings.shared.readFailed")} detail={repository.error} />
+            <Chip icon="arrow.clockwise" text={t("common.retry")} onTap={() => void refresh()} />
+          </VStack>
+        ) : null}
+
+        {active ? (
+          <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
+            <Text font="caption" foregroundStyle="secondaryLabel">
+              {t("settings.repo.resultCount", { shown: result.shown, total: result.total })}
+            </Text>
+            <Spacer />
+            <Chip compact icon="arrow.counterclockwise" text={t("settings.repo.resetFilters")} onTap={resetFilters} />
+          </HStack>
+        ) : null}
+
+        {result.shown === 0 ? (
+          <VStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
+            <EmptyState
+              variant="page"
+              icon="line.3.horizontal.decrease.circle"
+              title={t("settings.repo.noResults")}
+              detail={t("settings.repo.noResultsDetail")}
+            />
+            {active ? <Chip icon="arrow.counterclockwise" text={t("settings.repo.resetFilters")} onTap={resetFilters} /> : null}
+          </VStack>
+        ) : (
+          result.groups.map((group, groupIndex) => (
+            <CardGroup
+              key={group.language || "other"}
+              title={groupTitle(group.language, group.items.length)}
+              headerAccessory={
+                groupIndex === 0 ? (
+                  <Button
+                    title={installLabel}
+                    buttonStyle="bordered"
+                    controlSize="regular"
+                    tint={allInstalledFromThisRepo ? "secondaryLabel" : tint.tint}
+                    disabled={isActionDisabled || result.shown === 0}
+                    action={() => void installAll()}
+                  />
+                ) : undefined
+              }
+            >
+              <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
+                {group.items.map((item, index) => (
+                  <VStack key={item.entry.key} spacing={0}>
+                    {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
+                    <EntryRow
+                      status={item}
+                      busy={busy || busyKey !== null}
+                      hideLanguages={grouped}
+                      label={busyKey === item.entry.key ? t("settings.repo.processing") : actionLabel(item)}
+                      onInstall={() => {
+                        if (busyKey === null && !busy) void install(item)
+                      }}
+                    />
+                  </VStack>
+                ))}
+              </LazyVStack>
+            </CardGroup>
+          ))
+        )}
+
+        {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
+      </PageScroll>
     </ZStack>
+  )
+}
+
+function FilterMenu({
+  filter,
+  active,
+  onToggle,
+  onLanguages,
+  onReset,
+}: {
+  filter: RepositoryFilter
+  active: boolean
+  onToggle: (key: "installedOnly" | "updatableOnly" | "hideUnsupported" | "hideNsfw", value: boolean) => void
+  onLanguages: () => void
+  onReset: () => void
+}) {
+  const toggles = [
+    { key: "installedOnly", title: t("settings.repo.filterInstalled") },
+    { key: "updatableOnly", title: t("settings.repo.filterUpdatable") },
+    { key: "hideUnsupported", title: t("settings.repo.filterHideUnsupported") },
+    { key: "hideNsfw", title: t("settings.repo.filterHideNsfw") },
+  ] as const
+
+  return (
+    <Menu
+      label={
+        <HStack spacing={4} alignment="center">
+          <Image
+            systemName={active ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"}
+            font="body"
+            fontWeight="medium"
+            foregroundStyle="label"
+            accessibilityLabel={t("settings.repo.filter")}
+          />
+        </HStack>
+      }
+    >
+      <Button
+        title={t("settings.repo.filterLanguage")}
+        systemImage="globe"
+        menuActionDismissBehavior="disabled"
+        action={onLanguages}
+      />
+      {toggles.map(item => (
+        <Button
+          key={item.key}
+          title={item.title}
+          systemImage={filter[item.key] ? "checkmark" : undefined}
+          menuActionDismissBehavior="disabled"
+          action={() => onToggle(item.key, !filter[item.key])}
+        />
+      ))}
+      <Button
+        title={t("settings.repo.resetFilters")}
+        systemImage="arrow.counterclockwise"
+        disabled={!active}
+        action={onReset}
+      />
+    </Menu>
   )
 }
 
@@ -413,17 +579,20 @@ export function EntryRow({
   status,
   busy,
   label,
+  hideLanguages = false,
   onInstall,
 }: {
   status: RepositoryEntryStatus
   busy: boolean
   label: string
+  /** 清單已按語言分組時不重複顯示語言。 */
+  hideLanguages?: boolean
   onInstall: () => void
 }) {
   const tint = useTint()
   const installedVersion = status.installed?.meta?.version ?? status.installed?.stored.version
   const isInstalled = Boolean(status.installed) && !status.updateAvailable
-  const languages = status.entry.languages?.filter(Boolean) ?? []
+  const languages = hideLanguages ? [] : (status.entry.languages?.filter(Boolean) ?? [])
   const unsupported = entryUnsupportedReason(status.entry)
   // Mihon 的多語擴充動輒上百種語言：只列前三種，其餘數字帶過（一行放得下）。
   const languageLine =

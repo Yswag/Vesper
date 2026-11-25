@@ -14,6 +14,8 @@ import { log } from "../log"
 import { requirePro } from "../pro"
 import { isCloudflareChallenge } from "../cloudflareDetect"
 import { dexvmAssets } from "../mihon/dexvm"
+import { mihonUserAgent } from "../mihon/network"
+import { timerAfter, timerEvery, type TimerHandle } from "../timers"
 
 const CALL_TIMEOUT_MS = 15_000
 const LOAD_TIMEOUT_MS = 30_000
@@ -95,6 +97,11 @@ const slots = new Map<string, WorkerSlot>()
 const pendingCounts = new Map<string, number>()
 /** 哪些源的 worker 真的載好了（重載判斷用；回收或 dispose 之後消失）。 */
 const loadedKeys = new Set<string>()
+/**
+ * 每個源的 worker 還有幾個背景 job（dexvm 的 GlobalScope.launch）。
+ * 回收時有 job 的排在最後：丟掉就得丟掉那些 job，能留就留。
+ */
+const pendingJobs = new Map<string, number>()
 /** 載入中的源：載入期間源就可能寫設定，這時 loadedKeys 裡還不是它。 */
 const loadingKeys = new Set<string>()
 /** 還沒被 worker 取走的載入素材（依源分開，兩個源同時載入也不會互相蓋掉）。 */
@@ -170,6 +177,22 @@ function busyCount(sourceKey: string): number {
   return pendingCounts.get(sourceKey) ?? 0
 }
 
+/** 這個源的 worker 還有幾個背景 job（頁面回報的，0 就是沒有）。 */
+export function sourcePendingJobs(sourceKey: string): number {
+  return pendingJobs.get(sourceKey) ?? 0
+}
+
+/** 頁面上現在有哪幾個 worker（診斷與探針用：上限是 `sourceWorkerLimit()`）。 */
+export function sourceWorkerSlots(): string[] {
+  return [...slots.keys()]
+}
+
+function notePendingJobs(sourceKey: string, remaining: number): void {
+  if (!sourceKey) return
+  if (remaining > 0) pendingJobs.set(sourceKey, remaining)
+  else pendingJobs.delete(sourceKey)
+}
+
 function bumpPending(sourceKey: string, delta: number): void {
   const next = busyCount(sourceKey) + delta
   if (next <= 0) pendingCounts.delete(sourceKey)
@@ -186,7 +209,8 @@ export function runSourceExclusive<T>(
   task: () => Promise<T>,
   priority: SourcePriority = "user"
 ): Promise<T> {
-  slotOf(sourceKey)
+  // 這裡**不能**建 slot：slot 代表「頁面上真的有這個 worker」，
+  // 先建的話 acquireSlot 會以為它已經存在，上限就永遠輪不到回收。
   bumpPending(sourceKey, 1)
   touch(sourceKey)
   return new Promise<T>((resolve, reject) => {
@@ -570,22 +594,102 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   const target: string | null = payload && typeof payload.url === "string" ? payload.url : null
   if (!target) return HttpResponse.badRequest()
 
-  const result = await performProxy(
-    {
-      url: target,
-      method: payload.method,
-      headers: payload.headers,
-      body: payload.body,
-      bodyBase64: payload.bodyBase64,
-    },
-    PROXY_TIMEOUT_MS,
-    sourceKeyOf(payload)
-  )
+  const started = Date.now()
+  let result: SourceProxyResult
+  proxyInFlight += 1
+  try {
+    result = await performProxy(
+      {
+        url: target,
+        method: payload.method,
+        headers: payload.headers,
+        body: payload.body,
+        bodyBase64: payload.bodyBase64,
+      },
+      PROXY_TIMEOUT_MS,
+      sourceKeyOf(payload)
+    )
+  } catch (failure) {
+    // fetch 自己丟（TLS、DNS、連線中斷）也在這裡接：這個回呼若往外丟，就會變成
+    // 沒有呼叫端的未處理錯誤，而 worker 只會看到 XHR 失敗、不知道為什麼。
+    const message = failure instanceof Error ? failure.message : String(failure ?? "")
+    const op = typeof payload?.op === "string" ? payload.op : "?"
+    log(
+      "warning",
+      "sourcehost",
+      `${sourceKeyOf(payload) ?? "?"} 的 ${op} 代理請求失敗：${target}（${message}）`,
+      failure
+    )
+    return HttpResponse.raw(599, "Proxy Failed", {
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      body: Data.fromRawString(`proxy failed: ${message}`, "utf-8")!,
+    })
+  } finally {
+    proxyInFlight = Math.max(0, proxyInFlight - 1)
+  }
+  noteProxyCall(sourceKeyOf(payload) ?? "", target, result.status, started, Date.now() - started, payload.headers)
 
   return HttpResponse.raw(result.status, "OK", {
     headers: result.headers,
     body: Data.fromArrayBuffer(result.bytes.buffer as ArrayBuffer)!,
   })
+}
+
+/** 已經進到 `/proxy`、還沒回的請求數（探針用它確認收尾時沒有還在飛的東西）。 */
+let proxyInFlight = 0
+
+export function sourceProxyInFlight(): number {
+  return proxyInFlight
+}
+
+/** 一次代理請求的紀錄（診斷用：拆得開「源在等網路」與「源在算」）。 */
+export interface ProxyCall {
+  sourceKey: string
+  url: string
+  status: number
+  /** 發出時間（毫秒）。 */
+  at: number
+  ms: number
+  /** 送出的 header 名稱（小寫、排序）；用來分辨同一個網址是不是同一個呼叫端。 */
+  headerNames: string
+  /** 實際送出的 User-Agent（源自己宣告的或宿主補的）。 */
+  userAgent: string
+}
+
+const PROXY_CALL_LIMIT = 400
+const proxyCalls: ProxyCall[] = []
+
+function noteProxyCall(
+  sourceKey: string,
+  url: string,
+  status: number,
+  at: number,
+  ms: number,
+  headers: unknown
+): void {
+  if (!sourceKey) return
+  const names =
+    headers && typeof headers === "object"
+      ? Object.keys(headers as Record<string, unknown>)
+          .map(name => name.toLowerCase())
+          .sort()
+          .join(",")
+      : ""
+  let userAgent = ""
+  if (headers && typeof headers === "object") {
+    for (const [name, value] of Object.entries(headers as Record<string, unknown>)) {
+      if (name.toLowerCase() === "user-agent") userAgent = String(value)
+    }
+  }
+  proxyCalls.push({ sourceKey, url, status, at, ms, headerNames: names, userAgent })
+  if (proxyCalls.length > PROXY_CALL_LIMIT) proxyCalls.splice(0, proxyCalls.length - PROXY_CALL_LIMIT)
+}
+
+/** 取出目前累積的代理請求並清空（探針用來對「這一段做了幾發 HTTP、各花多久」）。 */
+export function takeProxyCalls(): ProxyCall[] {
+  const out = proxyCalls.slice()
+  proxyCalls.length = 0
+  return out
 }
 
 /** 與 dexvm-host 的 `SLEEP_CAP_MS` 一致：再長就是擴充寫錯了，不該讓 worker 卡住。 */
@@ -768,6 +872,11 @@ async function createHost(): Promise<WebViewController> {
   const target = new WebViewController({ ephemeral: true })
   try {
     await target.addScriptMessageHandler("sourceResult", (payload: any) => {
+      // 背景 job 的剩餘數：沒有 taskId，也不代表任何一次呼叫成功或失敗。
+      if (payload?.pending === true) {
+        notePendingJobs(String(payload.sourceKey ?? ""), Number(payload.remaining) || 0)
+        return true
+      }
       const waiter = taskWaiters.get(payload?.id)
       if (!waiter) return true
       taskWaiters.delete(payload.id)
@@ -792,6 +901,7 @@ async function createHost(): Promise<WebViewController> {
   slots.clear()
   loadedKeys.clear()
   loadingKeys.clear()
+  pendingJobs.clear()
   pendingAix.clear()
   pendingPackages.clear()
   pendingApks.clear()
@@ -886,24 +996,66 @@ async function acquireSlot(sourceKey: string): Promise<void> {
   }
 }
 
-/** 最久沒用而且手上沒有呼叫的源（沒有就回 null：全都忙）。 */
-function pickVictim(): string | null {
-  let victim: WorkerSlot | null = null
-  for (const slot of slots.values()) {
-    if (busyCount(slot.key) > 0) continue
-    if (!victim || slot.lastUsed < victim.lastUsed) victim = slot
+/**
+ * 要回收誰：手上有呼叫的不算；有背景 job 的排在最後（真的只剩它們才丟）。
+ * 純函式，離線驗証驗這支。全部都在忙就回 null。
+ */
+export function nextWorkerVictim(candidates: readonly WorkerVictimCandidate[]): string | null {
+  let idleKey: string | null = null
+  let idleAt = Number.POSITIVE_INFINITY
+  let holdingKey: string | null = null
+  let holdingAt = Number.POSITIVE_INFINITY
+  for (const candidate of candidates) {
+    if (candidate.busy > 0) continue
+    if (candidate.pendingJobs > 0) {
+      if (candidate.lastUsed < holdingAt) {
+        holdingAt = candidate.lastUsed
+        holdingKey = candidate.key
+      }
+      continue
+    }
+    if (candidate.lastUsed < idleAt) {
+      idleAt = candidate.lastUsed
+      idleKey = candidate.key
+    }
   }
-  return victim ? victim.key : null
+  return idleKey ?? holdingKey
+}
+
+interface WorkerVictimCandidate {
+  key: string
+  lastUsed: number
+  /** 手上有呼叫（執行中＋排隊中）。 */
+  busy: number
+  /** dexvm 還沒跑完的背景 job。 */
+  pendingJobs: number
+}
+
+/** 最久沒用而且閒著的源（有背景 job 的排最後；全都忙就回 null）。 */
+function pickVictim(): string | null {
+  return nextWorkerVictim(
+    [...slots.values()].map(slot => ({
+      key: slot.key,
+      lastUsed: slot.lastUsed,
+      busy: busyCount(slot.key),
+      pendingJobs: sourcePendingJobs(slot.key),
+    }))
+  )
 }
 
 /** 叫頁面把這個 worker 收掉，並把它的狀態清除。 */
 async function dropWorker(sourceKey: string): Promise<void> {
+  const droppedJobs = sourcePendingJobs(sourceKey)
   slots.delete(sourceKey)
   loadedKeys.delete(sourceKey)
   loadingKeys.delete(sourceKey)
+  pendingJobs.delete(sourceKey)
   pendingAix.delete(sourceKey)
   pendingPackages.delete(sourceKey)
   pendingApks.delete(sourceKey)
+  if (droppedJobs > 0) {
+    log("info", "sourcehost", `回收 ${sourceKey} 的 worker：直接丟掉 ${droppedJobs} 個還沒跑完的背景 job`)
+  }
   if (!controller || !server) return
   try {
     // 頁面真的沒了也不用管：下一次呼叫會自己重建，到時這份狀態就不算數了。
@@ -943,6 +1095,8 @@ export function dropSource(sourceKey: string): Promise<void> {
 async function load(sourceKey: string, label: string, start: (id: number) => string, prepare: () => void): Promise<any> {
   await ensureHost()
   loadedKeys.delete(sourceKey)
+  // 新實例從空的佇列開始：上一份的背景 job 跟著舊實例一起沒了。
+  pendingJobs.delete(sourceKey)
   loadingKeys.add(sourceKey)
   prepare()
   try {
@@ -1009,14 +1163,18 @@ export interface MihonLoaded {
 export async function loadMihonExtension(
   apk: Uint8Array,
   apkKey: string,
-  prefs: Record<string, unknown> = {}
+  prefs: Record<string, unknown> = {},
+  userAgent: string = mihonUserAgent()
 ): Promise<MihonLoaded> {
   // 雜湊不符就在開宿主之前失敗，並說清楚是哪一個檔（不要變成頁面上的 404）。
   dexvmAssets()
   return await load(
     apkKey,
     "mihon load",
-    (id) => `return window.__sourceHost.startLoadMihon(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(prefs)})`,
+    (id) =>
+      `return window.__sourceHost.startLoadMihon(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(prefs)}, ${JSON.stringify(
+        userAgent
+      )})`,
     () => {
       pendingApks.set(apkKey, apk)
       pendingAix.delete(apkKey)
@@ -1172,7 +1330,8 @@ export function waitSourcePageJob(token: string, timeoutMs: number = IMAGE_TIMEO
   return new Promise<Uint8Array>((resolve, reject) => {
     job.resolve = resolve
     job.reject = reject
-    job.timer = setTimeout(() => {
+    // 不在主佇列時建不了 timer：那就沒有自己的逾時，交給呼叫端的 runTask 逾時。
+    job.timer = timerAfter(() => {
       discardPageJob(token, new Error(`source processPageImage timed out after ${timeoutMs}ms`))
     }, timeoutMs)
   })
@@ -1285,6 +1444,7 @@ function teardown(): void {
   slots.clear()
   loadedKeys.clear()
   loadingKeys.clear()
+  pendingJobs.clear()
   pendingAix.clear()
   pendingPackages.clear()
   pendingApks.clear()

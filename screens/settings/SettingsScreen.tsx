@@ -15,6 +15,7 @@ import {
   useThemeChoice,
 } from "../../app/theme"
 import { sourceUpdateCount, subscribeSourceUpdates } from "../../app/sourceUpdates"
+import { contentLanguagesDetail, subscribeContentLanguages } from "../../app/contentLanguages"
 import { useSubscription } from "../../app/useSubscription"
 import { comicLibrary } from "../../app/services"
 import { CardGroup, PageScroll } from "../../design/layout"
@@ -33,12 +34,13 @@ import { LogScreen } from "./LogScreen"
 import { MiniHubSettingsScreen } from "./MiniHubSettingsScreen"
 import { SourceListScreen } from "./SourceListScreen"
 import { ThemeSettingsScreen } from "./ThemeSettingsScreen"
+import { ContentLanguageScreen } from "./ContentLanguageScreen"
 import scriptJson from "../../script.json"
 
 export function SettingsScreen() {
   // 源清單（匯入／刪除／啟用）與下載狀態變動都要重繪這一頁。
   // 語言也在這裡：`applyLocaleSetting` 走 i18n 自己的訂閱通知，這一頁要跟著重繪才看得到新文字。
-  const refresh = useSubscription(subscribeSources, subscribeSourceUpdates, subscribeDownloads, subscribeLocale)
+  const refresh = useSubscription(subscribeSources, subscribeSourceUpdates, subscribeDownloads, subscribeLocale, subscribeContentLanguages)
   const choice = useThemeChoice()
   const comp = findComposition(choice.composition)
   const pal = findPalette(choice.palette)
@@ -77,6 +79,15 @@ export function SettingsScreen() {
             title={t("settings.root.sourceManage")}
             detail={t("settings.root.installed", { n: installed })}
             badge={sourceUpdateCount()}
+            chevron
+          />
+        </NavigationLink>
+        <Divider padding={{ leading: rowSeparatorInset }} />
+        <NavigationLink destination={<ContentLanguageScreen />}>
+          <IconRow
+            icon="globe"
+            title={t("settings.contentLanguage.title")}
+            detail={contentLanguagesDetail()}
             chevron
           />
         </NavigationLink>

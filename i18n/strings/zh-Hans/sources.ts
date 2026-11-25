@@ -53,6 +53,14 @@ export default {
   },
 
   mihon: {
+    failed: "源出错：{message}",
+    timeout: "源响应超时",
+    initFailed: "源初始化失败",
+    /** 重试后仍失败被标成不可用；`{reason}` 是最后一次的失败原因。 */
+    unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
+    /** 探索页的两个列表。 */
+    popular: "热门",
+    latest: "最新",
     missing: "扩展的文件不见了（请重新安装这个扩展）",
     invalidPackage: "这不是有效的 Mihon 扩展（apk）",
     noSources: "这个扩展没有可用的源",

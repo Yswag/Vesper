@@ -180,7 +180,17 @@ export function InfoRow({
 }
 
 /** 單選列。選中的那一列同時有 tint 色與勾號，不是只靠顏色。 */
-export function OptionRow({ title, checked, onTap }: { title: string; checked: boolean; onTap: () => void }) {
+export function OptionRow({
+  title,
+  subtitle,
+  checked,
+  onTap,
+}: {
+  title: string
+  subtitle?: string
+  checked: boolean
+  onTap: () => void
+}) {
   const tint = useTint()
   return (
     <HStack
@@ -191,9 +201,16 @@ export function OptionRow({ title, checked, onTap }: { title: string; checked: b
       contentShape="rect"
       onTapGesture={onTap}
     >
-      <Text font="body" fontWeight={checked ? "medium" : "regular"} foregroundStyle={checked ? tint.tint : "label"}>
-        {title}
-      </Text>
+      <VStack spacing={2} alignment="leading">
+        <Text font="body" fontWeight={checked ? "medium" : "regular"} foregroundStyle={checked ? tint.tint : "label"}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text font="caption2" foregroundStyle="tertiaryLabel">
+            {subtitle}
+          </Text>
+        ) : null}
+      </VStack>
       <Spacer />
       {checked ? (
         <Image systemName="checkmark" font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint} />

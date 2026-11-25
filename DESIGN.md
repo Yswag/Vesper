@@ -25,6 +25,7 @@ app/                 外殼與領域聚合
   services.ts        Composition root
   hostUI.tsx         源呼叫之原生 UI（彈窗、輸入框、提示）
   theme.tsx          底色主題配置與持久化
+  contentLanguages.ts 內容語言（倉庫篩選、新裝擴充預設子源、子源排序）
 engine/              源執行沙箱與媒體管線
   loader.ts          源檔案載入與沙箱執行
   globals.ts         Venera 運行時 Shim（Network / HtmlDocument / Convert / UI 等）
@@ -41,7 +42,10 @@ sources/             漫畫源管理
   runner.ts          SourceRunner：執行源邏輯的唯一中介
   store.ts           源腳本儲存
   repository.ts      源倉庫索引與訂閱
+  repositoryFilter.ts 倉庫條目篩選與分組（純函式）
+  groups.ts          已安裝源的分組（Mihon 一個 apk 一組）與組排序
   mihonIndex.ts      Mihon（keiyoushi）倉庫索引解析（index.pb／index.json／repo.json）
+  mihonMemo.ts       Mihon 的 SManga／SChapter 與 memo 落地（每部作品一個檔，LRU 200 部／8MB）
   registry.ts        運行時源註冊表
   webLogin.ts        WebView 登入與 Cloudflare 驗證代理
   downloads.ts       下載排程與狀態管理
@@ -74,7 +78,8 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 
 - 漫畫源腳本：`文件/Vesper/sources/<key>.js`
 - Aidoku 源：`文件/Vesper/sources/aidoku/<id>/`
-- Mihon 擴充：`文件/Vesper/sources/mihon/<packageId>/`（`extension.apk` 與 `installed.json`，後者記子源與啟用狀態）
+- Mihon 擴充：`文件/Vesper/sources/mihon/<packageId>/`（`extension.apk`、`installed.json` 記子源與啟用狀態，`memo/<sourceId>/` 是每個子源的 SManga／SChapter）
+- 源清單排序：`文件/Vesper/sources/order.json`（以列為單位，Mihon 子源靠 package key 收斂成同一組）
 - 倉庫設定：`文件/Vesper/sources/repositories.json`
 - 書架與歷史：`文件/Vesper/library.json`
 - 閱讀暫存頁面：`文件/Vesper/cache/reader/<一話一個目錄>/`（離開閱讀器即刪）

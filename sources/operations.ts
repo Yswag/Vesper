@@ -13,6 +13,7 @@ import type { SourceCallRetry } from "../engine/images"
 import { readChapterImageKeys } from "../engine/offline"
 import type { SourceViewer } from "../library/readerSettings"
 import * as aidoku from "./aidoku"
+import * as mihon from "./mihon"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
 import { ensureSourceReady, reloginSource, sourcesRevision, type ReloginOutcome } from "./registry"
@@ -419,6 +420,7 @@ export async function searchSource(
   scope?: SourceScope
 ): Promise<ComicListPage> {
   if (aidoku.isAidoku(source)) return await aidoku.search(source, keyword, options.page ?? 1, options.filters ?? [])
+  if (mihon.isMihon(source)) return await mihon.searchPage(source, keyword, options.page ?? 1)
   const instance = await requireInstance(source)
   const search = instance.search
   // ehentai 的 search 只有 loadNext（第一頁 = 沒有游標）；搜尋頁只取第一頁，所以這樣就夠。
@@ -537,6 +539,7 @@ export async function loadDetail(source: InstalledSource, comicId: string, scope
 /** 真的問源（分岔點）：Venera 的 `comic.loadInfo`／Aidoku 的 `getMangaDetails` ＋ `getChapterList`。 */
 async function fetchDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
   if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId, scope?.background === true)
+  if (mihon.isMihon(source)) return await mihon.detail(source, comicId, scope?.background === true)
   const instance = await requireInstance(source)
   if (!instance.comic?.loadInfo) throw new Error(t("sources.unsupported.detail"))
 
@@ -572,9 +575,11 @@ export async function loadChapterImages(
   epId: string,
   scope?: SourceScope
 ): Promise<string[]> {
-  if (aidoku.isAidoku(source)) {
+  if (aidoku.isAidoku(source) || mihon.isMihon(source)) {
     const started = Date.now()
-    const images = await aidoku.pages(source, comicId, epId)
+    const images = mihon.isMihon(source)
+      ? await mihon.chapterImageKeys(source, comicId, epId)
+      : await aidoku.pages(source, comicId, epId)
     log("info", "reader", `${source.stored.key} 章節 ${epId} → ${images.length} 張 (${Date.now() - started}ms)`)
     return images
   }

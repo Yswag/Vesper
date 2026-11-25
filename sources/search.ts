@@ -7,6 +7,7 @@ import { sourceWorkerLimit } from "../engine/sourcehost/host"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
 
+import * as mihon from "./mihon"
 import { searchSource, toListItems, type SourceScope } from "./operations"
 import type { InstalledSource } from "./registry"
 import type { ComicListItem } from "../engine/adapt"
@@ -29,12 +30,24 @@ export interface SearchProgress {
 const CONCURRENCY = 6
 
 /**
- * 下一個該派工的源（純邏輯，不碰宿主）：`aidoku` 逐筆標記還排著的源是不是 Aidoku 源。
- * Aidoku 名額用完就**跳過它往後找**——後面的 Venera 源不該被擋住。回 -1 表示現在都不能派。
+ * 下一個該派工的源（純邏輯，不碰宿主）：`hosted` 逐筆標記還排著的源是不是要佔宿主 worker
+ * （Aidoku 與 Mihon 一起算）。名額用完就**跳過它往後找**——後面的 Venera 源不該被擋住。
+ *
+ * `groups` 是 Mihon 的 apk：同一個 apk 的子源共用一個 worker，已經有一個在跑就跳過，
+ * 不然它們只會在 worker 前面排隊，看起來就像「搜尋很慢」。回 -1 表示現在都不能派。
  */
-export function nextSearchSourceIndex(aidoku: readonly boolean[], activeAidoku: number, limit: number): number {
-  for (let index = 0; index < aidoku.length; index++) {
-    if (!aidoku[index] || activeAidoku < limit) return index
+export function nextSearchSourceIndex(
+  hosted: readonly boolean[],
+  activeHosted: number,
+  limit: number,
+  groups?: readonly (string | undefined)[],
+  activeGroups?: ReadonlySet<string>
+): number {
+  for (let index = 0; index < hosted.length; index++) {
+    if (hosted[index] && activeHosted >= limit) continue
+    const group = groups?.[index]
+    if (group !== undefined && activeGroups?.has(group) === true) continue
+    return index
   }
   return -1
 }
@@ -84,10 +97,15 @@ export async function searchAll(
   const results: SourceSearchResult[] = []
   /** 還沒派工的源，維持呼叫端給的順序。 */
   const pending = sources.slice()
-  const aidokuPending: boolean[] = pending.map(source => source.stored.kind === "aidoku")
+  const hostedPending: boolean[] = pending.map(source => source.stored.kind !== "venera")
+  /** Mihon 的 apk：同一個 apk 的子源共用一個 worker，同時只能派一個。 */
+  const groupPending: Array<string | undefined> = pending.map(source =>
+    mihon.isMihon(source) ? mihon.packageKeyOf(source.stored.key) : undefined
+  )
   const limit = sourceWorkerLimit()
+  const activeGroups = new Set<string>()
   let active = 0
-  let activeAidoku = 0
+  let activeHosted = 0
   let done = 0
   /** 第一個把整輪打下來的錯（取消）：後面的源不再派工，但已經在飛的照樣把結果回報出去。 */
   let halted: unknown = null
@@ -105,12 +123,14 @@ export async function searchAll(
   /** 派工到並行上限或沒有可派的源為止。 */
   const fill = (): void => {
     while (active < CONCURRENCY) {
-      const index = nextSearchSourceIndex(aidokuPending, activeAidoku, limit)
+      const index = nextSearchSourceIndex(hostedPending, activeHosted, limit, groupPending, activeGroups)
       if (index < 0) return
       const [source] = pending.splice(index, 1)
-      const aidoku = aidokuPending.splice(index, 1)[0]
+      const hosted = hostedPending.splice(index, 1)[0]
+      const group = groupPending.splice(index, 1)[0]
       active += 1
-      if (aidoku) activeAidoku += 1
+      if (hosted) activeHosted += 1
+      if (group !== undefined) activeGroups.add(group)
       searchOne(source, keyword, optionsOf(source), { signal })
         .then(
           result => {
@@ -126,7 +146,8 @@ export async function searchAll(
         )
         .then(() => {
           active -= 1
-          if (aidoku) activeAidoku -= 1
+          if (hosted) activeHosted -= 1
+          if (group !== undefined) activeGroups.delete(group)
           const resume = wake
           wake = null
           resume?.()

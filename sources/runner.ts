@@ -14,6 +14,7 @@ import {
 } from "../engine/loader"
 import { t } from "../i18n"
 import * as aidoku from "./aidoku"
+import * as mihon from "./mihon"
 import {
   canSendComment,
   exploreEntries,
@@ -83,7 +84,7 @@ export type ListTarget =
 export type Cursor = { page: number } | { next: string }
 
 /** 這一頁的源是哪一種；畫面用它顯示來源類型，不碰 `stored.kind`。 */
-export type SourceKind = "venera" | "aidoku"
+export type SourceKind = "venera" | "aidoku" | "mihon"
 
 export interface SourceHandle {
   readonly key: string
@@ -171,6 +172,7 @@ async function loadList(
 /** 把已載入的源包成 handle。operation 一律 delegate 給現有實作。 */
 export function openSource(source: InstalledSource, deps: RunnerDeps = {}): SourceHandle {
   if (aidoku.isAidoku(source)) return aidokuHandle(source)
+  if (mihon.isMihon(source)) return mihonHandle(source)
   return {
     key: source.stored.key,
     kind: "venera",
@@ -231,6 +233,58 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     comicModule: aidoku.comicModule(source),
     thumbnailRequest: url => aidoku.coverRequest(source, url),
   }
+}
+
+/**
+ * Mihon 子源：清單（熱門／最新）走 dexvm 的 popular／latest，搜尋併進聚合搜尋；
+ * 詳情與章節走 `sources/operations.ts` 的共用入口（快取與背景優先級都在那裡）。
+ * 沒有首頁、排行、留言與登入。
+ */
+function mihonHandle(source: InstalledSource): SourceHandle {
+  return {
+    key: source.stored.key,
+    kind: "mihon",
+    meta: source.meta,
+    capabilities: source.capabilities,
+    settingsSpecs: [],
+    settings: {},
+    error: source.error,
+    ready: () => mihon.ready(source),
+    explore: () => mihon.exploreOf(source),
+    hasHome: () => false,
+    home: () => Promise.reject(new Error(t("sources.unsupported.home"))),
+    ranking: () => Promise.reject(new Error(t("sources.unsupported.ranking"))),
+    rankingOptions: () => [],
+    hasRanking: () => false,
+    list: (target, cursor) => mihonList(source, target, cursor),
+    detail: (comicId, scope) => loadDetail(source, comicId, scope),
+    chapter: (comicId, epId) => openChapterImages(source, comicId, epId),
+    comments: () => Promise.reject(new Error(t("sources.unsupported.comments"))),
+    canPostComment: () => false,
+    postComment: () => Promise.reject(new Error(t("sources.unsupported.sendComment"))),
+    loggedIn: () => false,
+    relogin: () => Promise.resolve("no-credentials"),
+    imageRetry: () => call => Promise.resolve(call()),
+    comicModule: mihon.comicModule(source),
+    thumbnailRequest: url => mihon.coverRequest(source, url),
+  }
+}
+
+/** Mihon 的「瀏覽」：探索頁的熱門／最新，加上搜尋（沒有分類頁）。 */
+function mihonList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
+  if (target.kind === "category" || target.kind === "listing") {
+    return Promise.reject(new Error(t("sources.unsupported.category")))
+  }
+  const page = "page" in cursor ? cursor.page : 1
+  const result =
+    target.kind === "search"
+      ? mihon.searchPage(source, target.keyword, page)
+      : mihon.listPage(
+          source,
+          target.kind === "explore" && target.index === 1 ? "latest" : "popular",
+          page
+        )
+  return result.then(list => ({ sections: [{ title: "", comics: list.comics }], maxPage: list.maxPage }))
 }
 
 /** Aidoku 的「瀏覽」只有 listings 與搜尋（沒有分類頁）。 */

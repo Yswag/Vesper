@@ -20,13 +20,19 @@ import {
   resetSourceHost,
   runSourceExclusive,
   type MihonLoadTimings,
+  type SourcePriority,
 } from "../engine/sourcehost/host"
-import { appDataRoot, ensureDir, exists, join, listDir, readText, remove, writeBytes, writeText } from "../engine/fs"
+import { appDataRoot, ensureDir, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
+import type { ImageRequest } from "../engine/images"
 import { log } from "../engine/log"
-import { getLocale, t } from "../i18n"
+import { t } from "../i18n"
+import { getContentLanguages } from "../app/contentLanguages"
 
+import * as memo from "./mihonMemo"
 import type { StoredSource } from "./store"
 import type { InstalledSource } from "./registry"
+import type { ComicListItem, ComicListPage } from "../engine/adapt"
+import type { ComicDetail, ComicStatus, ExploreEntry } from "./operations"
 
 const PREFIX = "mihon:"
 
@@ -35,7 +41,7 @@ export const SUPPORTED_EXTENSION_LIBS = ["1.4", "1.6"]
 
 /** 章節／頁面／詳情在真實源上就是慢；其餘呼叫維持宿主的 15 秒。 */
 const SLOW_OP_TIMEOUT_MS = 30_000
-const SLOW_OPS = new Set(["details", "chapters", "pages"])
+const SLOW_OPS = new Set(["details", "chapters", "pages", "mangaUpdate"])
 
 export function keyOf(packageId: string): string {
   return PREFIX + packageId
@@ -143,6 +149,9 @@ export interface MihonLoaded {
 /** 這個 apk 的位元組與設定：worker 被回收或被宿主 dispose 之後要能重開。 */
 const extensions = new Map<string, { bytes: Uint8Array; prefs: MihonPrefs }>()
 
+/** `sources` op 的結果（一個 apk 的子源清單）：`supportsLatest` 只有這裡有，磁碟上的安裝記錄沒有。 */
+const sourceLists = new Map<string, MihonSource[]>()
+
 function messageOf(failure: unknown): string {
   return failure instanceof Error ? failure.message : String(failure ?? "")
 }
@@ -178,6 +187,7 @@ async function ensureLoaded(apkKey: string): Promise<void> {
  */
 export async function open(apkKey: string, apk: Uint8Array, prefs: MihonPrefs = {}): Promise<MihonLoaded> {
   extensions.set(apkKey, { bytes: apk, prefs })
+  sourceLists.delete(apkKey)
   return await attemptWithHealing(apkKey, "open", () =>
     runSourceExclusive(apkKey, async () => {
       const loaded = await loadMihonExtension(apk, apkKey, prefs)
@@ -187,17 +197,54 @@ export async function open(apkKey: string, apk: Uint8Array, prefs: MihonPrefs = 
 }
 
 /** 一次 op：先確保這個 apk 的 worker 載著它。 */
-async function call<T>(apkKey: string, op: string, args: Record<string, unknown> = {}): Promise<T> {
+async function call<T>(
+  apkKey: string,
+  op: string,
+  args: Record<string, unknown> = {},
+  priority: SourcePriority = "user"
+): Promise<T> {
   return await attemptWithHealing(apkKey, op, () =>
-    runSourceExclusive(apkKey, async () => {
-      await ensureLoaded(apkKey)
-      return (await callMihon(apkKey, op, args, opTimeout(op))) as T
-    })
+    runSourceExclusive(
+      apkKey,
+      async () => {
+        await ensureLoaded(apkKey)
+        return (await callMihon(apkKey, op, args, opTimeout(op))) as T
+      },
+      priority
+    )
   )
 }
 
 export async function sources(apkKey: string): Promise<MihonSource[]> {
-  return await call<MihonSource[]>(apkKey, "sources")
+  const list = await call<MihonSource[]>(apkKey, "sources")
+  sourceLists.set(apkKey, list)
+  return list
+}
+
+/** 搜尋（`filters` 是 dexvm 的 `FilterDef` 狀態；票 05 才接 UI，現在一律空陣列）。 */
+export async function search(
+  apkKey: string,
+  sourceId: string,
+  query: string,
+  page = 1,
+  filters: Array<{ name: string; state: number }> = []
+): Promise<MihonMangaPage> {
+  return await call<MihonMangaPage>(apkKey, "search", { sourceId, query, page, filters })
+}
+
+/** 一張圖的最終請求（url＋headers，不抓圖）：封面交給縮圖管線自己抓。 */
+export async function imageRequest(
+  apkKey: string,
+  sourceId: string,
+  page: MihonPage
+): Promise<{ url: string; method: string; headers: Array<[string, string]> }> {
+  const raw = await call<any>(apkKey, "imageRequest", { sourceId, page })
+  const headers: Array<[string, string]> = Array.isArray(raw?.headers)
+    ? raw.headers
+        .filter((pair: unknown) => Array.isArray(pair) && pair.length >= 2)
+        .map((pair: any[]) => [String(pair[0]), String(pair[1])])
+    : []
+  return { url: String(raw?.url ?? page.imageUrl ?? page.url), method: String(raw?.method ?? "GET"), headers }
 }
 
 export async function popular(apkKey: string, sourceId: string, page = 1): Promise<MihonMangaPage> {
@@ -215,6 +262,39 @@ export async function details(apkKey: string, sourceId: string, manga: MihonMang
 /** 上游順序（新→舊）；要舊→新的話由映射層反轉。 */
 export async function chapters(apkKey: string, sourceId: string, manga: MihonManga): Promise<MihonChapter[]> {
   return await call<MihonChapter[]>(apkKey, "chapters", { sourceId, manga })
+}
+
+export interface MihonMangaUpdate {
+  manga: MihonManga
+  chapters: MihonChapter[]
+}
+
+/**
+ * 詳情＋章節一次問：1.6 的源只跑一次 `getMangaUpdate`（一發主頁），
+ * 沒有這個介面的 legacy 源由 dexvm 自己退成 details＋chapters。
+ * `fetchDetails`／`fetchChapters` 預設都開；只要其中一半的呼叫點就關掉另一個。
+ */
+export async function mangaUpdate(
+  apkKey: string,
+  sourceId: string,
+  manga: MihonManga,
+  options: { fetchDetails?: boolean; fetchChapters?: boolean; priority?: SourcePriority } = {}
+): Promise<MihonMangaUpdate> {
+  const raw = await call<any>(
+    apkKey,
+    "mangaUpdate",
+    {
+      sourceId,
+      manga,
+      fetchDetails: options.fetchDetails !== false,
+      fetchChapters: options.fetchChapters !== false,
+    },
+    options.priority ?? "user"
+  )
+  return {
+    manga: raw && typeof raw.manga === "object" && raw.manga !== null ? (raw.manga as MihonManga) : manga,
+    chapters: Array.isArray(raw?.chapters) ? (raw.chapters as MihonChapter[]) : [],
+  }
 }
 
 export async function pages(apkKey: string, sourceId: string, chapter: MihonChapter): Promise<MihonPage[]> {
@@ -261,10 +341,26 @@ export async function evalJsInWorker(
   })
 }
 
-/** 丟掉這個 apk 的載入狀態（下次呼叫重載）：換檔或移除時用。 */
+/**
+ * 丟掉這個 apk 的載入狀態（下次呼叫重載）：換檔、移除、或「模擬重開 App」時用。
+ * 子源的記憶體（memo、PageRef、封面請求）也一起丟，磁碟上的檔案不動。
+ */
 export function forget(apkKey: string): void {
   extensions.delete(apkKey)
+  sourceLists.delete(apkKey)
   forgetSource(apkKey)
+  const packageId = packageIdOf(apkKey)
+  for (const child of installedOf(apkKey).sources ?? []) forgetChildMemory(sourceKeyOf(packageId, child.id))
+}
+
+function forgetChildMemory(sourceKey: string): void {
+  memo.forget(sourceKey)
+  for (const key of [...pageRefs.keys()]) {
+    if (key.startsWith(`${sourceKey}\n`)) pageRefs.delete(key)
+  }
+  for (const key of [...coverRequests.keys()]) {
+    if (key.startsWith(`${sourceKey}\n`)) coverRequests.delete(key)
+  }
 }
 
 // ---------------------------------------------------------------- 磁碟上的擴充
@@ -273,8 +369,8 @@ export function forget(apkKey: string): void {
 //   <documents>/Vesper/sources/mihon/<packageId>/installed.json
 //
 // 一個 apk 的多個語言子源各自是一個 Vesper 源，但共用一份 apk 與一個 worker。
-// `installed.json` 記下子源清單（id／名稱／語言／網址）與各自的啟用狀態：啟動列源時
-// 不必開 VM，也就沒有「列源要先跑 wasm」這種事。
+// `installed.json` 記下子源清單（id／名稱／語言／網址）與「手動關掉」清單，可見性由
+// 「語言在內容語言內」與「不在 disabled」兩者決定（同上游 enabledLanguages × disabledSources）。
 
 interface ChildRecord {
   id: string
@@ -289,7 +385,11 @@ interface InstallRecord {
   installedAt?: number
   updatedAt?: number
   iconUrl?: string | null
-  /** 子源 id → 啟用；安裝當下就把每一個算好寫進來，之後由使用者個別切換。 */
+  /** 子源 id 的清單：使用者手動關掉的（上游 `disabledSources`）。 */
+  disabled?: string[]
+  /** 2＝已從舊的 `enabled` 逐源開關轉過來。 */
+  schema?: number
+  /** 舊資料：子源 id → 啟用；只在轉換時讀。 */
   enabled?: Record<string, boolean>
   sources?: ChildRecord[]
 }
@@ -317,10 +417,28 @@ function writeInstalled(packageKey: string, record: InstallRecord): void {
   writeText(join(dirOf(packageKey), "installed.json"), JSON.stringify(record, null, 2))
 }
 
-/** 子源預設啟用：`all` 一律開，其餘看 App 語言（繁簡中文→zh、英文→en）。 */
-function enabledByDefault(lang: string): boolean {
-  if (lang === "all") return true
-  return lang === (getLocale().startsWith("zh") ? "zh" : "en")
+/** 子源預設看不看得到：語言在內容語言內（上游 `lang in enabledLanguages`）。 */
+export function languageVisible(lang: string): boolean {
+  return getContentLanguages().includes(lang)
+}
+
+/**
+ * 舊資料（逐源 enabled）轉成「手動關掉」清單：
+ * enabled=false 且在內容語言內 → 算手動關掉；不在內容語言內 → 預設看不到，不進清單。
+ * 只做一次（schema=2），重跑不會多加。
+ */
+function migrateRecord(packageKey: string, record: InstallRecord): InstallRecord {
+  if (record.schema === 2) return record
+  const disabled = new Set(Array.isArray(record.disabled) ? record.disabled : [])
+  for (const child of record.sources ?? []) {
+    if (record.enabled?.[child.id] === false && languageVisible(String(child.lang ?? ""))) {
+      disabled.add(child.id)
+    }
+  }
+  const next: InstallRecord = { ...record, disabled: [...disabled], schema: 2 }
+  delete next.enabled
+  writeInstalled(packageKey, next)
+  return next
 }
 
 /** 一個擴充有多個子源時，名稱後面帶語言——否則源列表會是一排同名。 */
@@ -332,7 +450,8 @@ function childSource(packageKey: string, record: InstallRecord, child: ChildReco
   const key = sourceKeyOf(packageIdOf(packageKey), child.id)
   const name = displayNameOf(child, total)
   const version = String(record.version ?? "")
-  const enabled = record.enabled?.[child.id] !== false
+  const manualDisabled = Array.isArray(record.disabled) && record.disabled.includes(child.id)
+  const enabled = languageVisible(child.lang) && !manualDisabled
   const stored: StoredSource = {
     key,
     kind: "mihon",
@@ -349,6 +468,8 @@ function childSource(packageKey: string, record: InstallRecord, child: ChildReco
   return {
     stored,
     enabled,
+    manualDisabled,
+    language: child.lang,
     meta: { className: "", key, name, version, minAppVersion: "", url: child.baseUrl },
   }
 }
@@ -358,7 +479,7 @@ export function installedSources(): InstalledSource[] {
   const out: InstalledSource[] = []
   for (const packageId of listDir(join(appDataRoot(), "sources", "mihon"))) {
     const packageKey = keyOf(packageId)
-    const record = installedOf(packageKey)
+    const record = migrateRecord(packageKey, installedOf(packageKey))
     const children = Array.isArray(record.sources) ? (record.sources as ChildRecord[]) : []
     if (children.length === 0 || !exists(join(dirOf(packageKey), "extension.apk"))) {
       const stored: StoredSource = {
@@ -457,12 +578,8 @@ export async function install(apk: Uint8Array, info: MihonInstallInfo = {}): Pro
   const children = await sources(apkKey)
   if (children.length === 0) throw new Error(t("sources.mihon.noSources"))
 
-  const previous = installedOf(packageKey)
-  const enabled: Record<string, boolean> = {}
-  for (const child of children) {
-    const id = String(child.id)
-    enabled[id] = previous.enabled?.[id] ?? enabledByDefault(String(child.lang ?? ""))
-  }
+  const previous = migrateRecord(packageKey, installedOf(packageKey))
+  const disabled = new Set(Array.isArray(previous.disabled) ? previous.disabled : [])
 
   ensureDir(dirOf(packageKey))
   writeBytes(join(dirOf(packageKey), "extension.apk"), apk)
@@ -478,7 +595,8 @@ export async function install(apk: Uint8Array, info: MihonInstallInfo = {}): Pro
     installedAt: previous.installedAt ?? Date.now(),
     updatedAt: Date.now(),
     iconUrl: info.iconUrl ?? previous.iconUrl ?? null,
-    enabled,
+    disabled: childRecords.map(child => child.id).filter(id => disabled.has(id)),
+    schema: 2,
     sources: childRecords,
   }
   writeInstalled(packageKey, record)
@@ -487,16 +605,23 @@ export async function install(apk: Uint8Array, info: MihonInstallInfo = {}): Pro
   return childRecords.map(child => childSource(packageKey, record, child, childRecords.length).stored)
 }
 
-/** 停用／啟用一個子源（寫回 `installed.json`；`registry.setSourceEnabled` 會走這裡）。 */
+/** 手動關掉／打開一個子源（寫回 `installed.json`，不影響內容語言）。 */
 export function setEnabled(key: string, enabled: boolean): void {
   const packageKey = packageKeyOf(key)
   if (!exists(dirOf(packageKey))) return
-  const record = installedOf(packageKey)
-  const next = { ...(record.enabled ?? {}) }
+  const record = migrateRecord(packageKey, installedOf(packageKey))
+  const disabled = new Set(Array.isArray(record.disabled) ? record.disabled : [])
   const sourceId = sourceIdOf(key)
-  if (sourceId !== undefined) next[sourceId] = enabled
-  else for (const id of Object.keys(next)) next[id] = enabled
-  writeInstalled(packageKey, { ...record, enabled: next })
+  if (sourceId !== undefined) {
+    if (enabled) disabled.delete(sourceId)
+    else disabled.add(sourceId)
+  } else {
+    for (const child of record.sources ?? []) {
+      if (enabled) disabled.delete(child.id)
+      else disabled.add(child.id)
+    }
+  }
+  writeInstalled(packageKey, { ...record, disabled: [...disabled], schema: 2 })
   clearFailure(key)
 }
 
@@ -505,8 +630,358 @@ export function uninstall(key: string): void {
   const packageKey = packageKeyOf(key)
   const record = installedOf(packageKey)
   remove(dirOf(packageKey))
-  for (const child of record.sources ?? []) clearFailure(sourceKeyOf(packageIdOf(packageKey), child.id))
+  for (const child of record.sources ?? []) {
+    const childKey = sourceKeyOf(packageIdOf(packageKey), child.id)
+    clearFailure(childKey)
+    memo.forget(childKey)
+  }
   clearFailure(packageKey)
   forget(packageKey)
   log("info", "mihon", `已移除 ${packageIdOf(packageKey)}`)
+}
+
+// ---------------------------------------------------------------- 映射層
+//
+// 把 Mihon 的子源包成 Vesper 的四段（清單／搜尋／詳情／章節）與圖片請求。
+// comicId＝SManga.url、epId＝SChapter.url；SManga／SChapter 的完整欄位與 memo 存在源層的
+// side store（`sources/mihonMemo.ts`），要傳給 dexvm 時再組回去。
+
+/** 子源在這個 App 裡的座標：apk（worker key）、sourceId、side store 目錄、站台網址。 */
+export interface MihonRef {
+  sourceKey: string
+  apkKey: string
+  sourceId: string
+  /** `sources/mihon/<packageId>/memo/<sourceId>`。 */
+  dir: string
+  baseUrl: string
+}
+
+export function refOf(source: InstalledSource): MihonRef {
+  const sourceKey = source.stored.key
+  const apkKey = packageKeyOf(sourceKey)
+  const sourceId = sourceIdOf(sourceKey)
+  if (sourceId === undefined) throw new Error(t("sources.mihon.noSources"))
+  return {
+    sourceKey,
+    apkKey,
+    sourceId,
+    dir: join(dirOf(apkKey), "memo", sourceId),
+    baseUrl: source.meta?.url ?? source.stored.homeUrl ?? "",
+  }
+}
+
+/**
+ * 確保這個 apk 載進 worker（第一次用到時才讀磁碟）。
+ * 子源之間共用同一個 worker，所以這裡只認 apk。
+ */
+export async function ensureExtension(apkKey: string): Promise<void> {
+  if (extensions.has(apkKey) || isSourceLoaded(apkKey)) return
+  const apk = readBytes(join(dirOf(apkKey), "extension.apk"))
+  if (!apk) throw new Error(t("sources.mihon.missing"))
+  await open(apkKey, apk)
+}
+
+/** 宿主層的技術字換成人話，擴充自己的錯誤原樣保留（同 Aidoku）。 */
+function userMessageOf(failure: unknown): string {
+  const message = messageOf(failure)
+  if (/timed out|timeout/i.test(message)) return t("sources.mihon.timeout")
+  if (/did not become ready|failed to load|worker failed|failed to start/i.test(message)) {
+    return t("sources.mihon.initFailed")
+  }
+  return message
+}
+
+function assertAvailable(sourceKey: string): void {
+  const reason = failureOf(sourceKey)
+  if (reason) throw new Error(t("sources.mihon.unavailable", { reason }))
+}
+
+/**
+ * 一次對外的源操作：宿主／worker 壞掉重試後仍失敗就標記這個子源不可用（同 Aidoku），
+ * 其餘錯誤包成「源出錯」。
+ */
+async function mapAsk<T>(source: InstalledSource, step: string, task: () => Promise<T>): Promise<T> {
+  assertAvailable(source.stored.key)
+  try {
+    return await task()
+  } catch (failure) {
+    log("error", "mihon", `${source.stored.key} 的 ${step} 失敗`, failure)
+    if (isSourceHostError(failure)) markFailure(source.stored.key, userMessageOf(failure))
+    throw new Error(t("sources.mihon.failed", { message: userMessageOf(failure) }))
+  }
+}
+
+/** 頁面清單的種類：熱門一定有，最新看源的 `supportsLatest`。 */
+type MihonListKind = "popular" | "latest"
+
+function listKinds(apkKey: string, sourceId: string): MihonListKind[] {
+  const list = sourceLists.get(apkKey)
+  if (!list) return ["popular"]
+  const child = list.find(item => item.id === sourceId)
+  return child?.supportsLatest === true ? ["popular", "latest"] : ["popular"]
+}
+
+/** 載入子源清單（`supportsLatest` 在裡面）：探索頁要知道有沒有「最新」。 */
+export async function ready(source: InstalledSource): Promise<void> {
+  const ref = refOf(source)
+  await mapAsk(source, "load", async () => {
+    await ensureExtension(ref.apkKey)
+    if (!sourceLists.has(ref.apkKey)) await sources(ref.apkKey)
+  })
+}
+
+export function exploreOf(source: InstalledSource): ExploreEntry[] {
+  const ref = refOf(source)
+  const kinds = listKinds(ref.apkKey, ref.sourceId)
+  return kinds.map((kind, index) => ({
+    index,
+    title: kind === "latest" ? t("sources.mihon.latest") : t("sources.mihon.popular"),
+    type: "multiPageComicList",
+    supportsNext: true,
+  }))
+}
+
+function absolute(url: string, baseUrl: string): string {
+  const value = url.trim()
+  if (!value) return ""
+  if (value.startsWith("//")) return `https:${value}`
+  if (/^https?:/i.test(value)) return value
+  if (!baseUrl) return value
+  return value.startsWith("/") ? `${baseUrl.replace(/\/$/, "")}${value}` : `${baseUrl.replace(/\/$/, "")}/${value}`
+}
+
+function tagsOf(genre: string): Array<{ namespace: string; values: string[] }> {
+  const values = genre
+    .split(",")
+    .map(value => value.trim())
+    .filter(value => value.length > 0)
+  return values.length > 0 ? [{ namespace: "", values }] : []
+}
+
+/** Mihon 的 SManga.status：1 連載 / 2 完結 / 4 完結（停止出版）/ 5 腰斬 / 6 休刊。 */
+const STATUS_BY_CODE: Record<number, ComicStatus> = {
+  1: "ongoing",
+  2: "completed",
+  4: "completed",
+  5: "cancelled",
+  6: "hiatus",
+}
+
+function toComicItem(ref: MihonRef, manga: MihonManga): ComicListItem | null {
+  if (!manga.url) return null
+  return {
+    id: manga.url,
+    title: manga.title || t("sources.untitled"),
+    subtitle: manga.author || undefined,
+    cover: absolute(manga.thumbnailUrl, ref.baseUrl) || undefined,
+    tags: manga.genre
+      ? manga.genre
+          .split(",")
+          .map(value => value.trim())
+          .filter(value => value.length > 0)
+      : [],
+    description: manga.description || undefined,
+  }
+}
+
+function toListPage(ref: MihonRef, raw: MihonMangaPage, page: number): ComicListPage {
+  const mangas = Array.isArray(raw?.mangas) ? raw.mangas : []
+  for (const manga of mangas) memo.rememberManga(ref.sourceKey, manga)
+  return {
+    comics: mangas.map(manga => toComicItem(ref, manga)).filter((item): item is ComicListItem => item !== null),
+    maxPage: raw?.hasNextPage === true ? page + 1 : page,
+  }
+}
+
+/** 瀏覽：熱門／最新。`kind` 由探索頁的序號決定（`exploreOf` 的順序）。 */
+export async function listPage(
+  source: InstalledSource,
+  kind: MihonListKind,
+  page: number
+): Promise<ComicListPage> {
+  const ref = refOf(source)
+  return await mapAsk(source, kind, async () => {
+    await ensureExtension(ref.apkKey)
+    const raw = kind === "latest" ? await latest(ref.apkKey, ref.sourceId, page) : await popular(ref.apkKey, ref.sourceId, page)
+    return toListPage(ref, raw, page)
+  })
+}
+
+export async function searchPage(
+  source: InstalledSource,
+  keyword: string,
+  page = 1
+): Promise<ComicListPage> {
+  const ref = refOf(source)
+  return await mapAsk(source, "search", async () => {
+    await ensureExtension(ref.apkKey)
+    return toListPage(ref, await search(ref.apkKey, ref.sourceId, keyword, page), page)
+  })
+}
+
+/**
+ * 詳情＋章節：一次 `mangaUpdate`（fetchDetails／fetchChapters 都開）取代原本的兩個 op。
+ * 回來的完整 SManga 與 SChapter 寫進 side store：之後 `pages` 只拿 epId 也組得回去。
+ */
+export async function detail(source: InstalledSource, comicId: string, background = false): Promise<ComicDetail> {
+  const ref = refOf(source)
+  const priority: SourcePriority = background ? "background" : "user"
+  return await mapAsk(source, "detail", async () => {
+    await ensureExtension(ref.apkKey)
+    const update = await mangaUpdate(ref.apkKey, ref.sourceId, memo.mangaOf(ref.dir, ref.sourceKey, comicId), {
+      fetchDetails: true,
+      fetchChapters: true,
+      priority,
+    })
+    const manga = update.manga
+    const list = update.chapters
+    memo.rememberComic(ref.dir, ref.sourceKey, comicId || manga.url, manga, list)
+    return {
+      id: comicId,
+      title: manga.title || t("sources.untitled"),
+      cover: absolute(manga.thumbnailUrl, ref.baseUrl) || undefined,
+      description: manga.description || undefined,
+      status: STATUS_BY_CODE[Number(manga.status)],
+      tags: tagsOf(manga.genre ?? ""),
+      // Mihon 回新→舊；Vesper 全 App 一律舊→新（同 Aidoku 在這裡轉一次）。
+      chapters: list
+        .map(chapter => ({
+          group: chapter.scanlator ?? "",
+          id: chapter.url,
+          title: chapter.name || chapter.url,
+          locked: false,
+        }))
+        .filter(chapter => chapter.id)
+        .reverse(),
+      uploader: manga.author || undefined,
+      artists: manga.artist || undefined,
+      url: /^https?:/i.test(manga.url ?? "") ? manga.url : absolute(manga.url ?? "", ref.baseUrl) || undefined,
+    }
+  })
+}
+
+/** 診斷用：這一部會傳給 dexvm 的 Manga（有存過就是完整物件）。 */
+export function mangaArgumentOf(source: InstalledSource, comicId: string): MihonManga {
+  const ref = refOf(source)
+  return memo.mangaOf(ref.dir, ref.sourceKey, comicId)
+}
+
+/** 診斷用：這一話會傳給 dexvm 的 Chapter（重開 App 後也拿得到）。 */
+export function chapterArgumentOf(source: InstalledSource, comicId: string, epId: string): MihonChapter {
+  const ref = refOf(source)
+  return memo.chapterOf(ref.dir, ref.sourceKey, comicId, epId)
+}
+
+/** 頁面 → 圖片鍵：鍵就是 `Page.url`（源的頁面身分），dexvm 的 PageRef 另外記在記憶體。 */
+const pageRefs = new Map<string, MihonPage>()
+const PAGE_REF_LIMIT = 4000
+
+function pageRefKey(sourceKey: string, comicId: string, epId: string, url: string): string {
+  return `${sourceKey}\n${comicId}\n${epId}\n${url}`
+}
+
+function rememberPageRefs(sourceKey: string, comicId: string, epId: string, pages: MihonPage[]): void {
+  for (const page of pages) {
+    const key = pageRefKey(sourceKey, comicId, epId, page.url || page.imageUrl)
+    pageRefs.delete(key)
+    pageRefs.set(key, page)
+  }
+  while (pageRefs.size > PAGE_REF_LIMIT) {
+    const oldest = pageRefs.keys().next().value as string | undefined
+    if (oldest === undefined) return
+    pageRefs.delete(oldest)
+  }
+}
+
+/**
+ * 這一頁的 PageRef。整話都命中磁碟時（重開 App）沒有 `pages` 的結果，
+ * 就用圖片鍵（＝Page.url）組一個只有 url 的 PageRef：絕大多數源的 `fetchImageUrl` 只讀它。
+ */
+function pageRefOf(sourceKey: string, comicId: string, epId: string, imageKey: string): MihonPage {
+  return (
+    pageRefs.get(pageRefKey(sourceKey, comicId, epId, imageKey)) ?? {
+      index: 0,
+      name: "",
+      url: imageKey,
+      imageUrl: "",
+    }
+  )
+}
+
+export async function chapterImageKeys(
+  source: InstalledSource,
+  comicId: string,
+  epId: string
+): Promise<string[]> {
+  const ref = refOf(source)
+  return await mapAsk(source, "pages", async () => {
+    await ensureExtension(ref.apkKey)
+    const chapter = memo.chapterOf(ref.dir, ref.sourceKey, comicId, epId)
+    const raw = await pages(ref.apkKey, ref.sourceId, chapter)
+    const list = Array.isArray(raw) ? raw : []
+    if (list.length === 0) throw new Error(t("sources.emptyChapter"))
+    rememberPageRefs(ref.sourceKey, comicId, epId, list)
+    return list.map(page => page.url || page.imageUrl)
+  })
+}
+
+/** 正文取圖：`fetchImage` 在 VM 裡跑（含源的攔截器與解混淆），位元組回來後照常走快取與預取。 */
+function pageRequestOf(source: InstalledSource, imageKey: string, comicId: string, epId: string): ImageRequest {
+  const ref = refOf(source)
+  const page = pageRefOf(ref.sourceKey, comicId, epId, imageKey)
+  return {
+    url: page.imageUrl || page.url || imageKey,
+    method: "GET",
+    data: null,
+    headers: {},
+    fetch: () => fetchImage(ref.apkKey, ref.sourceId, page),
+  }
+}
+
+/** `engine/images.ts` 的 `onImageLoad` 契約：正文圖一律經 dexvm 拿位元組。 */
+export function comicModule(source: InstalledSource): {
+  onImageLoad(imageUrl: string, comicId: string, epId: string): Promise<ImageRequest>
+} {
+  return {
+    onImageLoad: async (imageUrl: string, comicId: string, epId: string) => pageRequestOf(source, imageUrl, comicId, epId),
+  }
+}
+
+/** 封面請求（url＋headers）：縮圖管線自己抓，不讓幾十張封面擠進 VM 隊列。 */
+const coverRequests = new Map<string, ImageRequest>()
+const COVER_LIMIT = 400
+
+function toImageRequest(url: string, method: string, pairs: Array<[string, string]>): ImageRequest {
+  const headers: Record<string, string> = {}
+  for (const [name, value] of pairs) headers[name] = value
+  return { url, method, data: null, headers }
+}
+
+export async function coverRequest(source: InstalledSource, url: string): Promise<ImageRequest> {
+  const key = `${source.stored.key}\n${url}`
+  const hit = coverRequests.get(key)
+  if (hit) return hit
+  const ref = refOf(source)
+  try {
+    // 封面不包 `mapAsk`：一張封面問不到不該把整個子源標成不可用。
+    await ensureExtension(ref.apkKey)
+    const raw = await imageRequest(ref.apkKey, ref.sourceId, {
+      index: 0,
+      name: "",
+      url,
+      imageUrl: url,
+    })
+    const request = toImageRequest(raw.url || url, raw.method || "GET", raw.headers)
+    coverRequests.set(key, request)
+    while (coverRequests.size > COVER_LIMIT) {
+      const oldest = coverRequests.keys().next().value as string | undefined
+      if (oldest === undefined) break
+      coverRequests.delete(oldest)
+    }
+    return request
+  } catch (failure) {
+    // 封面問不到就照原網址抓：一格封面失敗不該讓整個網格變成錯誤。
+    log("warning", "mihon", `${source.stored.key} 的封面請求失敗（${url}）`, failure)
+    return { url, method: "GET", data: null, headers: {} }
+  }
 }

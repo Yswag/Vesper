@@ -18,9 +18,15 @@ function ensureWorker(sourceKey) {
   if (existing) dropEntry(existing)
 
   const worker = new Worker(script, { type: "module" })
-  const entry = { worker, pending: new Map(), dead: false, script }
+  const entry = { worker, pending: new Map(), dead: false, script, key: sourceKey, pendingJobs: 0 }
   worker.onmessage = (event) => {
     const message = event.data
+    // worker 自己回報背景 job 還有幾個：宿主靠它排回收順序。
+    if (message.type === "pending") {
+      entry.pendingJobs = Math.max(0, Number(message.remaining) || 0)
+      reportPending(entry.key, entry.pendingJobs)
+      return
+    }
     const waiter = entry.pending.get(message.id)
     if (!waiter) return
     if (message.ok) {
@@ -48,6 +54,7 @@ function ensureWorker(sourceKey) {
 
 function dropEntry(entry) {
   entry.dead = true
+  entry.pendingJobs = 0
   for (const waiter of entry.pending.values()) waiter.reject(new Error("worker dropped"))
   entry.pending.clear()
   try {
@@ -60,6 +67,7 @@ function dropEntry(entry) {
 /** 這個 worker 自己說它壞到救不回來：整支收掉，手邊的呼叫全部當致命錯誤（= 只丟這個源）。 */
 function failWorker(entry, message) {
   entry.dead = true
+  entry.pendingJobs = 0
   const error = new Error(message)
   error.fatal = true
   for (const waiter of [...entry.pending.values()]) waiter.reject(error)
@@ -81,8 +89,7 @@ function send(sourceKey, message, transfer) {
   })
 }
 
-function report(taskId, sourceKey, ok, value, error, fatal) {
-  try {
+function report(taskId, sourceKey, ok, value, error, fatal) {  try {
     window.webkit.messageHandlers.sourceResult.postMessage({
       id: taskId,
       sourceKey,
@@ -91,6 +98,15 @@ function report(taskId, sourceKey, ok, value, error, fatal) {
       error,
       fatal: fatal === true,
     })
+  } catch (postError) {
+    // 宿主沒註冊 handler 時就只留在頁面上
+  }
+}
+
+/** 背景 job 的剩餘數：不帶 taskId，宿主收到就只記在對應的源上。 */
+function reportPending(sourceKey, remaining) {
+  try {
+    window.webkit.messageHandlers.sourceResult.postMessage({ pending: true, sourceKey, remaining })
   } catch (postError) {
     // 宿主沒註冊 handler 時就只留在頁面上
   }
@@ -110,7 +126,11 @@ async function postJson(path, body) {
 async function dispatch(sourceKey, kind, payload) {
   if (kind === "loadMihon") {
     // apk 由 worker 自己用同步 XHR 向宿主拿（位元組不經 messageHandlers）。
-    return await send(sourceKey, { type: "load", prefs: payload.prefs || {} })
+    return await send(sourceKey, {
+      type: "load",
+      prefs: payload.prefs || {},
+      userAgent: payload.userAgent || "",
+    })
   }
   if (kind === "mihonCall") {
     return await send(sourceKey, { type: "call", op: payload.op, args: payload.args || {} })
@@ -197,8 +217,8 @@ window.__sourceHost = {
   startCall(taskId, sourceKey, method, args) {
     return start(taskId, sourceKey, "call", { method, args })
   },
-  startLoadMihon(taskId, sourceKey, prefs) {
-    return start(taskId, sourceKey, "loadMihon", { prefs }, "mihon")
+  startLoadMihon(taskId, sourceKey, prefs, userAgent) {
+    return start(taskId, sourceKey, "loadMihon", { prefs, userAgent }, "mihon")
   },
   startMihonCall(taskId, sourceKey, op, args) {
     return start(taskId, sourceKey, "mihonCall", { op, args })

@@ -7,8 +7,19 @@ import { createDexvm } from "./dexvm-host.js"
 let sourceKey = ""
 let vm = null
 let vmHandle = null
+let vmTrap = null
+/** 現在跑的是哪個 op：代理日誌用它分辨是哪一個呼叫弄出來的網址。 */
+let currentOp = ""
 let logCount = 0
 let lastLog = ""
+/** 背景 job 的排程器狀態：一個計時器一次一步，主 op 進來就讓位。 */
+let pendingTimer = null
+const PENDING_STEP_JOBS = 1
+/**
+ * 要跑背景 job 前先讓 worker 閒這麼久。runPending 是同步的（job 的 HTTP 也同步），
+ * 它一跑就會把接下來的主 op 擋在後面；閱讀時呼叫一個接一個，不能讓它插隊。
+ */
+const PENDING_QUIET_MS = 400
 
 function toBase64(bytes) {
   const chunk = 0x8000
@@ -49,7 +60,7 @@ function proxySync(requestJson) {
     if (!Array.isArray(pair) || pair.length < 2) continue
     headers[String(pair[0])] = String(pair[1])
   }
-  const body = { sourceKey, url: request.url, method: request.method || "GET", headers }
+  const body = { sourceKey, op: currentOp, url: request.url, method: request.method || "GET", headers }
   if (request.bodyBase64) body.bodyBase64 = request.bodyBase64
 
   const xhr = new XMLHttpRequest()
@@ -108,8 +119,10 @@ function fetchApk() {
   return new Uint8Array(xhr.response)
 }
 
-async function load(prefs) {
+async function load(prefs, userAgent) {
   const startedAt = Date.now()
+  cancelPendingStep()
+  vmTrap = null
   const apk = fetchApk()
   const fetchedAt = Date.now()
 
@@ -122,7 +135,11 @@ async function load(prefs) {
   vmHandle = null
   const instanceAt = Date.now()
 
-  const opened = vm.call("open", { apkBase64: toBase64(apk), prefs: prefs || {} })
+  // 預設 UA 由宿主給（Mihon 的 `defaultUserAgentProvider()`）：dexvm 只在 header
+  // 缺漏或空白時才填，擴充自己宣告的（configureHeaders／headersBuilder）優先。
+  const options = { apkBase64: toBase64(apk), prefs: prefs || {} }
+  if (typeof userAgent === "string" && userAgent.trim()) options.defaultUserAgent = userAgent.trim()
+  const opened = vm.call("open", options)
   vmHandle = opened.handle
   return {
     manifest: opened.manifest,
@@ -137,9 +154,54 @@ async function load(prefs) {
 
 function call(op, args) {
   if (!vm) throw new Error("extension not loaded")
+  // 背景 job 把實例弄死了（wasm 的 trap）：之後的每一通都走自癒（宿主丟掉這個 worker 重載）。
+  if (vmTrap) {
+    const error = new Error(vmTrap)
+    error.kind = "trap"
+    throw error
+  }
   const payload = Object.assign({}, args || {})
   if (op !== "open" && op !== "cookies") payload.handle = vmHandle
   return vm.call(op, payload)
+}
+
+/** 告訴頁面這邊還剩幾個背景 job（宿主要用它排回收順序）。 */
+function reportPending(remaining) {
+  self.postMessage({ type: "pending", remaining })
+}
+
+function cancelPendingStep() {
+  if (pendingTimer === null) return
+  clearTimeout(pendingTimer)
+  pendingTimer = null
+}
+
+/** `delayMs` 是 dexvm 給的 nextDueMs；再跟「閒置夠久」取大，主 op 一直在跑就不會輪到它。 */
+function schedulePendingStep(delayMs) {
+  cancelPendingStep()
+  pendingTimer = setTimeout(runPendingStep, Math.max(0, delayMs, PENDING_QUIET_MS))
+}
+
+/**
+ * 跑一步背景 job：`maxJobs` 給 1，讓宿主在這之間進得來。
+ * 這條路不走宿主的任務通道，所以不算呼叫逾時、也不會讓 failWorker 誤判。
+ */
+function runPendingStep() {
+  pendingTimer = null
+  if (!vm) return
+  let result
+  try {
+    // 代理日誌靠這個分辨「主 op 的請求」與「背景 job 的請求」。
+    currentOp = "runPending"
+    result = call("runPending", { maxJobs: PENDING_STEP_JOBS })
+  } catch (error) {
+    if ((error && error.kind) === "trap") vmTrap = String((error && error.message) || error)
+    reportPending(0)
+    return
+  }
+  const remaining = Number(result && result.remaining) || 0
+  reportPending(remaining)
+  if (remaining > 0) schedulePendingStep(Number(result && result.nextDueMs) || 0)
 }
 
 async function fetchImage(token, request) {
@@ -156,10 +218,16 @@ async function fetchImage(token, request) {
 async function handle(message) {
   if (message.type === "load") {
     sourceKey = typeof message.sourceKey === "string" ? message.sourceKey : ""
-    return await load(message.prefs)
+    return await load(message.prefs, message.userAgent)
   }
-  if (message.type === "call") return call(message.op, message.args)
-  if (message.type === "fetchImage") return await fetchImage(message.token, message.request)
+  if (message.type === "call") {
+    currentOp = String(message.op || "")
+    return call(message.op, message.args)
+  }
+  if (message.type === "fetchImage") {
+    currentOp = "fetchImage"
+    return await fetchImage(message.token, message.request)
+  }
   if (message.type === "stats") return { logCount, lastLog }
   // 測試縫（比照 detachSourceHostPage）：實機上找不到穩定能讓 dexvm panic 的 apk，
   // 所以由 worker 自己模擬 trap 與 eval_js，讓探針驗得到那兩條路。
@@ -178,9 +246,15 @@ async function handle(message) {
 /** `kind === 'trap'`：wasm 實例已作廢，宿主只會丟掉這個源重載（SourceWorkerError）。 */
 self.onmessage = (event) => {
   const message = event.data
+  // 宿主的呼叫優先：先把背景 job 的計時器收掉，回完再從頭排。
+  const hostOp = message.type === "call" || message.type === "fetchImage"
+  if (hostOp) cancelPendingStep()
   handle(message).then(
-    (value) => self.postMessage({ id: message.id, ok: true, value }),
-    (error) =>
+    (value) => {
+      self.postMessage({ id: message.id, ok: true, value })
+      if (hostOp) schedulePendingStep(0)
+    },
+    (error) => {
       self.postMessage({
         id: message.id,
         ok: false,
@@ -188,5 +262,7 @@ self.onmessage = (event) => {
         kind: (error && error.kind) || "internal",
         fatal: (error && error.kind) === "trap",
       })
+      if (hostOp) schedulePendingStep(0)
+    }
   )
 }

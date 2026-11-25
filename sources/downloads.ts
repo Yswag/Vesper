@@ -20,6 +20,7 @@ import {
 } from "../engine/offline"
 import { createPageCache } from "../engine/pageimages"
 import * as aidoku from "./aidoku"
+import * as mihon from "./mihon"
 import { imageRetryFor, loadChapterImages } from "./operations"
 import type { InstalledSource } from "./registry"
 
@@ -210,9 +211,11 @@ export function listDownloads(): DownloadRecord[] {
 
 // ------------------------------------------------------------------ 下載
 
-/** 正文取圖用的模組（Aidoku 源沒有 `instance`，要自己包一層）。 */
+/** 正文取圖用的模組（Aidoku／Mihon 源沒有 `instance`，要自己包一層）。 */
 function comicModuleOf(source: InstalledSource) {
-  return source.instance?.comic ?? (aidoku.isAidoku(source) ? aidoku.comicModule(source) : undefined)
+  if (aidoku.isAidoku(source)) return aidoku.comicModule(source)
+  if (mihon.isMihon(source)) return mihon.comicModule(source)
+  return source.instance?.comic ?? undefined
 }
 
 /** 一張圖的最終位元組：走正文管線（解析源的請求 → onResponse → modifyImage），離線看到的圖與線上完全一致。 */
@@ -228,8 +231,8 @@ async function fetchPageBytes(
     comicId,
     epId,
     comicModule: comicModuleOf(source),
-    // Aidoku 源沒有「登入過期重登」這條路（見 runner 的 aidokuHandle）。
-    retry: aidoku.isAidoku(source) ? undefined : imageRetryFor(source),
+    // Aidoku／Mihon 源沒有「登入過期重登」這條路（見 runner 的 handle）。
+    retry: aidoku.isAidoku(source) || mihon.isMihon(source) ? undefined : imageRetryFor(source),
   })
 }
 

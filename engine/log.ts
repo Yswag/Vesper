@@ -1,6 +1,7 @@
 // 源的執行日誌。Log 頁訂閱這裡；環狀上限避免長跑爆記憶體。
 
 import { createEmitter } from "./emitter"
+import { timerAfter } from "./timers"
 
 export type LogLevel = "debug" | "info" | "warning" | "error"
 
@@ -32,10 +33,12 @@ let pendingNotify: ReturnType<typeof setTimeout> | null = null
 /** 排一次合併通知；已經排了就不再排，所以沒人再寫日誌時也一定送得出去。 */
 function scheduleNotify() {
   if (pendingNotify !== null) return
-  pendingNotify = setTimeout(() => {
+  pendingNotify = timerAfter(() => {
     pendingNotify = null
     bus.emit()
   }, 0)
+  // 不在主佇列時建不了 timer（聚合搜尋、WebView 回呼的續行）：直接送，寧可多跑一回。
+  if (pendingNotify === null) bus.emit()
 }
 
 /** 立刻通知，並作廢還沒送出的合併通知（clearLog 是使用者按的，不該等）。 */

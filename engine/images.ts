@@ -5,6 +5,8 @@
 // 重試本身住在 sources/（要 Keychain 憑證、要知道怎麼重登），而 engine 不可以 import sources——
 // 所以重試是**參數**：呼叫端把源與重登方式收在閉包裡帶進來，engine 不持有任何註冊狀態。
 
+import type { AbortSignal } from "scripting"
+
 /** 抓完圖的回應摘要；`onResponse` 的第二個參數。 */
 export interface ImageResponseInfo {
   status: number
@@ -19,6 +21,11 @@ export interface ImageRequest {
   onResponse?: (bytes: any, response?: ImageResponseInfo) => any
   modifyImage?: string
   onLoadFailed?: () => unknown
+  /**
+   * 自己拿位元組（不讓宿主去打網路）。Mihon 源的取圖要跑擴充自己的攔截器與解混淆，
+   * 只有 dexvm 內部那條路拿得到；Venera／Aidoku 沒有這個欄位，照舊走宿主網路。
+   */
+  fetch?: (signal?: AbortSignal) => Promise<Uint8Array>
 }
 
 function normalizeHeaders(raw: unknown): Record<string, string> {
@@ -50,6 +57,7 @@ export function normalizeImageConfig(imageKey: string, config: any): ImageReques
     onResponse: typeof config?.onResponse === "function" ? config.onResponse : undefined,
     modifyImage: typeof config?.modifyImage === "string" ? config.modifyImage : undefined,
     onLoadFailed: typeof config?.onLoadFailed === "function" ? config.onLoadFailed : undefined,
+    fetch: typeof config?.fetch === "function" ? config.fetch : undefined,
   }
 }
 

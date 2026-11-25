@@ -80,9 +80,9 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const showCategory = hasCategory && mode === "category"
   const showRanking = hasBoard && mode === "ranking"
   const title = info?.name ?? t("browse.source")
-  /** 空查詢也是有效搜尋（源會回自己的預設列表），但只對 Aidoku 源成立。 */
-  const allowsEmptySearch = info?.kind === "aidoku"
-  /** 什麼時候該顯示搜尋結果：Aidoku 源一展開搜尋框就算，其他源要送出過才算。 */
+  /** 空查詢也是有效搜尋（源會回自己的預設列表）：Aidoku 與 Mihon 的介面都是這個語意。 */
+  const allowsEmptySearch = info?.kind === "aidoku" || info?.kind === "mihon"
+  /** 什麼時候該顯示搜尋結果：Aidoku／Mihon 源一展開搜尋框就算，其他源要送出過才算。 */
   const searchMode = submitted !== null || (allowsEmptySearch && searchActive)
 
   /** 搜尋框的每一次變動：**不搜**，只記在原字。清成空的就復原（回原本的檢視）。 */
@@ -91,7 +91,7 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
     if (text.trim() === "") setSubmitted(null)
   }
 
-  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜；Aidoku 源空字也送（等於看預設列表）。 */
+  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜；Aidoku／Mihon 源空字也送（等於看預設列表）。 */
   function handleSubmitSearch() {
     const term = keyword.trim()
     if (!term && !allowsEmptySearch) return

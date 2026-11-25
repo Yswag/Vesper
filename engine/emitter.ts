@@ -8,6 +8,8 @@
 // **「要不要去抖、幾毫秒、要不要立即版」留在呼叫端**——每個模組的理由不一樣
 // （下載是每張圖都會通知，書架是滑動時領先頁一直變），所以不是這裡的預設值。
 
+import { timerAfter } from "./timers"
+
 export interface Emitter {
   /** 立刻通知所有訂閱者（同步）。 */
   emit(): void
@@ -55,10 +57,12 @@ export function createEmitter(options: EmitterOptions = {}): Emitter {
       }
       // 比 `null` 而不寫 `if (timer)`：Scripting 的 setTimeout 回傳 number，舊版第一個 handle 是 falsy 的 0。
       if (timer !== null) clearTimeout(timer)
-      timer = setTimeout(() => {
+      timer = timerAfter(() => {
         timer = null
         fire()
       }, options.debounceMs)
+      // 不在主佇列時建不了 timer：直接送一次。
+      if (timer === null) fire()
     },
     cancelPending() {
       if (timer === null) return

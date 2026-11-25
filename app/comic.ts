@@ -535,12 +535,9 @@ function handleOf(key: string): { source: InstalledSource; handle: SourceHandle 
 let infoCacheRevision = -1
 let infoCache = new WeakMap<InstalledSource, ComicSourceInfo>()
 
-/**
- * 可以瀏覽的源：Mihon 擴充還沒有瀏覽路徑（票 04 才接上 list／search），
- * 先不列進瀏覽頁與全域搜尋；源管理照常看得到、可以停用與移除。
- */
+/** 可以瀏覽的源：三種引擎都走同一條路（Aidoku／Mihon 靠宿主 worker，Venera 自己有實例）。 */
 function browsableSources(): InstalledSource[] {
-  return enabledSources().filter(source => sourceKindOf(source) !== "mihon")
+  return enabledSources()
 }
 
 function infoOf(source: InstalledSource): ComicSourceInfo {
@@ -1104,8 +1101,9 @@ export function createComicLibrary(): ComicLibrary {
 
     explore: async sourceKey => {
       const { handle } = handleOf(sourceKey)
-      // Aidoku 的 explore() 是同步的，但 listings 要先問源一次；Venera 的 explore 本來就隨實例一起載好。
-      if (handle.kind === "aidoku") await handle.ready()
+      // Aidoku 的 explore() 是同步的，但 listings 要先問源一次；Mihon 的「最新」也要先讀子源清單。
+      // Venera 的 explore 本來就隨實例一起載好。
+      if (handle.kind !== "venera") await handle.ready()
       return handle.explore()
     },
 

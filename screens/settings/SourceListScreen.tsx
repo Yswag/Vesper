@@ -1,4 +1,5 @@
-// 源管理：倉庫入口、可更新的源、已安裝的源清單。點一筆源進詳情（啟用/移除），長按拖曳排序，左滑移除。
+// 源管理：倉庫入口、可更新的源、已安裝的源清單。
+// Mihon 一個擴充一列（拖曳排序、左滑移除、更新都以擴充為單位），Aidoku／Venera 照舊一源一列。
 
 import {
   Button, ForEach, HStack, Image, List, NavigationLink, ProgressView, Rectangle, Section, Spacer, Text, VStack, ZStack,
@@ -17,26 +18,28 @@ import { cardBackground, pageSpacing, palette, sourceIconSize, toneText } from "
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { appDataRoot, hasFileAccess } from "../../engine/fs"
 import { subscribe as subscribeLocale, t } from "../../i18n"
-import { allSources, reloadRegistry, reorderSources, subscribeSources, uninstallSource, type InstalledSource } from "../../sources/registry"
+import { allSources, reloadRegistry, reorderSourceGroups, subscribeSources, uninstallSource } from "../../sources/registry"
+import { groupIdOf, groupSources, type SourceGroup } from "../../sources/groups"
 import { listRepositories, subscribeRepositories } from "../../sources/repository"
+import { ExtensionDetailScreen } from "./ExtensionDetailScreen"
 import { RepositoryListScreen } from "./RepositoryListScreen"
 import { SourceDetailScreen } from "./SourceDetailScreen"
 
-/** `ForEach` 要求每筆都有 `id`，源的身分就是它的 key。 */
-export type SourceRow = { id: string; source: InstalledSource }
+/** `ForEach` 要求每筆都有 `id`：Mihon 是擴充，其餘是源。 */
+export type SourceRow = { id: string; group: SourceGroup }
 
-function toRows(sources: InstalledSource[]): SourceRow[] {
-  return sources.map(source => ({ id: source.stored.key, source }))
+function toRows(sources = allSources()): SourceRow[] {
+  return groupSources(sources).map(group => ({ id: group.id, group }))
 }
 
 function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((key, index) => key === b[index])
 }
 
-/** 一筆可更新的源（畫面只排版，資料由 app/sourceUpdates 算好）。 */
+/** 一筆可更新的擴充（畫面只排版，資料由 app/sourceUpdates 算好）。 */
 export interface UpdateRow {
   key: string
-  source: InstalledSource
+  group: SourceGroup
   from: string
   to: string
   repositoryName: string
@@ -57,7 +60,7 @@ export interface SourceUpdatesPanel {
 }
 
 export function SourceListScreen() {
-  const rows = useObservable<SourceRow[]>(() => toRows(allSources()))
+  const rows = useObservable<SourceRow[]>(() => toRows())
   const [repositoryCount, setRepositoryCount] = useState(0)
   const [runningKey, setRunningKey] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -65,16 +68,16 @@ export function SourceListScreen() {
   const [checkFailed, setCheckFailed] = useState(0)
   // 更新成功那一列會從清單消失：包在 withAnimation 裡才會淡出。
   useSubscription(notify => subscribeSourceUpdates(() => void withAnimation(notify)), subscribeLocale)
-  const updates = availableSourceUpdates()
+  const updates = updateRowsOf(availableSourceUpdates())
 
   useEffect(() => {
-    const refreshSources = () => rows.setValue(toRows(allSources()))
+    const refreshSources = () => rows.setValue(toRows())
     const refreshRepositories = () => setRepositoryCount(listRepositories().length)
     // 系統拖曳放手後 ForEach 直接改寫 rows；順序跟 registry 不同才寫回，寫失敗就退回原順序。
     const persistOrder = (next: SourceRow[]) => {
       const keys = next.map(row => row.id)
-      if (sameOrder(keys, allSources().map(source => source.stored.key))) return
-      if (!reorderSources(keys)) refreshSources()
+      if (sameOrder(keys, toRows().map(row => row.id))) return
+      if (!reorderSourceGroups(keys)) refreshSources()
     }
     reloadRegistry()
     refreshSources()
@@ -91,12 +94,17 @@ export function SourceListScreen() {
 
   async function run(keys: string[]) {
     if (runningKey !== null) return
-    const targets = availableSourceUpdates().filter(update => keys.includes(update.source.stored.key))
+    const targets = availableSourceUpdates().filter(update => keys.includes(groupIdOf(update.source.stored.key)))
     if (targets.length === 0) return
     setErrors(current => omit(current, keys))
-    const failed = await updateSources(targets, setRunningKey)
+    const failed = await updateSources(targets, key => setRunningKey(groupIdOf(key)))
     setRunningKey(null)
-    if (failed.size > 0) setErrors(current => ({ ...current, ...Object.fromEntries(failed) }))
+    if (failed.size > 0) {
+      setErrors(current => ({
+        ...current,
+        ...Object.fromEntries([...failed].map(([key, message]) => [groupIdOf(key), message])),
+      }))
+    }
   }
 
   async function check() {
@@ -112,26 +120,38 @@ export function SourceListScreen() {
       rows={rows}
       repositoryCount={repositoryCount}
       fileAccess={hasFileAccess()}
-      onRemove={source => uninstallSource(source.stored.key)}
+      onRemove={row => uninstallSource(row.id)}
       updates={{
-        rows: updates.map(update => ({
-          key: update.source.stored.key,
-          source: update.source,
-          from: update.from,
-          to: update.to,
-          repositoryName: update.repository.name,
-          busy: runningKey === update.source.stored.key,
-          error: errors[update.source.stored.key],
-        })),
+        rows: updates,
         updating: runningKey !== null,
         checking,
         checkFailed,
         onUpdate: key => void run([key]),
-        onUpdateAll: () => void run(updates.map(update => update.source.stored.key)),
+        onUpdateAll: () => void run(updates.map(row => row.key)),
         onCheck: () => void check(),
       }}
     />
   )
+}
+
+/** 一個擴充只報一次更新（子源共用同一個 apk）。 */
+function updateRowsOf(updates: ReturnType<typeof availableSourceUpdates>): UpdateRow[] {
+  const groups = new Map(toRows().map(row => [row.id, row.group]))
+  const rows = new Map<string, UpdateRow>()
+  for (const update of updates) {
+    const key = groupIdOf(update.source.stored.key)
+    const group = groups.get(key)
+    if (!group || rows.has(key)) continue
+    rows.set(key, {
+      key,
+      group,
+      from: update.from,
+      to: update.to,
+      repositoryName: update.repository.name,
+      busy: false,
+    })
+  }
+  return [...rows.values()]
 }
 
 function omit(record: Record<string, string>, keys: string[]): Record<string, string> {
@@ -160,12 +180,12 @@ export function SourceListView({
   rows: Observable<SourceRow[]>
   repositoryCount: number
   fileAccess: boolean
-  onRemove: (source: InstalledSource) => void
+  onRemove: (row: SourceRow) => void
   updates?: SourceUpdatesPanel
 }) {
   const count = rows.value.length
   const updateRows = updates?.rows ?? []
-  /** 正在確認移除的源 key；確認選單掛在那一列上，iOS 26 起會從那一列彈出。 */
+  /** 正在確認移除的列 id；確認選單掛在那一列上，iOS 26 起會從那一列彈出。 */
   const [pendingKey, setPendingKey] = useState<string | null>(null)
 
   return (
@@ -259,19 +279,34 @@ export function SourceListView({
               builder={row => (
                 <NavigationLink
                   key={row.id}
-                  destination={<SourceDetailScreen sourceKey={row.id} />}
+                  destination={
+                    row.group.kind === "mihon" ? (
+                      <ExtensionDetailScreen packageKey={row.id} />
+                    ) : (
+                      <SourceDetailScreen sourceKey={row.group.sources[0].stored.key} />
+                    )
+                  }
                   listRowBackground={cardRowBackground}
                   confirmationDialog={{
-                    title: t("settings.sourceDetail.removeTitle", { name: row.source.meta?.name ?? row.source.stored.name }),
+                    title:
+                      row.group.kind === "mihon"
+                        ? t("settings.sources.removeExtensionTitle", { name: row.group.name })
+                        : t("settings.sourceDetail.removeTitle", { name: row.group.name }),
                     titleVisibility: "visible",
                     isPresented: pendingKey === row.id,
                     onChanged: (shown: boolean) => { if (!shown) setPendingKey(null) },
-                    message: <Text>{t("settings.sourceDetail.removeMessage")}</Text>,
+                    message: (
+                      <Text>
+                        {row.group.kind === "mihon"
+                          ? t("settings.sources.removeExtensionMessage", { n: row.group.total })
+                          : t("settings.sourceDetail.removeMessage")}
+                      </Text>
+                    ),
                     actions: (
                       <Button
                         title={t("common.remove")}
                         role="destructive"
-                        action={() => onRemove(row.source)}
+                        action={() => onRemove(row)}
                       />
                     ),
                   }}
@@ -289,7 +324,7 @@ export function SourceListView({
                     ],
                   }}
                 >
-                  <SourceCardRow source={row.source} />
+                  <SourceCardRow group={row.group} />
                 </NavigationLink>
               )}
             />
@@ -332,24 +367,23 @@ function SectionHeader({
   )
 }
 
-/** 一筆可更新的源：整列唯一的動作是尾端的更新鈕，不進詳情（下方已安裝那一列才進）。 */
+/** 一筆可更新的擴充：整列唯一的動作是尾端的更新鈕，不進詳情（下方已安裝那一列才進）。 */
 function SourceUpdateRow({ row, disabled, onUpdate }: { row: UpdateRow; disabled: boolean; onUpdate: () => void }) {
   const tint = useTint()
-  const name = row.source.meta?.name ?? row.source.stored.name
 
   return (
     <HStack spacing={14} alignment="center" frame={{ maxWidth: "infinity" }}>
       <SourceAvatar
         sourceKey={row.key}
-        name={name}
+        name={row.group.name}
         size={sourceIconSize}
-        instance={row.source.instance}
-        iconUrl={row.source.stored.iconUrl}
+        instance={row.group.sources[0]?.instance}
+        iconUrl={row.group.iconUrl}
       />
 
       <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
-          {name}
+          {row.group.name}
         </Text>
         <Text font="caption2" foregroundStyle={row.error ? toneText.danger : "secondaryLabel"} lineLimit={1}>
           {row.error ?? t("settings.sources.versionChange", { from: row.from, to: row.to, repository: row.repositoryName })}
@@ -373,46 +407,46 @@ function SourceUpdateRow({ row, disabled, onUpdate }: { row: UpdateRow; disabled
 }
 
 /**
- * 一筆已安裝的源。首字圓形徽章是這頁特有的（源沒有封面），其他樣式都走設計庫。
+ * 一筆已安裝的源（Mihon 是一個擴充）。首字圓形徽章是這頁特有的，其他樣式都走設計庫。
  * 箭頭由 List 的 NavigationLink 自己畫。
  */
-function SourceCardRow({ source }: { source: InstalledSource }) {
-  const meta = source.meta
-  const name = meta?.name ?? source.stored.name
+function SourceCardRow({ group }: { group: SourceGroup }) {
+  const isMihon = group.kind === "mihon"
+  const detail = isMihon
+    ? [`v${group.version}`, group.total > 1 ? t("settings.sources.languageCount", { on: group.enabledCount, total: group.total }) : ""]
+        .filter(Boolean)
+        .join(" · ")
+    : `${group.sources[0]?.stored.key ?? group.id} · v${group.version}`
 
   return (
     <HStack spacing={14} alignment="center" frame={{ maxWidth: "infinity" }}>
       <SourceAvatar
-        sourceKey={source.stored.key}
-        name={name}
+        sourceKey={group.id}
+        name={group.name}
         size={sourceIconSize}
-        instance={source.instance}
-        iconUrl={source.stored.iconUrl}
+        instance={group.sources[0]?.instance}
+        iconUrl={group.iconUrl}
       />
 
       <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="body" fontWeight="medium" foregroundStyle="label" lineLimit={1}>
-          {name}
+          {group.name}
         </Text>
-        <Text
-          font="caption2"
-          foregroundStyle={source.error ? toneText.danger : "secondaryLabel"}
-          lineLimit={1}
-        >
-          {source.error ?? `${source.stored.key} · v${meta?.version ?? source.stored.version}`}
+        <Text font="caption2" foregroundStyle={group.error ? toneText.danger : "secondaryLabel"} lineLimit={1}>
+          {group.error ?? detail}
         </Text>
       </VStack>
 
       <Spacer />
 
-      {source.error ? (
+      {group.error ? (
         <HStack spacing={4} alignment="center">
           <Image systemName="exclamationmark.triangle.fill" font="caption" foregroundStyle={toneText.danger} />
           <Text foregroundStyle={toneText.danger} font="caption2" fontWeight="medium">
             {t("settings.sources.failed")}
           </Text>
         </HStack>
-      ) : !source.enabled ? (
+      ) : group.disabled ? (
         <Text foregroundStyle="tertiaryLabel" font="caption2">
           {t("settings.sources.disabled")}
         </Text>

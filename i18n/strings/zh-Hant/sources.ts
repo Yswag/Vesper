@@ -72,6 +72,14 @@ export default {
 
   /** Mihon（keiyoushi）擴充。`{message}` 是擴充自己或宿主給的原因。 */
   mihon: {
+    failed: "源出錯：{message}",
+    timeout: "源回應逾時",
+    initFailed: "源初始化失敗",
+    /** 重試後仍失敗被標成不可用；`{reason}` 是最後一次的失敗原因。 */
+    unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
+    /** 探索頁的兩個清單。 */
+    popular: "熱門",
+    latest: "最新",
     missing: "擴充的檔案不見了（請重新安裝這個擴充）",
     invalidPackage: "這不是有效的 Mihon 擴充（apk）",
     noSources: "這個擴充沒有可用的源",

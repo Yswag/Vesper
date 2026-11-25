@@ -10,11 +10,13 @@ import { log } from "../engine/log"
 import { requirePro } from "../engine/pro"
 import { createHostContext } from "../engine/host"
 import { hostUI } from "../app/hostUI"
+import { ensureContentLanguagesFromRepositories, subscribeContentLanguages } from "../app/contentLanguages"
 import { extractSettings, loadSource, mergeSettings, type SettingSpec, type SourceCapabilities, type SourceMeta } from "../engine/loader"
 import { t } from "../i18n"
 import { fetch } from "scripting"
 
 import { catalogBaseOf, compareVersion, indexUrlOf, parseCatalog, resolveEntryUrl, type CatalogEntry } from "./catalog"
+import { applyGroupOrder, reorderSourceGroups as reorderGroups } from "./groups"
 import * as aidoku from "./aidoku"
 import { aidokuIndexSchema, parseAidokuIndex } from "./aidokuIndex"
 import * as mihon from "./mihon"
@@ -38,6 +40,10 @@ export interface InstalledSource {
   settingsSpecs?: SettingSpec[]
   /** Aidoku 源的 `settings.json`（順序與原欄位都保留）；沒有這個檔就是空的。 */
   settingsSpec?: aidoku.AidokuSettingsSpec
+  /** Mihon 子源的語言代碼（`all` 或 zh…）；其他源沒有。 */
+  language?: string
+  /** Mihon 子源被使用者手動關掉（`disabledSources`）；不在內容語言不算手動關。 */
+  manualDisabled?: boolean
   error?: string
 }
 
@@ -61,6 +67,7 @@ const bus = createEmitter({
 /** Aidoku／Mihon 源在執行期改變狀態（標成不可用、首頁能力、圖片後處理）時，讓畫面跟著更新。 */
 aidoku.setStateListener(() => sourceStateChanged())
 mihon.setStateListener(() => sourceStateChanged())
+subscribeContentLanguages(() => reloadMihonSources())
 
 function sourceStateChanged() {
   revision++
@@ -143,7 +150,17 @@ export function findSource(key: string): InstalledSource | undefined {
 export function reloadRegistry() {
   revision++
   initTasks.clear()
-  current = [...store.listSources().map(loadVenera), ...aidoku.installedSources(), ...mihon.installedSources()]
+  ensureContentLanguagesFromRepositories()
+  current = applyGroupOrder([...store.listSources().map(loadVenera), ...aidoku.installedSources(), ...mihon.installedSources()])
+  bus.emit()
+}
+
+/** 內容語言變了：只重建 Mihon 子源的可見性，不動 Venera／Aidoku 的實例。 */
+export function reloadMihonSources() {
+  if (!current.some(source => mihon.isMihon(source))) return
+  const others = current.filter(source => !mihon.isMihon(source))
+  current = applyGroupOrder([...others, ...mihon.installedSources()])
+  revision++
   bus.emit()
 }
 
@@ -260,6 +277,14 @@ export function reorderSources(keys: string[]): boolean {
     if (byKey.has(entry.stored.key)) ordered.push(entry)
   }
   if (ordered.length === current.length) current = ordered
+  bus.emit()
+  return true
+}
+
+/** 拖曳排序：以組為單位寫回 sources/order.json，Mihon 的子源保持相鄰。 */
+export function reorderSourceGroups(ids: string[]): boolean {
+  if (!reorderGroups(current, ids)) return false
+  current = applyGroupOrder(current)
   bus.emit()
   return true
 }
@@ -385,6 +410,7 @@ export function uninstallSource(key: string) {
   const source = findSource(key)
   if (source && aidoku.isAidoku(source)) aidoku.uninstall(key)
   else if (source && mihon.isMihon(source)) mihon.uninstall(key)
+  else if (mihon.isMihonKey(key)) mihon.uninstall(key)
   else store.removeSource(key)
   log("info", "sources", `已移除源 ${key}`)
   reloadRegistry()

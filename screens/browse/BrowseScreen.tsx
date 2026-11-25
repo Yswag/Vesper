@@ -11,7 +11,7 @@ import {
 import { type ComicSourceInfo } from "../../app/comic"
 import { comicLibrary } from "../../app/services"
 import { useSubscription } from "../../app/useSubscription"
-import { subscribe as subscribeLocale, t } from "../../i18n"
+import { subscribe as subscribeLocale, t, type MessageKey } from "../../i18n"
 import { ExitToolbar } from "../../components/ExitToolbar"
 import { SourceAvatar } from "../../components/SourceAvatar"
 import { SourceScreen } from "./SourceScreen"
@@ -21,7 +21,7 @@ import { SourceDetailScreen } from "../settings/SourceDetailScreen"
 import { SourceSettingsScreen } from "../settings/SourceSettingsScreen"
 import { AidokuSettingsScreen } from "../settings/AidokuSettingsScreen"
 import { SourceAccountScreen } from "../settings/SourceAccountScreen"
-import { accountSpec, findSource, hasAidokuSettings, setSourceEnabled } from "../../sources/registry"
+import { accountSpec, findSource, hasAidokuSettings, setSourceEnabled, type SourceKind } from "../../sources/registry"
 import { PageBackground } from "../../app/theme"
 import { Chip } from "../../design/chip"
 import { scrollTopBar } from "../../design/glass"
@@ -181,6 +181,13 @@ function SourceMenuItems({ sourceKey, onOpen }: { sourceKey: string; onOpen: (pa
   )
 }
 
+/** 來源種類的字串鍵；三種引擎都要有，否則 Mihon 會被標成 Venera。 */
+function kindLabelKey(kind: SourceKind): MessageKey {
+  if (kind === "aidoku") return "settings.shared.kindAidoku"
+  if (kind === "mihon") return "settings.shared.kindMihon"
+  return "settings.shared.kindVenera"
+}
+
 /** 一個來源一列：圖標、名稱與種類／鍵，右邊版本號與箭頭。 */
 function SourceCard({ source }: { source: ComicSourceInfo }) {
   return (
@@ -193,7 +200,7 @@ function SourceCard({ source }: { source: ComicSourceInfo }) {
             {source.name}
           </Text>
           <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1}>
-            {`${t(source.kind === "aidoku" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")} · ${source.key}`}
+            {`${t(kindLabelKey(source.kind))} · ${source.key}`}
           </Text>
         </VStack>
 

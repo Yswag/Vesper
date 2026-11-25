@@ -66,6 +66,8 @@ export interface ImageRequestSpec {
   modifyImage?: string
   /** 抓圖失敗時叫一次，回一組新的設定（或 null 放棄）；Venera 的語意是一次性。 */
   onLoadFailed?: () => unknown
+  /** 位元組由源自己拿（Mihon 的 fetchImage）；沒有就由宿主打網路。 */
+  fetch?: (signal?: AbortSignal) => Promise<Uint8Array>
 }
 
 /** 源的圖片設定 → 快取層吃的規格（URL 一律絕對化）。離線層與閱讀器都走這一個。 */
@@ -76,6 +78,7 @@ export function toCacheSpec(request: ImageRequest): ImageRequestSpec {
     onResponse: request.onResponse,
     modifyImage: request.modifyImage,
     onLoadFailed: request.onLoadFailed,
+    fetch: request.fetch,
   }
 }
 
@@ -87,6 +90,12 @@ export async function fetchProcessedImage(
   sourceKey: string,
   signal?: AbortSignal
 ): Promise<Uint8Array> {
+  if (typeof spec.fetch === "function") {
+    const fetched = await spec.fetch(signal)
+    const bytes = fetched instanceof Uint8Array ? fetched : new Uint8Array(fetched)
+    return spec.modifyImage ? await applyModifyImage(spec.modifyImage, bytes) : bytes
+  }
+
   const response = await fetchImageBytes(spec.url, spec.headers, sourceKey, signal)
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`HTTP ${response.status}`)

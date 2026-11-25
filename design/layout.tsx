@@ -2,7 +2,7 @@
 //
 // 全 App 的頁面都用同一套 padding 與間距，不然每一頁的內容邊界都會差幾點。
 
-import { HStack, RoundedRectangle, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack, type Color, type DynamicShapeStyle, type VirtualNode } from "scripting"
+import { HStack, RoundedRectangle, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack, type Color, type CommonViewProps, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
 import { scrollTopBar } from "./glass"
@@ -22,6 +22,7 @@ export function PageScroll({
   trailing,
   onRefresh,
   search,
+  searchField,
   zoomFrom,
   children,
 }: {
@@ -34,6 +35,8 @@ export function PageScroll({
   onRefresh?: () => Promise<void> | void
   /** 導覽列放大鏡搜尋（`useToolbarSearch`）；搜尋時下拉重整停用，免得兩者搶手勢。 */
   search?: ToolbarSearch
+  /** 直接指定 `searchable`（例如常駐的 drawer 搜尋框）；與 `search` 二選一。 */
+  searchField?: CommonViewProps["searchable"]
   /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
   zoomFrom?: { sourceID: string; namespace: NamespaceID }
   children: StackChildren
@@ -47,7 +50,7 @@ export function PageScroll({
         spacing={0}
         navigationTitle={title}
         navigationBarTitleDisplayMode="inline"
-        searchable={search?.searchable}
+        searchable={search?.searchable ?? searchField}
         toolbar={
           search ? (
             <Toolbar>
