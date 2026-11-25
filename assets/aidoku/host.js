@@ -2,22 +2,39 @@
 // 同一個源仍然序列（宿主那邊排隊），不同源真的並行：一個 worker 卡住只影響它自己的源。
 
 let nextId = 1
-/** sourceKey → { worker, pending: Map, dead } */
+/** sourceKey → { worker, pending: Map, dead, script } */
 const workers = new Map()
+/** 這個源用哪一種 worker（載入時由宿主決定；回收後重建仍然用它）。 */
+const kinds = new Map()
+
+function workerScript(sourceKey) {
+  return kinds.get(sourceKey) === "mihon" ? "/mihon/worker.js" : "/worker.js"
+}
 
 function ensureWorker(sourceKey) {
+  const script = workerScript(sourceKey)
   const existing = workers.get(sourceKey)
-  if (existing && !existing.dead) return existing
+  if (existing && !existing.dead && existing.script === script) return existing
+  if (existing) dropEntry(existing)
 
-  const worker = new Worker("/worker.js", { type: "module" })
-  const entry = { worker, pending: new Map(), dead: false }
+  const worker = new Worker(script, { type: "module" })
+  const entry = { worker, pending: new Map(), dead: false, script }
   worker.onmessage = (event) => {
     const message = event.data
     const waiter = entry.pending.get(message.id)
     if (!waiter) return
+    if (message.ok) {
+      entry.pending.delete(message.id)
+      waiter.resolve(message.value)
+      return
+    }
+    // 實例已經作廢（dexvm 的 trap）：這支 worker 留著也只會一直回同樣的錯，直接收掉。
+    if (message.fatal === true) {
+      failWorker(entry, message.error || "worker failed")
+      return
+    }
     entry.pending.delete(message.id)
-    if (message.ok) waiter.resolve(message.value)
-    else waiter.reject(new Error(message.error || "aidoku worker error"))
+    waiter.reject(new Error(message.error || "aidoku worker error"))
   }
   worker.onerror = (event) => {
     entry.dead = true
@@ -27,6 +44,31 @@ function ensureWorker(sourceKey) {
   }
   workers.set(sourceKey, entry)
   return entry
+}
+
+function dropEntry(entry) {
+  entry.dead = true
+  for (const waiter of entry.pending.values()) waiter.reject(new Error("worker dropped"))
+  entry.pending.clear()
+  try {
+    entry.worker.terminate()
+  } catch (error) {
+    // 已經死掉的 worker terminate 會丟錯，忽略
+  }
+}
+
+/** 這個 worker 自己說它壞到救不回來：整支收掉，手邊的呼叫全部當致命錯誤（= 只丟這個源）。 */
+function failWorker(entry, message) {
+  entry.dead = true
+  const error = new Error(message)
+  error.fatal = true
+  for (const waiter of [...entry.pending.values()]) waiter.reject(error)
+  entry.pending.clear()
+  try {
+    entry.worker.terminate()
+  } catch (terminateError) {
+    // 已經死掉的 worker terminate 會丟錯，忽略
+  }
 }
 
 function send(sourceKey, message, transfer) {
@@ -66,6 +108,19 @@ async function postJson(path, body) {
 }
 
 async function dispatch(sourceKey, kind, payload) {
+  if (kind === "loadMihon") {
+    // apk 由 worker 自己用同步 XHR 向宿主拿（位元組不經 messageHandlers）。
+    return await send(sourceKey, { type: "load", prefs: payload.prefs || {} })
+  }
+  if (kind === "mihonCall") {
+    return await send(sourceKey, { type: "call", op: payload.op, args: payload.args || {} })
+  }
+  if (kind === "mihonFetchImage") {
+    return await send(sourceKey, { type: "fetchImage", token: payload.token, request: payload.request })
+  }
+  if (kind === "mihonProbe") {
+    return await send(sourceKey, { type: "probe", ...payload.probe })
+  }
   if (kind === "load") {
     const bytes = await (await postJson("/aix", { sourceKey })).arrayBuffer()
     return await send(sourceKey, { type: "load", settings: payload.settings || {}, bytes }, [bytes])
@@ -95,7 +150,8 @@ async function dispatch(sourceKey, kind, payload) {
   throw new Error("unknown task: " + kind)
 }
 
-function start(taskId, sourceKey, kind, payload) {
+function start(taskId, sourceKey, kind, payload, workerKind) {
+  if (workerKind) kinds.set(sourceKey, workerKind)
   // 這個源的 worker 已經掛了：直接告訴宿主（fatal），讓它只重建這一個源。
   const existing = workers.get(sourceKey)
   if (existing && existing.dead) {
@@ -106,7 +162,8 @@ function start(taskId, sourceKey, kind, payload) {
     (value) => report(taskId, sourceKey, true, value, undefined, false),
     (error) => {
       const entry = workers.get(sourceKey)
-      report(taskId, sourceKey, false, undefined, String((error && error.message) || error), Boolean(entry && entry.dead))
+      const fatal = Boolean((error && error.fatal) || (entry && entry.dead))
+      report(taskId, sourceKey, false, undefined, String((error && error.message) || error), fatal)
     }
   )
   return true
@@ -140,19 +197,24 @@ window.__aidoku = {
   startCall(taskId, sourceKey, method, args) {
     return start(taskId, sourceKey, "call", { method, args })
   },
+  startLoadMihon(taskId, sourceKey, prefs) {
+    return start(taskId, sourceKey, "loadMihon", { prefs }, "mihon")
+  },
+  startMihonCall(taskId, sourceKey, op, args) {
+    return start(taskId, sourceKey, "mihonCall", { op, args })
+  },
+  startMihonFetchImage(taskId, sourceKey, token, request) {
+    return start(taskId, sourceKey, "mihonFetchImage", { token, request })
+  },
+  startMihonProbe(taskId, sourceKey, probe) {
+    return start(taskId, sourceKey, "mihonProbe", { probe })
+  },
   /** 宿主決定回收這個源時叫的：worker 連它的 wasm 一起丟掉。 */
   dropSource(sourceKey) {
     const entry = workers.get(sourceKey)
     if (!entry) return true
     workers.delete(sourceKey)
-    entry.dead = true
-    for (const waiter of entry.pending.values()) waiter.reject(new Error("worker dropped"))
-    entry.pending.clear()
-    try {
-      entry.worker.terminate()
-    } catch (error) {
-      // 已經死掉的 worker terminate 會丟錯，忽略
-    }
+    dropEntry(entry)
     return true
   },
 }

@@ -8,10 +8,12 @@
 import { Script, fetch } from "scripting"
 
 import { cookieHeader, mergeCookieHeader } from "../cookies"
+import { Convert } from "../convert"
 import { join, readBytes } from "../fs"
 import { log } from "../log"
 import { requirePro } from "../pro"
 import { isCloudflareChallenge } from "../cloudflareDetect"
+import { dexvmAssets } from "../mihon/dexvm"
 
 const CALL_TIMEOUT_MS = 15_000
 const LOAD_TIMEOUT_MS = 30_000
@@ -22,6 +24,12 @@ const IMAGE_TIMEOUT_MS = 30_000
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000
 /** 同時最多幾個源的 worker（Aidoku 原版的 maxConcurrentTasks 也是 3）。 */
 const WORKER_LIMIT = 3
+
+/**
+ * worker 的種類：同一個宿主、同一套隊列與上限，差別只在載入時用哪個 worker 腳本。
+ * 一個 apk（Mihon）一個 worker；Aidoku 是一個源一個 worker。
+ */
+export type SourceWorkerKind = "aidoku" | "mihon"
 
 /** 宿主這一層壞掉（頁面沒了、伺服器起不來）。呼叫端據此重建整個宿主再重試。 */
 export class AidokuHostError extends Error {
@@ -92,6 +100,8 @@ const loadingKeys = new Set<string>()
 /** 還沒被 worker 取走的載入素材（依源分開，兩個源同時載入也不會互相蓋掉）。 */
 const pendingAix = new Map<string, Uint8Array>()
 const pendingPackages = new Map<string, AidokuPackage>()
+/** Mihon：apk 位元組（worker 用同步 XHR 向宿主拿）。 */
+const pendingApks = new Map<string, Uint8Array>()
 
 /** 源自己寫設定（`defaults.set`）的落地函式；由 `sources/aidoku.ts` 注冊。 */
 let settingsWriter: ((key: string, name: string, value: unknown) => void) | null = null
@@ -346,6 +356,10 @@ function assetPath(name: string): string {
   return join(Script.directory, "assets/aidoku", name)
 }
 
+function mihonAssetPath(name: string): string {
+  return join(Script.directory, "assets/mihon", name)
+}
+
 function staticResponse(bytes: Uint8Array, contentType: string): HttpResponse {
   return HttpResponse.raw(200, "OK", {
     headers: {
@@ -360,6 +374,18 @@ function readAsset(name: string, contentType: string): HttpResponse {
   const bytes = readBytes(assetPath(name))
   if (!bytes) return HttpResponse.notFound()
   return staticResponse(bytes, contentType)
+}
+
+/** dexvm 的兩個成品檔：只能供驗過的那一份（驗証在載入前做，載入過了就不可能不合）。 */
+function dexvmAssetResponse(pick: "wasm" | "host"): HttpResponse {
+  try {
+    const assets = dexvmAssets()
+    const contentType = pick === "wasm" ? "application/wasm" : "text/javascript; charset=utf-8"
+    return staticResponse(pick === "wasm" ? assets.wasm : assets.host, contentType)
+  } catch (failure) {
+    log("error", "mihon", "dexvm 成品檔載不起來", failure)
+    return HttpResponse.notFound()
+  }
 }
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
@@ -430,6 +456,8 @@ export interface AidokuProxyRequest {
   method?: string
   headers?: Record<string, string>
   body?: string | null
+  /** 二進位 body（base64）：Mihon 擴充的 POST 會送位元組。有值時優於 `body`。 */
+  bodyBase64?: string | null
 }
 
 export interface AidokuProxyResult {
@@ -493,8 +521,9 @@ export async function performProxy(
 
   const method = String(request.method || "GET").toUpperCase()
   const init: any = { method, headers, redirect: "follow" }
-  if (request.body != null && method !== "GET" && method !== "HEAD") {
-    init.body = request.body
+  if (method !== "GET" && method !== "HEAD") {
+    if (request.bodyBase64) init.body = Convert.decodeBase64(request.bodyBase64)
+    else if (request.body != null) init.body = request.body
   }
 
   const response = await withTimeout(fetch(request.url, init), timeoutMs, "aidoku proxy")
@@ -537,6 +566,7 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
       method: payload.method,
       headers: payload.headers,
       body: payload.body,
+      bodyBase64: payload.bodyBase64,
     },
     PROXY_TIMEOUT_MS,
     sourceKeyOf(payload)
@@ -546,6 +576,25 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
     headers: result.headers,
     body: Data.fromArrayBuffer(result.bytes.buffer as ArrayBuffer)!,
   })
+}
+
+/** 與 dexvm-host 的 `SLEEP_CAP_MS` 一致：再長就是擴充寫錯了，不該讓 worker 卡住。 */
+const MIHON_SLEEP_CAP_MS = 60_000
+
+let mihonSleeps = 0
+
+/** dexvm 的同步 sleep：worker 在這個請求上阻塞，等待期間不燒 CPU（worker 沒有 SharedArrayBuffer，用不了 Atomics.wait）。 */
+async function mihonSleepResponse(request: HttpRequest): Promise<HttpResponse> {
+  const requested = Number(jsonBody(request)?.ms)
+  const ms = Number.isFinite(requested) ? Math.min(Math.max(0, requested), MIHON_SLEEP_CAP_MS) : 0
+  mihonSleeps += 1
+  if (ms > 0) await new Promise<void>(resolve => setTimeout(() => resolve(), ms))
+  return staticResponse(new Uint8Array(0), "application/octet-stream")
+}
+
+/** `/mihon/sleep` 被打過幾次（探針用：確認限流走的是宿主 sleep，不是 busy-wait）。 */
+export function mihonSleepTotal(): number {
+  return mihonSleeps
 }
 
 /** 一批最多同時幾個（源自己通常一批 5 個）。 */
@@ -570,7 +619,7 @@ async function proxyBatchResponse(request: HttpRequest): Promise<HttpResponse> {
       if (!item || typeof item.url !== "string") continue
       try {
         results[index] = await performProxy(
-          { url: item.url, method: item.method, headers: item.headers, body: item.body },
+          { url: item.url, method: item.method, headers: item.headers, body: item.body, bodyBase64: item.bodyBase64 },
           PROXY_TIMEOUT_MS,
           sourceKey
         )
@@ -627,6 +676,17 @@ async function ensureServer(): Promise<number> {
   instance.registerHandler("/", () => readAsset("host.html", "text/html; charset=utf-8"))
   instance.registerHandler("/host.js", () => readAsset("host.js", "text/javascript; charset=utf-8"))
   instance.registerHandler("/worker.js", () => readAsset("worker.js", "text/javascript; charset=utf-8"))
+  instance.registerHandler("/mihon/worker.js", () => {
+    const bytes = readBytes(mihonAssetPath("worker.js"))
+    return bytes ? staticResponse(bytes, "text/javascript; charset=utf-8") : HttpResponse.notFound()
+  })
+  instance.registerHandler("/mihon/dexvm-host.js", () => dexvmAssetResponse("host"))
+  instance.registerHandler("/mihon/dexvm_bridge.wasm", () => dexvmAssetResponse("wasm"))
+  instance.registerAsyncHandler("/mihon/apk", async request => {
+    const apk = pendingApks.get(sourceKeyOf(jsonBody(request)) ?? "")
+    if (!apk) return HttpResponse.notFound()
+    return staticResponse(apk, "application/octet-stream")
+  })
   for (const [served, file] of Object.entries(RUNTIME_FILES)) {
     instance.registerHandler(`/rt/${served}`, () => readAsset(`rt/${file}`, "text/javascript; charset=utf-8"))
   }
@@ -651,6 +711,7 @@ async function ensureServer(): Promise<number> {
     return staticResponse(pkg.wasm, "application/octet-stream")
   })
   instance.registerAsyncHandler("/proxy", proxyResponse)
+  instance.registerAsyncHandler("/mihon/sleep", mihonSleepResponse)
   instance.registerAsyncHandler("/proxy-batch", proxyBatchResponse)
   instance.registerAsyncHandler("/settings", async request => {
     const payload = jsonBody(request)
@@ -723,6 +784,7 @@ async function createHost(): Promise<WebViewController> {
   loadingKeys.clear()
   pendingAix.clear()
   pendingPackages.clear()
+  pendingApks.clear()
   touch()
   log("info", "aidoku", "宿主頁面就緒")
   return controller
@@ -831,6 +893,7 @@ async function dropWorker(sourceKey: string): Promise<void> {
   loadingKeys.delete(sourceKey)
   pendingAix.delete(sourceKey)
   pendingPackages.delete(sourceKey)
+  pendingApks.delete(sourceKey)
   if (!controller || !server) return
   try {
     // 頁面真的沒了也不用管：下一次呼叫會自己重建，到時這份狀態就不算數了。
@@ -854,6 +917,7 @@ export function forgetAidokuSource(sourceKey: string): void {
   loadingKeys.delete(sourceKey)
   pendingAix.delete(sourceKey)
   pendingPackages.delete(sourceKey)
+  pendingApks.delete(sourceKey)
   scheduleIdle()
 }
 
@@ -866,19 +930,20 @@ export function dropAidokuSource(sourceKey: string): Promise<void> {
   }, false)
 }
 
-async function load(sourceKey: string, start: (id: number) => string, prepare: () => void): Promise<any> {
+async function load(sourceKey: string, label: string, start: (id: number) => string, prepare: () => void): Promise<any> {
   await ensureHost()
   loadedKeys.delete(sourceKey)
   loadingKeys.add(sourceKey)
   prepare()
   try {
-    const result = await runTask(sourceKey, start, LOAD_TIMEOUT_MS, "aidoku load")
+    const result = await runTask(sourceKey, start, LOAD_TIMEOUT_MS, label)
     loadedKeys.add(sourceKey)
     return result
   } finally {
     loadingKeys.delete(sourceKey)
     pendingAix.delete(sourceKey)
     pendingPackages.delete(sourceKey)
+    pendingApks.delete(sourceKey)
   }
 }
 
@@ -890,6 +955,7 @@ export async function loadAidokuSource(
 ): Promise<any> {
   return await load(
     sourceKey,
+    "aidoku load",
     (id) => `return window.__aidoku.startLoad(${id}, ${JSON.stringify(sourceKey)}, ${JSON.stringify(settings)})`,
     () => {
       pendingAix.set(sourceKey, aix)
@@ -902,6 +968,7 @@ export async function loadAidokuSource(
 export async function loadAidokuPackage(pkg: AidokuPackage, sourceKey: string): Promise<any> {
   return await load(
     sourceKey,
+    "aidoku load",
     (id) => `return window.__aidoku.startLoadPackage(${id}, ${JSON.stringify(sourceKey)})`,
     () => {
       pendingPackages.set(sourceKey, pkg)
@@ -910,8 +977,103 @@ export async function loadAidokuPackage(pkg: AidokuPackage, sourceKey: string): 
   )
 }
 
-/** worker 現在的 `currentSettings`（schema 預設 ＋ 使用者值 ＋ manifest 預設）：只讀。 */
-export async function aidokuSettingsSnapshot(sourceKey: string): Promise<Record<string, unknown>> {
+// ---------------------------------------------------------------- Mihon（dexvm-wasm）
+
+/** worker 回報的載入耗時：分得開「拿 apk」、「實例化 wasm」與「open」。 */
+export interface MihonLoadTimings {
+  apk: number
+  wasm: number
+  instantiate: number
+  open: number
+}
+
+export interface MihonLoaded {
+  manifest: unknown
+  timings: MihonLoadTimings
+}
+
+/**
+ * 載入一個 Mihon apk：一個 apk 一個 worker，內部的語言子源共用同一個 dexvm handle。
+ * 呼叫端要自己在 `runAidokuExclusive` 裡叫（與 Aidoku 的載入路徑一樣）。
+ */
+export async function loadMihonExtension(
+  apk: Uint8Array,
+  apkKey: string,
+  prefs: Record<string, unknown> = {}
+): Promise<MihonLoaded> {
+  // 雜湊不符就在開宿主之前失敗，並說清楚是哪一個檔（不要變成頁面上的 404）。
+  dexvmAssets()
+  return await load(
+    apkKey,
+    "mihon load",
+    (id) => `return window.__aidoku.startLoadMihon(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(prefs)})`,
+    () => {
+      pendingApks.set(apkKey, apk)
+      pendingAix.delete(apkKey)
+      pendingPackages.delete(apkKey)
+    }
+  )
+}
+
+/** 對 Mihon 擴充做一次 op（`handle` 由 worker 自己補上）。 */
+export async function callMihon(
+  apkKey: string,
+  op: string,
+  args: Record<string, unknown> = {},
+  timeoutMs: number = CALL_TIMEOUT_MS
+): Promise<any> {
+  return await runTask(
+    apkKey,
+    (id) =>
+      `return window.__aidoku.startMihonCall(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(op)}, ${JSON.stringify(args)})`,
+    timeoutMs,
+    `mihon ${op}`
+  )
+}
+
+export interface MihonImageRequest {
+  sourceId: string
+  /** `pages` 回來的其中一頁（PageRef）。 */
+  page: unknown
+}
+
+/**
+ * 抓一頁圖：`fetchImage` 在 VM 裡跑（含源的攔截器與解混淆），位元組由 worker 交給 `/result/<token>`，
+ * 不經 messageHandlers。呼叫端要自己排進 `runAidokuExclusive`，並先確認 worker 載著那個 apk。
+ */
+export async function fetchMihonImage(
+  apkKey: string,
+  request: MihonImageRequest,
+  timeoutMs: number = IMAGE_TIMEOUT_MS
+): Promise<Uint8Array> {
+  const token = createAidokuPageJob(null)
+  const result = waitAidokuPageJob(token, timeoutMs)
+  const task = runTask(
+    apkKey,
+    (id) =>
+      `return window.__aidoku.startMihonFetchImage(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(token)}, ${JSON.stringify(request)})`,
+    timeoutMs,
+    "mihon fetchImage"
+  )
+  task.catch(failure => failAidokuPageJob(token, failure instanceof Error ? failure.message : String(failure)))
+  return await result
+}
+
+/**
+ * 測試縫（比照 `detachAidokuHostPage`）：worker 自己模擬 trap 與 `eval_js`。
+ * 實機上找不到穩定能讓 dexvm panic 的 apk，trap 這條路只能這樣驗。
+ * 呼叫端要自己排進 `runAidokuExclusive`。
+ */
+export async function probeMihonWorker(apkKey: string, probe: Record<string, unknown>): Promise<any> {
+  return await runTask(
+    apkKey,
+    (id) => `return window.__aidoku.startMihonProbe(${id}, ${JSON.stringify(apkKey)}, ${JSON.stringify(probe)})`,
+    CALL_TIMEOUT_MS,
+    "mihon probe"
+  )
+}
+
+/** worker 現在的 `currentSettings`（schema 預設 ＋ 使用者值 ＋ manifest 預設）：只讀。 */export async function aidokuSettingsSnapshot(sourceKey: string): Promise<Record<string, unknown>> {
   const value = await runTask(
     sourceKey,
     (id) => `return window.__aidoku.startSettingsSnapshot(${id}, ${JSON.stringify(sourceKey)})`,
@@ -979,13 +1141,13 @@ export async function callAidoku(
   )
 }
 
-/** 建立一個頁面圖工作（`processAidokuPageImage` 與協定層測試共用）。 */
-export function createAidokuPageJob(bytes: Uint8Array): string {
+/** 建立一個頁面圖工作（`processAidokuPageImage` 與協定層測試共用）。`null` = 沒有輸入位元組（Mihon 的 `fetchImage` 由 VM 自己抓）。 */
+export function createAidokuPageJob(bytes: Uint8Array | null): string {
   pageJobTotal += 1
   const token = `${Date.now().toString(36)}-${nextPageJobId++}-${Math.random().toString(36).slice(2, 8)}`
   pageJobs.set(token, {
     bytes,
-    served: false,
+    served: bytes === null,
     resolve: () => {},
     reject: () => {},
     timer: null,
@@ -1115,6 +1277,7 @@ function teardown(): void {
   loadingKeys.clear()
   pendingAix.clear()
   pendingPackages.clear()
+  pendingApks.clear()
   failPageJobs("aidoku host reset")
   failPending("aidoku host reset")
   if (controller) {
