@@ -5,22 +5,22 @@
 // 呼叫都排在同一個源的隊列上（與 Aidoku 共用宿主的上限與回收）。
 //
 // 這裡只做 DexvmError → 宿主自癒的轉譯：`trap` 由 worker 標成 fatal，宿主當成
-// `AidokuWorkerError`，只丟掉這個 apk 的 worker 重載；其他錯誤原樣往上丟。
+// `SourceWorkerError`，只丟掉這個 apk 的 worker 重載；其他錯誤原樣往上丟。
 
 import {
   callMihon,
-  dropAidokuSource,
+  dropSource,
   fetchMihonImage,
-  forgetAidokuSource,
-  isAidokuHostError,
-  isAidokuLoaded,
-  isAidokuWorkerError,
+  forgetSource,
+  isSourceHostError,
+  isSourceLoaded,
+  isSourceWorkerError,
   loadMihonExtension,
   probeMihonWorker,
-  resetAidokuHost,
-  runAidokuExclusive,
+  resetSourceHost,
+  runSourceExclusive,
   type MihonLoadTimings,
-} from "../engine/aidoku/host"
+} from "../engine/sourcehost/host"
 import { log } from "../engine/log"
 
 const PREFIX = "mihon:"
@@ -110,11 +110,11 @@ async function attemptWithHealing<T>(apkKey: string, op: string, attempt: () => 
   try {
     return await attempt()
   } catch (failure) {
-    if (!isAidokuHostError(failure)) throw failure
-    const scope = isAidokuWorkerError(failure) ? `${apkKey} 的 worker` : "宿主頁面"
+    if (!isSourceHostError(failure)) throw failure
+    const scope = isSourceWorkerError(failure) ? `${apkKey} 的 worker` : "宿主頁面"
     log("warning", "mihon", `${apkKey} 的 ${op} 失敗（${messageOf(failure)}），重建${scope}後重試一次`)
-    if (isAidokuWorkerError(failure)) await dropAidokuSource(apkKey)
-    else await resetAidokuHost()
+    if (isSourceWorkerError(failure)) await dropSource(apkKey)
+    else await resetSourceHost()
     return await attempt()
   }
 }
@@ -124,7 +124,7 @@ function opTimeout(op: string): number | undefined {
 }
 
 async function ensureLoaded(apkKey: string): Promise<void> {
-  if (isAidokuLoaded(apkKey)) return
+  if (isSourceLoaded(apkKey)) return
   const entry = extensions.get(apkKey)
   if (!entry) throw new Error(`${apkKey} 還沒開啟（先 open 一次）`)
   await loadMihonExtension(entry.bytes, apkKey, entry.prefs)
@@ -137,7 +137,7 @@ async function ensureLoaded(apkKey: string): Promise<void> {
 export async function open(apkKey: string, apk: Uint8Array, prefs: MihonPrefs = {}): Promise<MihonLoaded> {
   extensions.set(apkKey, { bytes: apk, prefs })
   return await attemptWithHealing(apkKey, "open", () =>
-    runAidokuExclusive(apkKey, async () => {
+    runSourceExclusive(apkKey, async () => {
       const loaded = await loadMihonExtension(apk, apkKey, prefs)
       return { manifest: loaded.manifest as MihonManifest, timings: loaded.timings }
     })
@@ -147,7 +147,7 @@ export async function open(apkKey: string, apk: Uint8Array, prefs: MihonPrefs = 
 /** 一次 op：先確保這個 apk 的 worker 載著它。 */
 async function call<T>(apkKey: string, op: string, args: Record<string, unknown> = {}): Promise<T> {
   return await attemptWithHealing(apkKey, op, () =>
-    runAidokuExclusive(apkKey, async () => {
+    runSourceExclusive(apkKey, async () => {
       await ensureLoaded(apkKey)
       return (await callMihon(apkKey, op, args, opTimeout(op))) as T
     })
@@ -185,7 +185,7 @@ export async function pages(apkKey: string, sourceId: string, chapter: MihonChap
  */
 export async function fetchImage(apkKey: string, sourceId: string, page: MihonPage): Promise<Uint8Array> {
   return await attemptWithHealing(apkKey, "fetchImage", () =>
-    runAidokuExclusive(apkKey, async () => {
+    runSourceExclusive(apkKey, async () => {
       await ensureLoaded(apkKey)
       return await fetchMihonImage(apkKey, { sourceId, page })
     })
@@ -194,15 +194,15 @@ export async function fetchImage(apkKey: string, sourceId: string, page: MihonPa
 
 /** 這個 apk 的 worker 裡載著它嗎（診斷用）。 */
 export function isLoaded(apkKey: string): boolean {
-  return isAidokuLoaded(apkKey)
+  return isSourceLoaded(apkKey)
 }
 
 /**
  * 測試縫：讓這個 apk 的 worker 丟一個真的 trap（實機上找不到穩定的 panic 輸入）。
- * 不經自癒：呼叫端要看到的就是那個 `AidokuWorkerError`；重載由下一通正常呼叫驗。
+ * 不經自癒：呼叫端要看到的就是那個 `SourceWorkerError`；重載由下一通正常呼叫驗。
  */
 export async function simulateWorkerCrash(apkKey: string): Promise<void> {
-  await runAidokuExclusive(apkKey, async () => {
+  await runSourceExclusive(apkKey, async () => {
     await ensureLoaded(apkKey)
     await probeMihonWorker(apkKey, { case: "trap" })
   })
@@ -213,7 +213,7 @@ export async function evalJsInWorker(
   apkKey: string,
   src: string
 ): Promise<{ ok: boolean; value?: unknown; error?: string }> {
-  return await runAidokuExclusive(apkKey, async () => {
+  return await runSourceExclusive(apkKey, async () => {
     await ensureLoaded(apkKey)
     return await probeMihonWorker(apkKey, { case: "eval", src })
   })
@@ -222,5 +222,5 @@ export async function evalJsInWorker(
 /** 丟掉這個 apk 的載入狀態（下次呼叫重載）：換檔或移除時用。 */
 export function forget(apkKey: string): void {
   extensions.delete(apkKey)
-  forgetAidokuSource(apkKey)
+  forgetSource(apkKey)
 }

@@ -34,7 +34,7 @@ function ensureWorker(sourceKey) {
       return
     }
     entry.pending.delete(message.id)
-    waiter.reject(new Error(message.error || "aidoku worker error"))
+    waiter.reject(new Error(message.error || "source worker error"))
   }
   worker.onerror = (event) => {
     entry.dead = true
@@ -83,7 +83,7 @@ function send(sourceKey, message, transfer) {
 
 function report(taskId, sourceKey, ok, value, error, fatal) {
   try {
-    window.webkit.messageHandlers.aidokuResult.postMessage({
+    window.webkit.messageHandlers.sourceResult.postMessage({
       id: taskId,
       sourceKey,
       ok,
@@ -169,7 +169,7 @@ function start(taskId, sourceKey, kind, payload, workerKind) {
   return true
 }
 
-window.__aidoku = {
+window.__sourceHost = {
   startLoad(taskId, sourceKey, settings) {
     return start(taskId, sourceKey, "load", { settings })
   },

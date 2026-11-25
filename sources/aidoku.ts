@@ -9,25 +9,25 @@ import type { ComicListItem, ComicListPage } from "../engine/adapt"
 import { normalizeTags } from "../engine/adapt"
 import {
   callAidoku,
-  dropAidokuSource,
-  forgetAidokuSource,
+  dropSource,
+  forgetSource,
   hasImageProcessorAidoku,
   initializeAidokuSource,
-  isAidokuHostError,
-  isAidokuLoaded,
-  isAidokuWorkerError,
+  isSourceHostError,
+  isSourceLoaded,
+  isSourceWorkerError,
   loadAidokuPackage,
   notifyAidoku,
   processAidokuPageImage,
-  resetAidokuHost,
-  runAidokuExclusive,
-  setAidokuSettingWriter,
-  takeAidokuChallenge,
+  resetSourceHost,
+  runSourceExclusive,
+  setSourceSettingWriter,
+  takeSourceChallenge,
   type AidokuImageProcessors,
   type AidokuPackage,
   type AidokuPageImageRequest,
-  type AidokuPriority,
-} from "../engine/aidoku/host"
+  type SourcePriority,
+} from "../engine/sourcehost/host"
 import { appDataRoot, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
 import type { ImageRequest, ImageResponseInfo } from "../engine/images"
 import type { SourceViewer } from "../library/readerSettings"
@@ -164,7 +164,7 @@ function writeInstalled(key: string, record: InstallRecord): void {
 }
 
 // 源自己用 `defaults.set` 寫的設定（例如 oauth 刷新後的 token）：由宿主回流到 installed.json。
-setAidokuSettingWriter((key, name, value) => {
+setSourceSettingWriter((key, name, value) => {
   if (!exists(dirOf(key))) return
   const settings = { ...settingsOf(key) }
   if (value == null) delete settings[name]
@@ -888,7 +888,7 @@ function forgetLoaded(key: string): void {
   initialized.delete(key)
   // 重新安裝／移除都走這裡：磁碟上的 wasm 已經是另一份，記憶體這份不能給下一次載入。
   payloadCache.delete(key)
-  forgetAidokuSource(key)
+  forgetSource(key)
 }
 
 async function initializeGuarded(key: string): Promise<void> {
@@ -902,7 +902,7 @@ async function initializeGuarded(key: string): Promise<void> {
 /** 確定這個源的 worker 裡載著它（而且初始化過）。 */
 async function ensureLoaded(source: InstalledSource): Promise<void> {
   const key = source.stored.key
-  if (isAidokuLoaded(key)) {
+  if (isSourceLoaded(key)) {
     if (initialized.has(key)) return
     await initializeGuarded(key)
     initialized.add(key)
@@ -925,7 +925,7 @@ async function ensureLoaded(source: InstalledSource): Promise<void> {
 }
 
 function shouldHeal(failure: unknown): boolean {
-  return isAidokuHostError(failure) || failure instanceof SourceLoadError
+  return isSourceHostError(failure) || failure instanceof SourceLoadError
 }
 
 /**
@@ -939,11 +939,11 @@ async function withHealing<T>(
   step: string,
   task: () => Promise<T>,
   markOnFailure = true,
-  priority: AidokuPriority = "user"
+  priority: SourcePriority = "user"
 ): Promise<T> {
   const key = source.stored.key
   const attempt = (): Promise<T> =>
-    runAidokuExclusive(
+    runSourceExclusive(
       key,
       async () => {
         assertAvailable(key)
@@ -956,11 +956,11 @@ async function withHealing<T>(
     return await attempt()
   } catch (failure) {
     if (!shouldHeal(failure)) throw failure
-    const scope = isAidokuWorkerError(failure) ? `${key} 的 worker` : "宿主頁面"
+    const scope = isSourceWorkerError(failure) ? `${key} 的 worker` : "宿主頁面"
     log("warning", "aidoku", `${key} 的 ${step} 失敗（${messageOf(failure)}），重建${scope}後重試一次`)
     initialized.delete(key)
-    if (isAidokuWorkerError(failure)) await dropAidokuSource(key)
-    else await resetAidokuHost()
+    if (isSourceWorkerError(failure)) await dropSource(key)
+    else await resetSourceHost()
     try {
       return await attempt()
     } catch (retryFailure) {
@@ -999,7 +999,7 @@ async function call(
   method: string,
   args: unknown[] = [],
   timeoutMs?: number,
-  priority: AidokuPriority = "user"
+  priority: SourcePriority = "user"
 ): Promise<any> {
   const run = () =>
     withHealing(source, method, () => callAidoku(source.stored.key, method, args, timeoutMs), true, priority)
@@ -1013,7 +1013,7 @@ async function call(
     failure = error
   }
 
-  const challenge = takeAidokuChallenge(source.stored.key)
+  const challenge = takeSourceChallenge(source.stored.key)
   if (!challenge) {
     if (failed) throw failure
     return value
@@ -1033,7 +1033,7 @@ async function call(
     return await run()
   } finally {
     // 重試自己撞到的挑戰不再留給下一次（避免每次呼叫都多過一次盾）。
-    takeAidokuChallenge(source.stored.key)
+    takeSourceChallenge(source.stored.key)
   }
 }
 
@@ -1196,7 +1196,7 @@ export async function runtimeFilterDefs(source: InstalledSource): Promise<unknow
  * `background`：追更這類沒人在等的呼叫，兩次源呼叫都排在使用者的呼叫後面。
  */
 export function detail(source: InstalledSource, comicId: string, background = false): Promise<ComicDetail> {
-  const priority: AidokuPriority = background ? "background" : "user"
+  const priority: SourcePriority = background ? "background" : "user"
   return ask("detail", async () => {
     const raw = await call(source, "getMangaDetails", [{ key: comicId, id: comicId }], SLOW_CALL_TIMEOUT_MS, priority)
     const mangaId = String(raw?.key ?? raw?.id ?? comicId)

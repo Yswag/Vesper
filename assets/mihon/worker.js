@@ -161,7 +161,7 @@ async function handle(message) {
   if (message.type === "call") return call(message.op, message.args)
   if (message.type === "fetchImage") return await fetchImage(message.token, message.request)
   if (message.type === "stats") return { logCount, lastLog }
-  // 測試縫（比照 detachAidokuHostPage）：實機上找不到穩定能讓 dexvm panic 的 apk，
+  // 測試縫（比照 detachSourceHostPage）：實機上找不到穩定能讓 dexvm panic 的 apk，
   // 所以由 worker 自己模擬 trap 與 eval_js，讓探針驗得到那兩條路。
   if (message.type === "probe") {
     if (message.case === "trap") {
@@ -175,7 +175,7 @@ async function handle(message) {
   throw new Error("unknown message: " + message.type)
 }
 
-/** `kind === 'trap'`：wasm 實例已作廢，宿主只會丟掉這個源重載（AidokuWorkerError）。 */
+/** `kind === 'trap'`：wasm 實例已作廢，宿主只會丟掉這個源重載（SourceWorkerError）。 */
 self.onmessage = (event) => {
   const message = event.data
   handle(message).then(

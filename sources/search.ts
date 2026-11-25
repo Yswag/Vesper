@@ -3,7 +3,7 @@
 
 import type { AbortSignal } from "scripting"
 
-import { aidokuWorkerLimit } from "../engine/aidoku/host"
+import { sourceWorkerLimit } from "../engine/sourcehost/host"
 import { isAbortError } from "../engine/http"
 import { log } from "../engine/log"
 
@@ -85,7 +85,7 @@ export async function searchAll(
   /** 還沒派工的源，維持呼叫端給的順序。 */
   const pending = sources.slice()
   const aidokuPending: boolean[] = pending.map(source => source.stored.kind === "aidoku")
-  const limit = aidokuWorkerLimit()
+  const limit = sourceWorkerLimit()
   let active = 0
   let activeAidoku = 0
   let done = 0
