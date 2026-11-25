@@ -2,7 +2,8 @@
 //
 //   <documents>/Vesper/sources/repositories.json   { version, repositories: StoredRepository[] }
 //
-// 倉庫有兩種：`venera`（Venera 的源清單）與 `aidoku-index`（Aidoku 的兩份索引 schema）。
+// 倉庫有三種：`venera`（Venera 的源清單）、`aidoku-index`（Aidoku 的兩份索引 schema）
+// 與 `mihon-index`（keiyoushi 的擴充索引）。
 // 加入倉庫只保存索引（含快取），**不安裝任何源**；安裝由 registry 從快取的條目逐筆挑。
 // 索引快取在本地，所以沒網路也看得到清單。沒有檔案授權時退回 Storage KV（跟 store.ts 同樣策略）。
 
@@ -15,7 +16,15 @@ import type { CatalogEntry } from "./catalog"
 const KV_KEY = "venera:repositories"
 const INDEX_VERSION = 1
 
-export type RepositoryKind = "venera" | "aidoku-index"
+export type RepositoryKind = "venera" | "aidoku-index" | "mihon-index"
+
+/** 索引宣告的倉庫資訊（Mihon 新格式才有）；目前只存不顯示、也不驗簽。 */
+export interface RepositoryMeta {
+  badgeLabel?: string
+  signingKey?: string
+  website?: string
+  discord?: string
+}
 
 export interface StoredRepository {
   /** 索引 URL，同時是識別碼：同一個網址只會有一筆，再加入就是重新抓取。 */
@@ -29,20 +38,22 @@ export interface StoredRepository {
   fetchedAt: number
   /** 索引快取（加入時抓一次，重新整理時覆蓋）。 */
   entries: CatalogEntry[]
+  /** 索引自己宣告的倉庫資訊。 */
+  meta?: RepositoryMeta
   /** 最後一次抓取失敗的原因；成功時清掉。 */
   error?: string
 }
 
 /**
  * 倉庫網址的比對鍵：同一份索引的不同寫法要對得上——前後空白、大小寫、
- * 結尾的 `index.json`／`index.min.json` 與斜線，以及 GitHub raw 的 `refs/heads/`。
+ * 結尾的 `index.pb`／`index.json`／`index.min.json`／`repo.json` 與斜線，以及 GitHub raw 的 `refs/heads/`。
  */
 export function repositoryKey(url: string): string {
   return url
     .trim()
     .toLowerCase()
     .replace(/^(https?:\/\/raw\.githubusercontent\.com\/[^/]+\/[^/]+\/)refs\/heads\//, "$1")
-    .replace(/\/index(\.min)?\.json$/, "")
+    .replace(/\/(index(\.min)?\.json|index\.pb|repo\.json)$/, "")
     .replace(/\/+$/, "")
 }
 
@@ -70,10 +81,19 @@ function isValid(entry: unknown): entry is StoredRepository {
 
 /** 舊資料沒有 kind。 */
 export function kindOf(repository: StoredRepository): RepositoryKind {
-  return repository.kind === "aidoku-index" ? "aidoku-index" : "venera"
+  if (repository.kind === "aidoku-index") return "aidoku-index"
+  if (repository.kind === "mihon-index") return "mihon-index"
+  return "venera"
 }
 
 // ---------------------------------------------------------------- 讀寫
+
+/**
+ * 解析快取的鍵是「檔案原文」：keiyoushi 的索引有上千筆（約 700KB），而 `getRepository`、
+ * `repositoryEntries` 在畫面重繪時會被叫很多次。原文沒變就不重解析；別台實例（Mini Hub）
+ * 改過檔，原文一定不同，所以不會拿到別的實例的舊資料。
+ */
+let parsedCache: { raw: string; list: StoredRepository[] } | null = null
 
 function readAll(): StoredRepository[] {
   if (!hasFileAccess()) {
@@ -82,9 +102,12 @@ function readAll(): StoredRepository[] {
   }
   const raw = readText(indexPath())
   if (raw == null) return []
+  if (parsedCache !== null && parsedCache.raw === raw) return parsedCache.list
   try {
     const parsed = JSON.parse(raw) as RepositoryFile
-    return Array.isArray(parsed?.repositories) ? parsed.repositories.filter(isValid) : []
+    const list = Array.isArray(parsed?.repositories) ? parsed.repositories.filter(isValid) : []
+    parsedCache = { raw, list }
+    return list
   } catch {
     return []
   }
@@ -94,7 +117,9 @@ function writeAll(list: StoredRepository[]) {
   if (hasFileAccess()) {
     ensureDir(storeDir())
     const payload: RepositoryFile = { version: INDEX_VERSION, repositories: list }
-    writeText(indexPath(), JSON.stringify(payload, null, 2))
+    const raw = JSON.stringify(payload, null, 2)
+    writeText(indexPath(), raw)
+    parsedCache = { raw, list }
   } else {
     kv.set(KV_KEY, list)
   }

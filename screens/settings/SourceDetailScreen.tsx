@@ -19,11 +19,19 @@ import {
   sourceKindOf,
   uninstallSource,
   type InstalledSource,
+  type SourceKind,
 } from "../../sources/registry"
 import { getRepository, repositoryNameFor } from "../../sources/repository"
 import { AidokuSettingsScreen } from "./AidokuSettingsScreen"
 import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
+
+/** 源類型的中文名（源詳情頁）。 */
+function sourceKindLabel(kind: SourceKind): string {
+  if (kind === "aidoku") return t("settings.shared.kindAidoku")
+  if (kind === "mihon") return t("settings.shared.kindMihon")
+  return t("settings.shared.kindVenera")
+}
 
 export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
   useSubscription(subscribeLocale)
@@ -139,10 +147,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
 
       {/* 2. 基本資料 */}
       <CardGroup title={t("settings.sourceDetail.profile")}>
-        <InfoRow
-          label={t("settings.sourceDetail.kind")}
-          value={t(sourceKindOf(source) === "aidoku" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")}
-        />
+        <InfoRow label={t("settings.sourceDetail.kind")} value={sourceKindLabel(sourceKindOf(source))} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.sourceDetail.name")} value={meta?.name ?? source.stored.name} />
         <Divider padding={{ leading: 16 }} />

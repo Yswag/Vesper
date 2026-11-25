@@ -5,6 +5,7 @@ import { clearCookies } from "../engine/cookies"
 import { setCloudflareSourceNameLookup } from "../engine/cloudflare"
 import { clearCredentials, loadCredentials, saveCredentials } from "../engine/credentials"
 import { createEmitter } from "../engine/emitter"
+import { maybeGunzip } from "../engine/gzip"
 import { log } from "../engine/log"
 import { requirePro } from "../engine/pro"
 import { createHostContext } from "../engine/host"
@@ -16,13 +17,15 @@ import { fetch } from "scripting"
 import { catalogBaseOf, compareVersion, indexUrlOf, parseCatalog, resolveEntryUrl, type CatalogEntry } from "./catalog"
 import * as aidoku from "./aidoku"
 import { aidokuIndexSchema, parseAidokuIndex } from "./aidokuIndex"
+import * as mihon from "./mihon"
+import { loadMihonIndex, mihonIndexSchema } from "./mihonIndex"
 import * as repositoryStore from "./repository"
-import type { RepositoryKind, StoredRepository } from "./repository"
+import type { RepositoryKind, RepositoryMeta, StoredRepository } from "./repository"
 import * as store from "./store"
 import { sourceLocale, sourceText } from "./translation"
 import { runWebLogin } from "./webLogin"
 
-export type SourceKind = "venera" | "aidoku"
+export type SourceKind = "venera" | "aidoku" | "mihon"
 
 export interface InstalledSource {
   stored: store.StoredSource
@@ -55,11 +58,14 @@ const bus = createEmitter({
   onListenerError: error => log("error", "sources", "訂閱者拋錯", error),
 })
 
-/** Aidoku 源在執行期改變狀態（標成不可用、首頁能力、圖片後處理）時，讓畫面跟著更新。 */
-aidoku.setStateListener(() => {
+/** Aidoku／Mihon 源在執行期改變狀態（標成不可用、首頁能力、圖片後處理）時，讓畫面跟著更新。 */
+aidoku.setStateListener(() => sourceStateChanged())
+mihon.setStateListener(() => sourceStateChanged())
+
+function sourceStateChanged() {
   revision++
   bus.emit()
-})
+}
 
 /** 過盾視窗的標題要源的名字；cloudflare 不直接 import registry（循環依賴），在這裡接上。 */
 setCloudflareSourceNameLookup(key => {
@@ -89,23 +95,37 @@ export function allSources(): InstalledSource[] {
   return current.map(withFailure)
 }
 
-/** 畫面要顯示來源類型時走這裡，不必知道 Aidoku 的內部形狀。 */
+/** 畫面要顯示來源類型時走這裡，不必知道各引擎的內部形狀。 */
 export function sourceKindOf(source: InstalledSource): SourceKind {
-  return aidoku.isAidoku(source) ? "aidoku" : "venera"
+  if (aidoku.isAidoku(source)) return "aidoku"
+  if (mihon.isMihon(source)) return "mihon"
+  return "venera"
 }
 
-/** 執行期被標成不可用的 Aidoku 源：錯誤要能被畫面讀到。 */
+/** 這種源要靠本機 HttpServer（Scripting Pro）。 */
+export function sourceNeedsPro(kind: SourceKind): boolean {
+  return kind !== "venera"
+}
+
+/** 這個源的引擎級失敗原因（沒有就是 undefined）。 */
+function failureOfSource(source: InstalledSource): string | undefined {
+  if (aidoku.isAidoku(source)) return aidoku.failureOf(source.stored.key)
+  if (mihon.isMihon(source)) return mihon.failureOf(source.stored.key)
+  return undefined
+}
+
+/** 執行期被標成不可用的源：錯誤要能被畫面讀到。 */
 function withFailure(source: InstalledSource): InstalledSource {
-  if (!aidoku.isAidoku(source)) return source
-  const reason = aidoku.failureOf(source.stored.key)
+  if (!aidoku.isAidoku(source) && !mihon.isMihon(source)) return source
+  const reason = failureOfSource(source)
   if (!reason) return source
   return { ...source, error: source.error ?? reason }
 }
 
-/** 這個源現在能不能用（Venera 要載入成功，Aidoku 要在磁碟上、沒壞、也沒被標成不可用）。 */
+/** 這個源現在能不能用（Venera 要載入成功，Aidoku／Mihon 要在磁碟上、沒壞、也沒被標成不可用）。 */
 export function isReady(source: InstalledSource): boolean {
-  if (aidoku.isAidoku(source)) {
-    return source.error === undefined && aidoku.failureOf(source.stored.key) === undefined
+  if (aidoku.isAidoku(source) || mihon.isMihon(source)) {
+    return source.error === undefined && failureOfSource(source) === undefined
   }
   return source.instance != null
 }
@@ -123,7 +143,7 @@ export function findSource(key: string): InstalledSource | undefined {
 export function reloadRegistry() {
   revision++
   initTasks.clear()
-  current = [...store.listSources().map(loadVenera), ...aidoku.installedSources()]
+  current = [...store.listSources().map(loadVenera), ...aidoku.installedSources(), ...mihon.installedSources()]
   bus.emit()
 }
 
@@ -141,11 +161,11 @@ export function debugSourceLoads(): { total: number; byKey: Record<string, numbe
   return { total, byKey }
 }
 
-/** 從盤上建一個源的實例；這個鍵在盤上（含 Aidoku 的目錄）都不存在就回 undefined。 */
+/** 從盤上建一個源的實例；這個鍵在盤上（含 Aidoku／Mihon 的目錄）都不存在就回 undefined。 */
 function buildSource(key: string): InstalledSource | undefined {
   const raw = store.getSource(key)
   if (raw) return loadVenera(raw)
-  return aidoku.installedSources().find(entry => entry.stored.key === key)
+  return [...aidoku.installedSources(), ...mihon.installedSources()].find(entry => entry.stored.key === key)
 }
 
 /**
@@ -218,6 +238,7 @@ function loadVenera(rawEntry: store.StoredSource): InstalledSource {
 export function setSourceEnabled(key: string, enabled: boolean) {
   const source = findSource(key)
   if (source && aidoku.isAidoku(source)) aidoku.setEnabled(key, enabled)
+  else if (source && mihon.isMihon(source)) mihon.setEnabled(key, enabled)
   else store.setEnabled(key, enabled)
   reloadSource(key)
 }
@@ -363,6 +384,7 @@ export async function runSourceSettingCallback(key: string, id: string): Promise
 export function uninstallSource(key: string) {
   const source = findSource(key)
   if (source && aidoku.isAidoku(source)) aidoku.uninstall(key)
+  else if (source && mihon.isMihon(source)) mihon.uninstall(key)
   else store.removeSource(key)
   log("info", "sources", `已移除源 ${key}`)
   reloadRegistry()
@@ -497,8 +519,9 @@ export function installManualSource(text: string, origin: string | null): Instal
 
 // ---------------------------------------------------------------- 源倉庫
 
-/** 倉庫索引的長相：物件帶 `sources` 或條目帶 `id` ＋ 下載路徑的都是 Aidoku。 */
+/** 倉庫索引的長相：Mihon 的 `extensionList`／`pkg`、Aidoku 的 `sources`／`id` ＋ 下載路徑，剩下的是 Venera。 */
 function detectRepositoryKind(raw: unknown): RepositoryKind {
+  if (mihonIndexSchema(raw) !== null) return "mihon-index"
   if (aidokuIndexSchema(raw) === "community") return "aidoku-index"
   if (Array.isArray(raw)) {
     const records = raw
@@ -515,20 +538,54 @@ function detectRepositoryKind(raw: unknown): RepositoryKind {
 interface LoadedIndex {
   kind: RepositoryKind
   entries: CatalogEntry[]
-  /** 索引自己宣告的名稱（Aidoku community 才有）。 */
+  /** 索引自己宣告的名稱（Aidoku community／Mihon 才有）。 */
   name?: string
+  /** 索引宣告的倉庫資訊（Mihon 新格式才有）。 */
+  meta?: RepositoryMeta
 }
 
-/** 抓一份倉庫索引並解析；kind 沒指定就依內容判斷。 */
-async function loadIndex(url: string, kind?: RepositoryKind): Promise<LoadedIndex> {
-  const target = indexUrlOf(url)
-  let parsed: unknown
+/** 抓索引的原始位元組；gzip 先解（Mihon 的 index.pb 就是 gzip 過的 protobuf）。 */
+async function fetchIndexBody(url: string): Promise<Uint8Array> {
+  const response = await fetch(url, { timeout: 60, allowInsecureRequest: true } as any)
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(t("sources.catalog.downloadFailed", { status: response.status }))
+  }
+  return maybeGunzip(new Uint8Array(await response.arrayBuffer()))
+}
+
+function parseIndexBody(body: Uint8Array): unknown {
   try {
-    parsed = JSON.parse(await fetchText(target))
+    return JSON.parse(new TextDecoder().decode(body))
   } catch {
     throw new Error(t("sources.catalog.repositoryNotArray"))
   }
-  const resolved = kind ?? detectRepositoryKind(parsed)
+}
+
+/** 第一個位元組不是 JSON 就是 protobuf 的 index.pb（Mihon 也是這樣判斷）。 */
+function kindOfBody(body: Uint8Array): RepositoryKind {
+  const first = body[0]
+  if (first !== 0x5b && first !== 0x7b) return "mihon-index"
+  return detectRepositoryKind(parseIndexBody(body))
+}
+
+/**
+ * 抓一份倉庫索引並解析；kind 沒指定就依內容判斷。
+ *
+ * Mihon 的四種網址（index.pb／index.json／index.min.json／repo.json）都由 loadMihonIndex 統一處理：
+ * repo.json 的 index_v2 指向哪份索引就讀哪份，不另外退回別份檔案。
+ */
+async function loadIndex(url: string, kind?: RepositoryKind): Promise<LoadedIndex> {
+  const target = indexUrlOf(url)
+  const body = await fetchIndexBody(target)
+  const resolved = kind ?? kindOfBody(body)
+
+  if (resolved === "mihon-index") {
+    const loaded = await loadMihonIndex(target, body)
+    if (loaded.entries.length === 0) throw new Error(catalogEmptyError(loaded.rejected))
+    return { kind: resolved, entries: loaded.entries, name: loaded.name, meta: loaded.meta }
+  }
+
+  const parsed = parseIndexBody(body)
   const base = catalogBaseOf(target)
 
   if (resolved === "aidoku-index") {
@@ -555,11 +612,12 @@ export async function addRepository(url: string, kind?: RepositoryKind): Promise
   const repository: StoredRepository = {
     url: target,
     kind: loaded.kind,
-    name: existing?.name ?? loaded.name ?? repositoryStore.repositoryNameFor(target),
+    name: loaded.name ?? existing?.name ?? repositoryStore.repositoryNameFor(target),
     addedAt: existing?.addedAt ?? now,
     fetchedAt: now,
     entries: loaded.entries,
   }
+  if (loaded.meta) repository.meta = loaded.meta
   repositoryStore.saveRepository(repository)
   log("info", "sources", `已加入倉庫 ${repository.name}（${loaded.entries.length} 個源）`)
   return repository
@@ -587,7 +645,7 @@ export function removeRepository(url: string) {
 /** 倉庫裡的一筆源，加上它在本地端的安裝狀態。 */
 export interface RepositoryEntryStatus {
   entry: CatalogEntry
-  /** 已經裝了同 key 的源；沒有就是未安裝。 */
+  /** 已裝了這個條目；Mihon 一個 apk 多個子源，這裡取第一個當代表。沒有就是未安裝。 */
   installed?: InstalledSource
   /** 已安裝的那份是從這個倉庫裝的；否則安裝就是用這個倉庫的版本取代。 */
   fromThisRepo: boolean
@@ -595,11 +653,28 @@ export interface RepositoryEntryStatus {
   updateAvailable: boolean
 }
 
+/** 這個條目前能不能裝；不能就回原因（目前只有 Mihon 的 ext-lib）。 */
+export function entryUnsupportedReason(entry: CatalogEntry): string | null {
+  if (!mihon.isMihonKey(entry.key)) return null
+  if (mihon.isSupportedExtensionLib(entry.extensionLib)) return null
+  return t("sources.mihon.unsupportedLib", { version: entry.extensionLib ?? "" })
+}
+
+/** 倉庫條目在已安裝清單裡對應的那一個源（Mihon 以擴充為單位比對）。 */
+function installedOfEntry(entry: CatalogEntry, sources: InstalledSource[] = allSources()): InstalledSource | undefined {
+  if (mihon.isMihonKey(entry.key)) {
+    return sources.find(source => mihon.isMihon(source) && mihon.packageKeyOf(source.stored.key) === entry.key)
+  }
+  return findSource(entry.key)
+}
+
 export function repositoryEntries(repositoryUrl: string): RepositoryEntryStatus[] {
   const repository = repositoryStore.getRepository(repositoryUrl)
   if (!repository) return []
+  // 一次解析一份快照：keiyoushi 的索引有上千筆，逐筆重建清單就差得出來。
+  const sources = allSources()
   return repository.entries.map(entry => {
-    const installed = findSource(entry.key)
+    const installed = installedOfEntry(entry, sources)
     const installedVersion = installed?.meta?.version ?? installed?.stored.version
     const fromThisRepo = Boolean(installed && repositoryStore.isFromRepository(installed.stored.origin, repository.url))
     return {
@@ -628,6 +703,26 @@ export async function installRepositoryEntry(repositoryUrl: string, key: string)
     reloadRegistry()
     log("info", "sources", `${existed ? "已更新" : "已安裝"} ${stored.name} v${stored.version}`)
     return { key: stored.key, name: stored.name, version: stored.version, updated: existed }
+  }
+
+  if (repositoryStore.kindOf(repository) === "mihon-index") {
+    requirePro("mihon")
+    const unsupported = entryUnsupportedReason(entry)
+    if (unsupported) throw new Error(unsupported)
+    if (!entry.url) throw new Error(t("sources.catalog.relativeOnly"))
+    const existed = installedOfEntry(entry) !== undefined
+    const apk = await fetchBytes(entry.url)
+    const children = await mihon.install(apk, {
+      origin: repository.url,
+      packageKey: entry.key,
+      extensionLib: entry.extensionLib,
+      iconUrl: entry.iconUrl,
+      version: entry.version,
+    })
+    reloadRegistry()
+    const version = children[0]?.version || entry.version
+    log("info", "sources", `${existed ? "已更新" : "已安裝"} ${entry.name} v${version}（${children.length} 個子源）`)
+    return { key: entry.key, name: entry.name, version, updated: existed }
   }
 
   const sourceUrl = entry.url ?? resolveEntryUrl(entry, catalogBaseOf(repository.url))

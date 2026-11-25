@@ -8,11 +8,13 @@ import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
 import { hasPro } from "../engine/pro"
 import { compareVersion, type CatalogEntry } from "../sources/catalog"
+import { packageKeyOf, isMihonKey } from "../sources/mihon"
 import {
   allSources,
   installRepositoryEntry,
   refreshRepository,
   sourceKindOf,
+  sourceNeedsPro,
   subscribeSources,
   type InstallResult,
   type InstalledSource,
@@ -37,12 +39,18 @@ function installedVersion(source: InstalledSource): string {
   return source.meta?.version ?? source.stored.version
 }
 
-/** 參與檢查的源：有來源倉庫，且（沒 Pro 時）不是 Aidoku 源。 */
+/** 參與檢查的源：有來源倉庫，且（沒 Pro 時）不是要靠 HttpServer 的引擎。 */
 function trackedSources(pro: boolean): InstalledSource[] {
   return allSources().filter(source => {
     if (!source.stored.origin) return false
-    return pro || sourceKindOf(source) !== "aidoku"
+    return pro || !sourceNeedsPro(sourceKindOf(source))
   })
+}
+
+/** 這個已安裝的源在倉庫索引裡的那一筆（Mihon 一個擴充多個子源，全部對到同一個條目）。 */
+function entryFor(source: InstalledSource, entries: CatalogEntry[]): CatalogEntry | undefined {
+  const key = isMihonKey(source.stored.key) ? packageKeyOf(source.stored.key) : source.stored.key
+  return entries.find(item => item.key === key)
 }
 
 // ---------------------------------------------------------------- 可更新清單
@@ -69,14 +77,19 @@ export function availableSourceUpdates(pro: boolean = hasPro()): SourceUpdate[] 
   if (cache && cache.pro === pro) return cache.updates
   const repositories = new Map(listRepositories().map(repository => [repositoryKey(repository.url), repository]))
   const updates: SourceUpdate[] = []
+  // 同一個 Mihon 擴充的多個子源共用一個 apk：只報一次，更新也是整個擴充一起換。
+  const reported = new Set<string>()
   for (const source of trackedSources(pro)) {
     const repository = repositories.get(repositoryKey(source.stored.origin!))
     if (!repository) continue
     // 同一倉庫裡同 key 有多筆時以第一筆為準（跟 installRepositoryEntry 一致）。
-    const entry = repository.entries.find(item => item.key === source.stored.key)
+    const entry = entryFor(source, repository.entries)
     if (!entry) continue
+    const extensionKey = isMihonKey(entry.key) ? entry.key : source.stored.key
+    if (reported.has(extensionKey)) continue
     const from = installedVersion(source)
     if (!from || compareVersion(entry.version, from) <= 0) continue
+    reported.add(extensionKey)
     updates.push({ source, repository, entry, from, to: entry.version })
   }
   cache = { pro, updates }

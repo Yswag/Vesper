@@ -1,7 +1,7 @@
 // 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；下拉可重新整理索引。
 // 清單只讀本地快取，重新整理才會連網。
 
-import { Button, Divider, HStack, Image, Spacer, Text, VStack, ZStack, useEffect, useState } from "scripting"
+import { Button, Divider, HStack, Image, LazyVStack, Spacer, Text, VStack, ZStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, IconBadge, InfoRow, rowSeparatorInset } from "../../design/rows"
 import { EmptyState, NoticeBanner, statusTone, type StatusNotice } from "../../design/status"
@@ -16,6 +16,7 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { CatalogEntry } from "../../sources/catalog"
 import {
+  entryUnsupportedReason,
   installRepositoryEntry,
   refreshRepository,
   repositoryEntries,
@@ -29,6 +30,7 @@ import {
   listRepositories,
   repositoryNameFor,
   subscribeRepositories,
+  type RepositoryKind,
   type StoredRepository,
 } from "../../sources/repository"
 
@@ -63,6 +65,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
 
   async function install(item: RepositoryEntryStatus) {
     const { entry } = item
+    if (entryUnsupportedReason(entry)) return
     if (!repository || !(await confirmInstall(repository, item))) return
     setBusyKey(entry.key)
     setStatus({ kind: "loading", text: t("settings.repo.installing", { name: entry.name }) })
@@ -121,6 +124,8 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
     const conflict: CatalogEntry[] = []
 
     for (const item of uniqueEntries) {
+      // ext-lib 不支援的條目連試都不試（列上也已經是不可按的「不支援」）。
+      if (entryUnsupportedReason(item.entry)) continue
       if (!item.installed || item.updateAvailable) {
         newOrUpdate.push(item.entry)
       } else if (!item.fromThisRepo) {
@@ -295,10 +300,7 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
           <InfoRow label={t("settings.shared.url")} value={repository.url} />
         </VStack>
         <Divider padding={{ leading: 16 }} />
-        <InfoRow
-          label={t("settings.repo.kind")}
-          value={t(kindOf(repository) === "aidoku-index" ? "settings.shared.kindAidoku" : "settings.shared.kindVenera")}
-        />
+        <InfoRow label={t("settings.repo.kind")} value={repositoryKindLabel(kindOf(repository))} />
         <Divider padding={{ leading: 16 }} />
         <InfoRow label={t("settings.repo.lastUpdated")} value={formatTime(repository.fetchedAt)} />
         <Divider padding={{ leading: 16 }} />
@@ -338,19 +340,22 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
           ) : undefined
         }
       >
-        {entries.map((item, index) => (
-          <VStack key={`${item.entry.key}:${index}`} spacing={0}>
-            {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
-            <EntryRow
-              status={item}
-              busy={busy || busyKey !== null}
-              label={busyKey === item.entry.key ? t("settings.repo.processing") : actionLabel(item)}
-              onInstall={() => {
-                if (busyKey === null && !busy) void install(item)
-              }}
-            />
-          </VStack>
-        ))}
+        {/* 索引可能有上千筆（keiyoushi 1707）：用 LazyVStack，不然一進頁就把每一列連同遠端圖示全建出來。 */}
+        <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
+          {entries.map((item, index) => (
+            <VStack key={`${item.entry.key}:${index}`} spacing={0}>
+              {index > 0 ? <Divider padding={{ leading: 16 }} /> : null}
+              <EntryRow
+                status={item}
+                busy={busy || busyKey !== null}
+                label={busyKey === item.entry.key ? t("settings.repo.processing") : actionLabel(item)}
+                onInstall={() => {
+                  if (busyKey === null && !busy) void install(item)
+                }}
+              />
+            </VStack>
+          ))}
+        </LazyVStack>
       </CardGroup>
 
       {status ? <NoticeBanner tone={statusTone(status.kind)} text={status.text} /> : null}
@@ -359,18 +364,28 @@ export function RepositoryDetailScreen({ repositoryUrl }: { repositoryUrl: strin
   )
 }
 
-/** Aidoku 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
+/** 倉庫類型的中文名（倉庫頁與條目共用）。 */
+function repositoryKindLabel(kind: RepositoryKind): string {
+  if (kind === "aidoku-index") return t("settings.shared.kindAidoku")
+  if (kind === "mihon-index") return t("settings.shared.kindMihon")
+  return t("settings.shared.kindVenera")
+}
+
+/** Aidoku／Mihon 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
 async function blockedByPro(repository: StoredRepository): Promise<boolean> {
-  if (kindOf(repository) !== "aidoku-index" || hasPro()) return false
+  const kind = kindOf(repository)
+  if (kind === "venera" || hasPro()) return false
+  const isMihon = kind === "mihon-index"
   await Dialog.alert({
-    title: t("sources.aidoku.requiresPro"),
-    message: t("sources.aidoku.requiresProDetail"),
+    title: t(isMihon ? "sources.mihon.requiresPro" : "sources.aidoku.requiresPro"),
+    message: t(isMihon ? "sources.mihon.requiresProDetail" : "sources.aidoku.requiresProDetail"),
   })
   return true
 }
 
-/** 單筆安裝前的關卡：Pro 限制、從別處裝的要確認取代。回 false 就不裝。 */
+/** 單筆安裝前的關卡：Pro 限制、不支援的擴充、從別處裝的要確認取代。回 false 就不裝。 */
 export async function confirmInstall(repository: StoredRepository, item: RepositoryEntryStatus): Promise<boolean> {
+  if (entryUnsupportedReason(item.entry)) return false
   if (await blockedByPro(repository)) return false
   if (!item.installed || item.fromThisRepo) return true
   return await Dialog.confirm({
@@ -409,10 +424,15 @@ export function EntryRow({
   const installedVersion = status.installed?.meta?.version ?? status.installed?.stored.version
   const isInstalled = Boolean(status.installed) && !status.updateAvailable
   const languages = status.entry.languages?.filter(Boolean) ?? []
+  const unsupported = entryUnsupportedReason(status.entry)
+  // Mihon 的多語擴充動輒上百種語言：只列前三種，其餘數字帶過（一行放得下）。
+  const languageLine =
+    languages.length > 3 ? `${languages.slice(0, 3).join(" / ")} +${languages.length - 3}` : languages.join(" / ")
   const metaLine = [
-    languages.length > 0 ? languages.join(" / ") : "",
+    languageLine,
     status.entry.key,
     `v${status.entry.version}`,
+    status.entry.extensionLib ? `ext-lib ${status.entry.extensionLib}` : "",
     installedVersion && status.fromThisRepo ? t("settings.repo.installedVersion", { version: installedVersion }) : "",
   ]
     .filter(Boolean)
@@ -443,7 +463,11 @@ export function EntryRow({
           </Text>
           {status.entry.nsfw ? <Tag text={t("settings.repo.r18")} tone="danger" /> : null}
         </HStack>
-        {status.entry.description ? (
+        {unsupported ? (
+          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
+            {unsupported}
+          </Text>
+        ) : status.entry.description ? (
           <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2}>
             {status.entry.description}
           </Text>
@@ -461,14 +485,20 @@ export function EntryRow({
         ) : null}
       </VStack>
       <Spacer />
-      <Button
-        title={label}
-        buttonStyle="bordered"
-        controlSize="small"
-        tint={isInstalled ? "secondaryLabel" : tint.tint}
-        disabled={busy}
-        action={onInstall}
-      />
+      {unsupported ? (
+        <Text font="caption" foregroundStyle="secondaryLabel">
+          {t("settings.repo.unsupported")}
+        </Text>
+      ) : (
+        <Button
+          title={label}
+          buttonStyle="bordered"
+          controlSize="small"
+          tint={isInstalled ? "secondaryLabel" : tint.tint}
+          disabled={busy}
+          action={onInstall}
+        />
+      )}
     </HStack>
   )
 }

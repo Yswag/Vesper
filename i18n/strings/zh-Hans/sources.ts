@@ -52,6 +52,24 @@ export default {
     indexBadEntry: "索引条目缺 name、version 或下载路径",
   },
 
+  mihon: {
+    missing: "扩展的文件不见了（请重新安装这个扩展）",
+    invalidPackage: "这不是有效的 Mihon 扩展（apk）",
+    noSources: "这个扩展没有可用的源",
+    unsupportedLib: "这个扩展的 ext-lib {version} 目前不支持（支持 1.4、1.6）",
+
+    requiresPro: "Mihon 源需要 Scripting Pro",
+    requiresProDetail: "Mihon 源要靠本机 HTTP 服务器在 WebView 里运行 dexvm。升级 Scripting Pro 后再回来安装。",
+
+    /** 仓库索引（extensionList.extensions、index.pb 或旧式数组）。 */
+    indexInvalid: "Mihon 索引格式不对（要 extensionList.extensions、index.pb 或旧式数组）",
+    indexBadEntry: "索引条目缺套件名称、版本或名称",
+    indexNoApk: "索引条目没有 apk 网址",
+    legacyUrl: "旧式索引网址必须以 /index.min.json 结尾",
+    /** `{url}` 是索引指向的地址、`{reason}` 是下载失败的原因。 */
+    followFailed: "读不到索引指向的网址 {url}（{reason}）",
+  },
+
   login: {
     expired: "登录已过期，请重新登录",
     cancelled: "已取消登录",

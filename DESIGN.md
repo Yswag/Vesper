@@ -41,6 +41,7 @@ sources/             漫畫源管理
   runner.ts          SourceRunner：執行源邏輯的唯一中介
   store.ts           源腳本儲存
   repository.ts      源倉庫索引與訂閱
+  mihonIndex.ts      Mihon（keiyoushi）倉庫索引解析（index.pb／index.json／repo.json）
   registry.ts        運行時源註冊表
   webLogin.ts        WebView 登入與 Cloudflare 驗證代理
   downloads.ts       下載排程與狀態管理
@@ -72,6 +73,8 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 ## 資料儲存路徑
 
 - 漫畫源腳本：`文件/Vesper/sources/<key>.js`
+- Aidoku 源：`文件/Vesper/sources/aidoku/<id>/`
+- Mihon 擴充：`文件/Vesper/sources/mihon/<packageId>/`（`extension.apk` 與 `installed.json`，後者記子源與啟用狀態）
 - 倉庫設定：`文件/Vesper/sources/repositories.json`
 - 書架與歷史：`文件/Vesper/library.json`
 - 閱讀暫存頁面：`文件/Vesper/cache/reader/<一話一個目錄>/`（離開閱讀器即刪）

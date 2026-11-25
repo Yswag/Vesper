@@ -17,6 +17,8 @@ export interface CatalogEntry {
   languages?: string[]
   /** Aidoku 索引才有：R18 標記（community 的 contentRating／zh-sources 的 nsfw）。 */
   nsfw?: boolean
+  /** Mihon 索引才有：擴充編譯用的 ext-lib 版本（dexvm 只支援其中幾版）。 */
+  extensionLib?: string
 }
 
 export interface CatalogParseResult {

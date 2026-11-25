@@ -70,6 +70,28 @@ export default {
     indexBadEntry: "索引條目缺 name、version 或下載路徑",
   },
 
+  /** Mihon（keiyoushi）擴充。`{message}` 是擴充自己或宿主給的原因。 */
+  mihon: {
+    missing: "擴充的檔案不見了（請重新安裝這個擴充）",
+    invalidPackage: "這不是有效的 Mihon 擴充（apk）",
+    noSources: "這個擴充沒有可用的源",
+    /** `{version}` 是索引宣告的 ext-lib 版本。 */
+    unsupportedLib: "這個擴充的 ext-lib {version} 目前不支援（支援 1.4、1.6）",
+
+    /** 同樣要靠本機 HTTP 伺服器（dexvm 在宿主的 worker 裡跑）。 */
+    requiresPro: "Mihon 源需要 Scripting Pro",
+    requiresProDetail: "Mihon 源要靠本機 HTTP 伺服器在 WebView 裡執行 dexvm。升級 Scripting Pro 後再回來安裝。",
+
+    /** 倉庫索引（`extensionList.extensions`、`index.pb` 或舊式陣列）。 */
+    indexInvalid: "Mihon 索引格式不對（要 extensionList.extensions、index.pb 或舊式陣列）",
+    indexBadEntry: "索引條目缺套件名稱、版本或名稱",
+    indexNoApk: "索引條目沒有 apk 網址",
+    /** 舊式格式只認這個檔名，Mihon 也是直接看網址結尾。 */
+    legacyUrl: "舊式索引網址必須以 /index.min.json 結尾",
+    /** `{url}` 是索引指向的位址、`{reason}` 是下載失敗的原因。 */
+    followFailed: "讀不到索引指向的網址 {url}（{reason}）",
+  },
+
   /** 登入（帳密 / cookie / 瀏覽器）。 */
   login: {
     expired: "登入已過期，請重新登入",

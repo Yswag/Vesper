@@ -53,6 +53,25 @@ export default {
     indexBadEntry: "Index entry is missing name, version or a download path",
   },
 
+  mihon: {
+    missing: "This extension's files are missing (reinstall it)",
+    invalidPackage: "Not a valid Mihon extension (.apk)",
+    noSources: "This extension has no sources",
+    unsupportedLib: "ext-lib {version} is not supported yet (1.4 and 1.6 are)",
+
+    requiresPro: "Mihon sources need Scripting Pro",
+    requiresProDetail:
+      "Mihon sources run dexvm in a WebView served by a local HTTP server. Upgrade to Scripting Pro, then come back and install.",
+
+    /** The store index (extensionList.extensions, index.pb, or the legacy array). */
+    indexInvalid: "Not a Mihon index (expected extensionList.extensions, index.pb or a legacy array)",
+    indexBadEntry: "Index entry is missing package name, version or name",
+    indexNoApk: "Index entry has no apk URL",
+    legacyUrl: "A legacy index URL must end with /index.min.json",
+    /** `{url}` is the address the index points at, `{reason}` why it failed. */
+    followFailed: "Could not load the index at {url} ({reason})",
+  },
+
   login: {
     expired: "Sign-in expired, please sign in again",
     cancelled: "Sign-in cancelled",

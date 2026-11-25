@@ -10,8 +10,8 @@ const KV_ENABLED_PREFIX = "venera:sourceEnabled:"
 
 export interface StoredSource {
   key: string
-  /** 源類型；沒寫就是 Venera（舊資料不必遷移）。Aidoku 源的檔案在 `sources/aidoku/<id>/`，不這裡。 */
-  kind?: "venera" | "aidoku"
+  /** 源類型；沒寫就是 Venera（舊資料不必遷移）。Aidoku 源的檔案在 `sources/aidoku/<id>/`、Mihon 的在 `sources/mihon/<packageId>/`，都不這裡。 */
+  kind?: "venera" | "aidoku" | "mihon"
   name: string
   version: string
   minAppVersion: string

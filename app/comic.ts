@@ -89,9 +89,11 @@ import {
   enabledSources,
   findSource,
   isReady,
+  sourceKindOf,
   sourcesRevision,
   subscribeSources,
   type InstalledSource,
+  type SourceKind,
 } from "../sources/registry"
 import {
   openSource,
@@ -324,8 +326,8 @@ function resumePointOf(ref: ComicRef): ResumePoint | null {
  */
 export interface ComicSourceInfo {
   key: string
-  /** Venera 的 JS 源或 Aidoku 的 WASM 源。 */
-  kind: "venera" | "aidoku"
+  /** Venera 的 JS 源、Aidoku 的 WASM 源或 Mihon 的 dexvm 擴充。 */
+  kind: SourceKind
   name: string
   version: string
   /** 源自己給的圖示（本機路徑或網址；沒有就讓畫面用首字徽章）。 */
@@ -533,6 +535,14 @@ function handleOf(key: string): { source: InstalledSource; handle: SourceHandle 
 let infoCacheRevision = -1
 let infoCache = new WeakMap<InstalledSource, ComicSourceInfo>()
 
+/**
+ * 可以瀏覽的源：Mihon 擴充還沒有瀏覽路徑（票 04 才接上 list／search），
+ * 先不列進瀏覽頁與全域搜尋；源管理照常看得到、可以停用與移除。
+ */
+function browsableSources(): InstalledSource[] {
+  return enabledSources().filter(source => sourceKindOf(source) !== "mihon")
+}
+
 function infoOf(source: InstalledSource): ComicSourceInfo {
   const revision = sourcesRevision()
   if (revision !== infoCacheRevision) {
@@ -545,7 +555,7 @@ function infoOf(source: InstalledSource): ComicSourceInfo {
   const account = accountSpec(source)
   const info: ComicSourceInfo = {
     key: source.stored.key,
-    kind: source.stored.kind === "aidoku" ? "aidoku" : "venera",
+    kind: sourceKindOf(source),
     name: source.meta?.name ?? source.stored.name,
     version: source.meta?.version ?? source.stored.version,
     iconUrl: source.stored.iconUrl,
@@ -1073,7 +1083,7 @@ export function createComicLibrary(): ComicLibrary {
   }
 
   const api: ComicLibrary = {
-    sources: () => enabledSources().map(infoOf),
+    sources: () => browsableSources().map(infoOf),
 
     source: key => {
       const found = findSource(key)
@@ -1082,7 +1092,7 @@ export function createComicLibrary(): ComicLibrary {
 
     search: (query, onProgress, opts) =>
       searchAll(
-        enabledSources(),
+        browsableSources(),
         query.keyword,
         source => query.optionsOf?.(source.stored.key) ?? [],
         onProgress ?? (() => {}),

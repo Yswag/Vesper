@@ -5,7 +5,7 @@ import { Script } from "scripting"
 
 import { t } from "../i18n"
 
-export type ProFeature = "aidoku" | "upscale"
+export type ProFeature = "aidoku" | "mihon" | "upscale"
 
 /** 有沒有 Scripting Pro。每次重問：升級後切回 App 要立刻生效，不能快取。 */
 export function hasPro(): boolean {
@@ -17,7 +17,13 @@ export class ProRequiredError extends Error {
   readonly feature: ProFeature
 
   constructor(feature: ProFeature) {
-    super(feature === "aidoku" ? t("sources.aidoku.requiresPro") : t("reader.upscaleRequiresPro"))
+    super(
+      feature === "aidoku"
+        ? t("sources.aidoku.requiresPro")
+        : feature === "mihon"
+          ? t("sources.mihon.requiresPro")
+          : t("reader.upscaleRequiresPro")
+    )
     this.name = "ProRequiredError"
     this.feature = feature
   }

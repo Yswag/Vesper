@@ -22,6 +22,7 @@ export default {
     /** 來源類型（源清單、源詳情、倉庫條目共用）。 */
     kindVenera: "Venera",
     kindAidoku: "Aidoku",
+    kindMihon: "Mihon",
     repository: "源倉庫",
     install: "安裝",
     reinstall: "重新安裝",
@@ -293,6 +294,8 @@ export default {
     updated: "已更新 {name} v{version}",
     updateAvailable: "更新 v{version}",
     r18: "R18",
+    /** 這個擴充的 ext-lib 版本 dexvm 解不動：列尾不給安裝鈕。 */
+    unsupported: "不支援",
     refreshing: "重新整理…",
     refreshed: "已重新整理：{n} 個源",
     installedVersion: "已裝 v{version}",
