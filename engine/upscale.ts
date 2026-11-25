@@ -7,7 +7,7 @@ import { Script } from "scripting"
 import { join, readBytes } from "./fs"
 import { log } from "./log"
 import { requirePro } from "./pro"
-import { coreMLAvailable, disposeCoreML, upscaleWithCoreML } from "./upscaleCoreML"
+import { coreMLAvailable, isBackgroundGpuError, upscaleWithCoreML } from "./upscaleCoreML"
 
 /** true 走 Core ML + Metal，失敗或超大頁自動退回 wasm。 */
 const CORE_ML_UPSCALE = true
@@ -501,8 +501,7 @@ function resetEngineInstances(): void {
 }
 
 export function disposeUpscaleEngine(): void {
-  disposeCoreML()
-  // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS
+  // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS。Core ML 引擎常駐，不在這裡拆。
   queuePromise = queuePromise.then(
     () => resetEngineInstances(),
     () => resetEngineInstances()
@@ -653,6 +652,10 @@ export async function sharpenImage(
           if (isCancelled && isCancelled()) return null
           log("debug", "upscale", "[Core ML] 不適用這張，退回 ONNX")
         } catch (error) {
+          if (isBackgroundGpuError(error)) {
+            log("debug", "upscale", "[Core ML] App 不在前景，這頁不超分")
+            return null
+          }
           log("warning", "upscale", "[Core ML] 出錯，退回 ONNX", error)
         }
       }

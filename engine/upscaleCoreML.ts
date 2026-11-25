@@ -172,16 +172,18 @@ interface TileOutput {
   texture: Metal.Texture
 }
 
-interface Engine {
+interface Core {
   model: CoreML.Model
   input: CoreML.MultiArray
-  tiles: TileOutput[]
   extract: Metal.ComputePipeline
   gather: Metal.ComputePipeline
   compose: Metal.ComputePipeline
   downscale: Metal.ComputePipeline
   library: Metal.Library
   device: Metal.Device
+}
+
+interface Buffers {
   source: Metal.Buffer
   y: Metal.Buffer
   slots: Metal.Buffer
@@ -193,15 +195,21 @@ interface Engine {
   narrowBytes: number
 }
 
+type Engine = Core & Buffers
+
 interface Scratch {
   out: Uint8Array
   yPlane: Float32Array
   input: Float32Array
 }
 
-let engine: Engine | null = null
+let core: Core | null = null
+let buffers: Buffers | null = null
 let engineInitFailed = false
+// 引擎整個常駐：這個執行期裡，交給過原生 API 的大塊記憶體（typed array、Metal buffer、貼圖視圖）
+// 釋放後不會真的還，閱讀器每開關一次就漏一份。所以只增不拆，只有出錯才整個丟。
 let scratch: Scratch | null = null
+const tilePool: TileOutput[] = []
 
 function ensureScratch(outBytes: number, yLength: number): Scratch {
   const current: Scratch = scratch ?? {
@@ -215,15 +223,20 @@ function ensureScratch(outBytes: number, yLength: number): Scratch {
   return current
 }
 
-function ensureTileOutputs(built: Engine, count: number): void {
-  while (built.tiles.length < count) {
+function ensureTileOutputs(device: Metal.Device, count: number): void {
+  while (tilePool.length < count) {
     const pixels = PixelBuffer.create({ width: OUT, height: OUT, format: "gray16Float", metalCompatible: true })
-    built.tiles.push({
+    tilePool.push({
       pixels,
       array: CoreML.MultiArray.fromPixelBuffer(pixels, [1, 1, OUT, OUT]),
-      texture: built.device.makeTextureView({ pixelBuffer: pixels }),
+      texture: device.makeTextureView({ pixelBuffer: pixels }),
     })
   }
+}
+
+export function isBackgroundGpuError(error: unknown): boolean {
+  const text = String(error)
+  return text.includes("BackgroundExecutionNotPermitted") || text.includes("did not allow this GPU command")
 }
 
 function u32(values: number[]): Uint32Array {
@@ -239,81 +252,96 @@ export function coreMLAvailable(): boolean {
   }
 }
 
-function release(): void {
-  scratch = null
-  if (!engine) return
+function releaseBuffers(): void {
+  if (!buffers) return
   try {
-    engine.library.dispose()
-    for (const tile of engine.tiles) {
-      tile.texture.dispose()
-      tile.array.dispose()
-      tile.pixels.dispose()
-    }
-    engine.input.dispose()
-    engine.extract.dispose()
-    engine.gather.dispose()
-    engine.compose.dispose()
-    engine.downscale.dispose()
-    engine.source.dispose()
-    engine.y.dispose()
-    engine.slots.dispose()
-    engine.wide.dispose()
-    engine.narrow.dispose()
-    engine.model.dispose()
+    buffers.source.dispose()
+    buffers.y.dispose()
+    buffers.slots.dispose()
+    buffers.wide.dispose()
+    buffers.narrow.dispose()
+  } catch (error) {
+    log("debug", "upscale", "[Core ML] 緩衝釋放時出錯", error)
+  }
+  buffers = null
+}
+
+function releaseAll(): void {
+  releaseBuffers()
+  scratch = null
+  if (!core) return
+  try {
+    core.library.dispose()
+    core.input.dispose()
+    core.extract.dispose()
+    core.gather.dispose()
+    core.compose.dispose()
+    core.downscale.dispose()
+    core.model.dispose()
   } catch (error) {
     log("debug", "upscale", "[Core ML] 引擎釋放時出錯", error)
   }
-  engine = null
+  core = null
 }
 
-async function ensureEngine(wideBytes: number, narrowBytes: number, slotBytes: number, srcBytes: number): Promise<Engine> {
-  if (engine) {
-    const fits = engine.wideBytes >= wideBytes
-      && engine.narrowBytes >= narrowBytes
-      && engine.slotBytes >= slotBytes
-      && engine.srcBytes >= srcBytes
-    if (fits) return engine
-    release()
-  }
+async function ensureCore(): Promise<Core> {
+  if (core) return core
   if (engineInitFailed) throw new Error("Core ML 引擎先前初始化失敗")
-
   try {
     const device = Metal.Device.getDefault()
     if (!device) throw new Error("沒有 Metal device")
-
     const model = await CoreML.Model.load(
       join(Script.directory, "assets/acnet", MODEL),
       { computeUnits: "cpuAndNeuralEngine" }
     )
     const library = await device.compileLibrary(SOURCE)
-    const built: Engine = {
+    core = {
       model,
       input: CoreML.MultiArray.create({ dtype: "float32", shape: [1, 1, SIDE, SIDE] }),
-      tiles: [],
       library,
       device,
       extract: await library.makeComputePipeline("extract_band"),
       gather: await library.makeComputePipeline("gather_tile"),
       compose: await library.makeComputePipeline("compose_band"),
       downscale: await library.makeComputePipeline("downscale_band"),
-      source: await device.makeBuffer({ length: srcBytes, storageMode: "shared" }),
-      y: await device.makeBuffer({ length: srcBytes, storageMode: "shared" }),
-      slots: await device.makeBuffer({ length: slotBytes, storageMode: "shared" }),
-      wide: await device.makeBuffer({ length: wideBytes, storageMode: "shared" }),
-      narrow: await device.makeBuffer({ length: narrowBytes, storageMode: "shared" }),
-      srcBytes,
-      slotBytes,
-      wideBytes,
-      narrowBytes,
     }
-    engine = built
     log("info", "upscale", `[Core ML] 引擎就緒（${MODEL}）`)
-    return built
+    return core
   } catch (error) {
     engineInitFailed = true
     log("warning", "upscale", "[Core ML] 引擎初始化失敗", error)
     throw error
   }
+}
+
+async function ensureEngine(wideBytes: number, narrowBytes: number, slotBytes: number, srcBytes: number): Promise<Engine> {
+  const ready = await ensureCore()
+  const fits = buffers !== null
+    && buffers.wideBytes >= wideBytes
+    && buffers.narrowBytes >= narrowBytes
+    && buffers.slotBytes >= slotBytes
+    && buffers.srcBytes >= srcBytes
+  if (!fits) {
+    const grown = {
+      srcBytes: Math.max(srcBytes, buffers?.srcBytes ?? 0),
+      slotBytes: Math.max(slotBytes, buffers?.slotBytes ?? 0),
+      wideBytes: Math.max(wideBytes, buffers?.wideBytes ?? 0),
+      narrowBytes: Math.max(narrowBytes, buffers?.narrowBytes ?? 0),
+    }
+    releaseBuffers()
+    const device = ready.device
+    buffers = {
+      source: await device.makeBuffer({ length: grown.srcBytes, storageMode: "shared" }),
+      y: await device.makeBuffer({ length: grown.srcBytes, storageMode: "shared" }),
+      slots: await device.makeBuffer({ length: grown.slotBytes, storageMode: "shared" }),
+      wide: await device.makeBuffer({ length: grown.wideBytes, storageMode: "shared" }),
+      narrow: await device.makeBuffer({ length: grown.narrowBytes, storageMode: "shared" }),
+      ...grown,
+    }
+    const total = (grown.srcBytes * 2 + grown.slotBytes + grown.wideBytes + grown.narrowBytes) / 1048576
+    log("debug", "upscale", `[Core ML] 緩衝重配（共 ${total.toFixed(0)}MB）`)
+  }
+  return { ...ready, ...(buffers as Buffers) }
 }
 
 function bytesOf(view: Uint8Array): Data {
@@ -338,7 +366,7 @@ export async function upscaleWithCoreML(
   if (!page) return null
 
   const rect = target?.sourceRect ?? { x: 0, y: 0, width: page.width, height: page.height }
-  if (rect.width < SIDE || rect.height < SIDE) return null
+  if (rect.width < 1 || rect.height < 1) return null
 
   const twoW = rect.width * 2
   const twoH = rect.height * 2
@@ -369,7 +397,7 @@ export async function upscaleWithCoreML(
   const started = Date.now()
   const built = await ensureEngine(wideBytes, narrowBytes, slotBytes, srcBytes)
 
-  ensureTileOutputs(built, tilesPerBand)
+  ensureTileOutputs(built.device, tilesPerBand)
   const buffers = ensureScratch(outBytes, rect.width * (bandMaxRows + PAD * 2))
   const out = buffers.out.subarray(0, outBytes)
   const input = buffers.input
@@ -426,7 +454,7 @@ export async function upscaleWithCoreML(
           }
 
           built.input.write(input)
-          const backing = built.tiles[slot].array
+          const backing = tilePool[slot].array
           const result = await built.model.predict(
             { data: { type: "multiArray", value: built.input } },
             { outputBackings: { output: backing } }
@@ -445,7 +473,7 @@ export async function upscaleWithCoreML(
         await built.gather.dispatch({
           threadgroups: { width: OUT / 16, height: OUT / 16 },
           threadsPerThreadgroup: { width: 16, height: 16 },
-          textures: [{ index: 0, texture: built.tiles[s].texture }],
+          textures: [{ index: 0, texture: tilePool[s].texture }],
           buffers: [{ index: 0, buffer: built.slots }],
           bytes: [{ index: 1, data: u32([s]) }],
         })
@@ -522,13 +550,9 @@ export async function upscaleWithCoreML(
     log("debug", "upscale", `[Core ML] ${outW}×${outH}（${bands} 帶 · ${tiles} 塊 · ${ms}ms · 剩 ${freeMB}MB）`)
     return { data: jpeg, ms }
   } catch (error) {
+    if (isBackgroundGpuError(error)) throw error
     log("warning", "upscale", "[Core ML] 超分途中失敗", error)
-    release()
+    releaseAll()
     throw error
   }
-}
-
-/** 釋放引擎（換話或離開閱讀器時呼叫）。 */
-export function disposeCoreML(): void {
-  release()
 }
