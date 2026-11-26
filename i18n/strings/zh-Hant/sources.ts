@@ -35,6 +35,7 @@ export default {
   categoryFallback: "分類 {n}",
   /** 詳情沒有標題時的替代字。 */
   untitled: "(無標題)",
+  emptyImage: "源回了空的圖片",
   /** 這一章一張圖都拿不到。 */
   emptyChapter: "這一章沒有可用的圖片",
   commentEmpty: "留言內容不能只有空白",

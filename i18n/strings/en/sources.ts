@@ -26,6 +26,7 @@ export default {
   exploreFallback: "Explore {n}",
   categoryFallback: "Category {n}",
   untitled: "(Untitled)",
+  emptyImage: "The source returned an empty image",
   emptyChapter: "This chapter has no usable images",
   commentEmpty: "A comment cannot be blank",
 

@@ -26,6 +26,7 @@ export default {
   exploreFallback: "探索 {n}",
   categoryFallback: "分类 {n}",
   untitled: "(无标题)",
+  emptyImage: "源返回了空的图片",
   emptyChapter: "这一章没有可用的图片",
   commentEmpty: "评论内容不能只有空白",
 

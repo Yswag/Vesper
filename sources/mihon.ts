@@ -232,19 +232,15 @@ export async function search(
   return await call<MihonMangaPage>(apkKey, "search", { sourceId, query, page, filters })
 }
 
-/** 一張圖的最終請求（url＋headers，不抓圖）：封面交給縮圖管線自己抓。 */
-export async function imageRequest(
-  apkKey: string,
-  sourceId: string,
-  page: MihonPage
-): Promise<{ url: string; method: string; headers: Array<[string, string]> }> {
-  const raw = await call<any>(apkKey, "imageRequest", { sourceId, page })
-  const headers: Array<[string, string]> = Array.isArray(raw?.headers)
-    ? raw.headers
-        .filter((pair: unknown) => Array.isArray(pair) && pair.length >= 2)
-        .map((pair: any[]) => [String(pair[0]), String(pair[1])])
-    : []
-  return { url: String(raw?.url ?? page.imageUrl ?? page.url), method: String(raw?.method ?? "GET"), headers }
+/** 子源的 `HttpSource.headers`（源沒宣告 UA 時 dexvm 補上預設 UA）。 */
+export async function headers(apkKey: string, sourceId: string): Promise<Record<string, string>> {
+  const raw = await call<any>(apkKey, "headers", { sourceId })
+  const result: Record<string, string> = {}
+  if (!Array.isArray(raw?.headers)) return result
+  for (const pair of raw.headers) {
+    if (Array.isArray(pair) && pair.length >= 2) result[String(pair[0])] = String(pair[1])
+  }
+  return result
 }
 
 export async function popular(apkKey: string, sourceId: string, page = 1): Promise<MihonMangaPage> {
@@ -306,12 +302,15 @@ export async function pages(apkKey: string, sourceId: string, chapter: MihonChap
  * 位元組由 worker 走 `/result/<token>` 交回，不經 messageHandlers。
  */
 export async function fetchImage(apkKey: string, sourceId: string, page: MihonPage): Promise<Uint8Array> {
-  return await attemptWithHealing(apkKey, "fetchImage", () =>
+  const bytes = await attemptWithHealing(apkKey, "fetchImage", () =>
     runSourceExclusive(apkKey, async () => {
       await ensureLoaded(apkKey)
       return await fetchMihonImage(apkKey, { sourceId, page })
     })
   )
+  // dexvm 遇到圖床 4xx 會回空位元組而不是拋錯；Mihon 的 `getImage` 在非 2xx 時拋 `HttpException`。
+  if (bytes.byteLength === 0) throw new Error(t("sources.emptyImage"))
+  return bytes
 }
 
 /** 這個 apk 的 worker 裡載著它嗎（診斷用）。 */
@@ -355,9 +354,7 @@ export function forget(apkKey: string): void {
 
 function forgetChildMemory(sourceKey: string): void {
   memo.forget(sourceKey)
-  for (const key of [...coverRequests.keys()]) {
-    if (key.startsWith(`${sourceKey}\n`)) coverRequests.delete(key)
-  }
+  sourceHeaders.delete(sourceKey)
 }
 
 // ---------------------------------------------------------------- 磁碟上的擴充
@@ -747,6 +744,11 @@ function absolute(url: string, baseUrl: string): string {
   return value.startsWith("/") ? `${baseUrl.replace(/\/$/, "")}${value}` : `${baseUrl.replace(/\/$/, "")}/${value}`
 }
 
+/** 源從 HTML 抓來的文字常帶頭尾空白（極速漫畫、GoDa 的標題）。 */
+function textOf(value: string | null | undefined): string {
+  return (value ?? "").trim()
+}
+
 function tagsOf(genre: string): Array<{ namespace: string; values: string[] }> {
   const values = genre
     .split(",")
@@ -768,8 +770,8 @@ function toComicItem(ref: MihonRef, manga: MihonManga): ComicListItem | null {
   if (!manga.url) return null
   return {
     id: manga.url,
-    title: manga.title || t("sources.untitled"),
-    subtitle: manga.author || undefined,
+    title: textOf(manga.title) || t("sources.untitled"),
+    subtitle: textOf(manga.author) || undefined,
     cover: absolute(manga.thumbnailUrl, ref.baseUrl) || undefined,
     tags: manga.genre
       ? manga.genre
@@ -777,7 +779,7 @@ function toComicItem(ref: MihonRef, manga: MihonManga): ComicListItem | null {
           .map(value => value.trim())
           .filter(value => value.length > 0)
       : [],
-    description: manga.description || undefined,
+    description: textOf(manga.description) || undefined,
   }
 }
 
@@ -825,19 +827,21 @@ export async function detail(source: InstalledSource, comicId: string, backgroun
   const priority: SourcePriority = background ? "background" : "user"
   return await mapAsk(source, "detail", async () => {
     await ensureExtension(ref.apkKey)
-    const update = await mangaUpdate(ref.apkKey, ref.sourceId, memo.mangaOf(ref.dir, ref.sourceKey, comicId), {
+    const known = memo.mangaOf(ref.dir, ref.sourceKey, comicId)
+    const update = await mangaUpdate(ref.apkKey, ref.sourceId, known, {
       fetchDetails: true,
       fetchChapters: true,
       priority,
     })
-    const manga = update.manga
+    // 同 Mihon `UpdateManga`：詳情沒給封面就留著清單那張（包子的詳情頁不解析封面）。
+    const manga = update.manga.thumbnailUrl ? update.manga : { ...update.manga, thumbnailUrl: known.thumbnailUrl }
     const list = update.chapters
     memo.rememberComic(ref.dir, ref.sourceKey, comicId || manga.url, manga, list)
     return {
       id: comicId,
-      title: manga.title || t("sources.untitled"),
+      title: textOf(manga.title) || t("sources.untitled"),
       cover: absolute(manga.thumbnailUrl, ref.baseUrl) || undefined,
-      description: manga.description || undefined,
+      description: textOf(manga.description) || undefined,
       status: STATUS_BY_CODE[Number(manga.status)],
       tags: tagsOf(manga.genre ?? ""),
       // Mihon 回新→舊；Vesper 全 App 一律舊→新（同 Aidoku 在這裡轉一次）。
@@ -845,13 +849,13 @@ export async function detail(source: InstalledSource, comicId: string, backgroun
         .map(chapter => ({
           group: chapter.scanlator ?? "",
           id: chapter.url,
-          title: chapter.name || chapter.url,
+          title: textOf(chapter.name) || chapter.url,
           locked: false,
         }))
         .filter(chapter => chapter.id)
         .reverse(),
-      uploader: manga.author || undefined,
-      artists: manga.artist || undefined,
+      uploader: textOf(manga.author) || undefined,
+      artists: textOf(manga.artist) || undefined,
       url: /^https?:/i.test(manga.url ?? "") ? manga.url : absolute(manga.url ?? "", ref.baseUrl) || undefined,
     }
   })
@@ -948,41 +952,32 @@ export function comicModule(source: InstalledSource): {
   }
 }
 
-/** 封面請求（url＋headers）：縮圖管線自己抓，不讓幾十張封面擠進 VM 隊列。 */
-const coverRequests = new Map<string, ImageRequest>()
-const COVER_LIMIT = 400
+// 封面照 Mihon `MangaCoverFetcher`：`GET(thumbnailUrl, source.headers)`，不經 VM 抓圖。
+// headers 每個子源只問一次，同一頁的封面因此能並行下載。失敗不快取，下次再問。
+const sourceHeaders = new Map<string, Promise<Record<string, string>>>()
 
-function toImageRequest(url: string, method: string, pairs: Array<[string, string]>): ImageRequest {
-  const headers: Record<string, string> = {}
-  for (const [name, value] of pairs) headers[name] = value
-  return { url, method, data: null, headers }
+function headersOf(source: InstalledSource): Promise<Record<string, string>> {
+  const key = source.stored.key
+  const hit = sourceHeaders.get(key)
+  if (hit) return hit
+  const ref = refOf(source)
+  const pending = (async () => {
+    await ensureExtension(ref.apkKey)
+    return await headers(ref.apkKey, ref.sourceId)
+  })()
+  sourceHeaders.set(key, pending)
+  pending.catch(() => {
+    if (sourceHeaders.get(key) === pending) sourceHeaders.delete(key)
+  })
+  return pending
 }
 
 export async function coverRequest(source: InstalledSource, url: string): Promise<ImageRequest> {
-  const key = `${source.stored.key}\n${url}`
-  const hit = coverRequests.get(key)
-  if (hit) return hit
-  const ref = refOf(source)
   try {
-    // 封面不包 `mapAsk`：一張封面問不到不該把整個子源標成不可用。
-    await ensureExtension(ref.apkKey)
-    const raw = await imageRequest(ref.apkKey, ref.sourceId, {
-      index: 0,
-      name: "",
-      url,
-      imageUrl: url,
-    })
-    const request = toImageRequest(raw.url || url, raw.method || "GET", raw.headers)
-    coverRequests.set(key, request)
-    while (coverRequests.size > COVER_LIMIT) {
-      const oldest = coverRequests.keys().next().value as string | undefined
-      if (oldest === undefined) break
-      coverRequests.delete(oldest)
-    }
-    return request
+    // 封面不包 `mapAsk`：問不到 headers 不該把整個子源標成不可用。
+    return { url, method: "GET", data: null, headers: { ...(await headersOf(source)) } }
   } catch (failure) {
-    // 封面問不到就照原網址抓：一格封面失敗不該讓整個網格變成錯誤。
-    log("warning", "mihon", `${source.stored.key} 的封面請求失敗（${url}）`, failure)
+    log("warning", "mihon", `${source.stored.key} 的 headers 問不到，封面不帶 headers（${url}）`, failure)
     return { url, method: "GET", data: null, headers: {} }
   }
 }

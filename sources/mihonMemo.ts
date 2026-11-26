@@ -32,6 +32,11 @@ const BYTES_LIMIT = 8 * 1024 * 1024
 const SWEEP_EVERY = 16
 /** 記憶體裡留幾部（開詳情 → 進閱讀器這條路會連續問同一部）。 */
 const MEMORY_LIMIT = 8
+/**
+ * 清單拿到的 Manga 另外留多少筆。一頁清單就有幾十筆，跟上面那 8 部擠在一起的話，
+ * 點進第一本時它早被擠掉，送給源的只剩 url（封面、memo 全沒了）。只存 Manga，一筆幾百位元組。
+ */
+const BROWSED_LIMIT = 600
 /** 使用時間最多多久落盤一次。 */
 const INDEX_FLUSH_MS = 60_000
 
@@ -54,6 +59,7 @@ interface StoredIndex {
 }
 
 const memory = new Map<string, ComicRecord>()
+const browsed = new Map<string, MihonManga>()
 /** 每個目錄寫過幾次（決定哪時掃目錄）。 */
 const writes = new Map<string, number>()
 /** 每個目錄目前的位元組數（第一次用到時掃一次，之後靠加減）。 */
@@ -151,8 +157,23 @@ function read(dir: string, comicId: string): ComicRecord | null {
 /** 清單回來時只拿得到 Manga（沒有章節）：只放記憶體，開詳情時就帶著 memo 去問源。 */
 export function rememberManga(sourceKey: string, manga: MihonManga): void {
   if (!manga.url) return
-  const known = memory.get(memoryKey(sourceKey, manga.url))
-  remember(sourceKey, { comicId: manga.url, manga, chapters: known?.chapters ?? [] })
+  const key = memoryKey(sourceKey, manga.url)
+  browsed.delete(key)
+  browsed.set(key, manga)
+  while (browsed.size > BROWSED_LIMIT) {
+    const oldest = browsed.keys().next().value as string | undefined
+    if (oldest === undefined) break
+    browsed.delete(oldest)
+  }
+  const known = memory.get(key)
+  if (known) memory.set(key, { ...known, manga })
+}
+
+/** 存過的 Manga 沒有封面時，用清單那一筆的（同 Mihon：沒抓到就留著資料庫原本的）。 */
+function withBrowsedCover(sourceKey: string, manga: MihonManga): MihonManga {
+  if (manga.thumbnailUrl) return manga
+  const listed = browsed.get(memoryKey(sourceKey, manga.url))
+  return listed?.thumbnailUrl ? { ...manga, thumbnailUrl: listed.thumbnailUrl } : manga
 }
 
 /**
@@ -190,14 +211,16 @@ export function mangaOf(dir: string, sourceKey: string, comicId: string): MihonM
     memory.delete(key)
     memory.set(key, hit)
     markUsed(dir, comicId)
-    return hit.manga
+    return withBrowsedCover(sourceKey, hit.manga)
   }
   const stored = read(dir, comicId)
   if (stored) {
     remember(sourceKey, stored)
     markUsed(dir, comicId)
-    return stored.manga
+    return withBrowsedCover(sourceKey, stored.manga)
   }
+  const listed = browsed.get(key)
+  if (listed) return listed
   return { title: "", author: "", artist: "", description: "", genre: "", status: 0, thumbnailUrl: "", url: comicId }
 }
 
@@ -328,8 +351,10 @@ function sweep(dir: string, sourceKey: string): void {
 
 /** 子源被移除／重新安裝：記憶體不再相信舊記錄（磁碟由安裝流程自己處理）。 */
 export function forget(sourceKey: string): void {
-  for (const key of [...memory.keys()]) {
-    if (key.startsWith(`${sourceKey}\n`)) memory.delete(key)
+  for (const table of [memory, browsed]) {
+    for (const key of [...table.keys()]) {
+      if (key.startsWith(`${sourceKey}\n`)) table.delete(key)
+    }
   }
 }
 
