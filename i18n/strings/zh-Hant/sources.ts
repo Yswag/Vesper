@@ -47,6 +47,8 @@ export default {
 
   /** Cloudflare 過盾視窗的標題；`{name}` 是來源名稱。 */
   verificationTitle: "請完成安全驗證 ({name})",
+  /** 過盾自己超過等待時間；`{seconds}` 是等了幾秒。 */
+  verificationTimeout: "驗證逾時（{seconds} 秒）",
 
   /** Aidoku（WASM）源。`{message}` 是源自己或宿主給的原因。 */
   aidoku: {
@@ -78,6 +80,8 @@ export default {
     initFailed: "源初始化失敗",
     /** 重試後仍失敗被標成不可用；`{reason}` 是最後一次的失敗原因。 */
     unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
+    /** Cloudflare 過盾沒過；`{reason}` 是 WebView 給的原因。不是源的錯，源不會被標成不可用。 */
+    verification: "這個源被 Cloudflare 擋住，安全驗證沒完成（{reason}）",
     /** 探索頁的兩個清單。 */
     popular: "熱門",
     latest: "最新",

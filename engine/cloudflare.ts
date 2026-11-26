@@ -19,8 +19,19 @@ const CF_TIMEOUT_MS = 45000
 const INITIAL_OFFSCREEN_WAIT_MS = 2500
 const POLL_INTERVAL_MS = 1000
 
+export interface CloudflareSolveOptions {
+  /**
+   * 只把這些名字的 cookie 寫進宿主 jar（沒給就是全部）。
+   * Mihon 只放 clearance：站方每個回應都在刷新其餘的 cookie，宿主這一層再存一份
+   * 只會把舊值蓋回 dexvm 的 jar。
+   */
+  hostJarNames?: readonly string[]
+  /** 等多久放棄（預設 45 秒）。 */
+  timeoutMs?: number
+}
+
 // 每個 origin 的單例過盾 Promise，避免並發請求同時建立多個視窗 (Request Coalescing / Mutex)
-const activeSolvers = new Map<string, Promise<boolean>>()
+const activeSolvers = new Map<string, Promise<Cookie[]>>()
 
 function originOf(url: string): string {
   const m = /^https?:\/\/[^/]+/i.exec(url)
@@ -38,8 +49,15 @@ function sleep(ms: number): Promise<void> {
  * 3. 前 2.5s 離屏等待，若未通過則 present() 升級為可見彈窗
  * 4. 輪詢直到 DOM 到達真實頁且出現 cf_clearance
  * 5. 抽 Cookie 寫回 cookies.ts，並釋放 controller
+ *
+ * 回傳 WebView 抽到的全部 cookie（呼叫端要交給別的 jar 時不必再讀一次）；失敗會丟錯。
  */
-export async function solveCloudflare(sourceKey: string, url: string, userAgent: string): Promise<boolean> {
+export async function solveCloudflare(
+  sourceKey: string,
+  url: string,
+  userAgent: string,
+  options: CloudflareSolveOptions = {}
+): Promise<Cookie[]> {
   const origin = originOf(url)
   const existing = activeSolvers.get(origin)
   if (existing) {
@@ -47,7 +65,9 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
     return existing
   }
 
-  const task = (async (): Promise<boolean> => {
+  const timeoutMs = options.timeoutMs ?? CF_TIMEOUT_MS
+
+  const task = (async (): Promise<Cookie[]> => {
     log("info", "cf", `開始處理 Cloudflare 驗證: ${origin}`, { sourceKey, url })
     const controller = new WebViewController()
     controller.setCustomUserAgent(userAgent)
@@ -85,7 +105,7 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
         }
       })()`
 
-      while (Date.now() - startedAt < CF_TIMEOUT_MS) {
+      while (Date.now() - startedAt < timeoutMs) {
         await sleep(POLL_INTERVAL_MS)
 
         // 檢查是否超過離屏等待時間（2.5 秒），若尚未放行且未彈窗，主動 present 升級可見
@@ -114,20 +134,19 @@ export async function solveCloudflare(sourceKey: string, url: string, userAgent:
             cookiesCount: cookies.length,
           })
 
-          // 將所有抽取到的 Cookie 寫入 Vesper 的 Cookie Jar
-          setCookies(sourceKey, url, cookies)
+          setCookies(sourceKey, url, options.hostJarNames ? cookies.filter(c => options.hostJarNames!.includes(c.name)) : cookies)
 
           if (isPresented) {
             controller.dismiss()
           }
-          return true
+          return cookies
         }
       }
 
       if (isPresented) {
         controller.dismiss()
       }
-      throw new Error(`Cloudflare 驗證超時 (${CF_TIMEOUT_MS / 1000}s)`)
+      throw new Error(t("sources.verificationTimeout", { seconds: Math.round(timeoutMs / 1000) }))
     } catch (e) {
       if (isPresented) {
         controller.dismiss()

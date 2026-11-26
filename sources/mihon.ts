@@ -19,9 +19,13 @@ import {
   probeMihonWorker,
   resetSourceHost,
   runSourceExclusive,
+  takeSourceChallenge,
   type MihonLoadTimings,
+  type SourceChallenge,
   type SourcePriority,
 } from "../engine/sourcehost/host"
+import { bareHost, hostOf, setCookies, type Cookie } from "../engine/cookies"
+import { solveCloudflare } from "../engine/cloudflare"
 import { appDataRoot, ensureDir, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
 import type { ImageRequest } from "../engine/images"
 import { log } from "../engine/log"
@@ -185,19 +189,25 @@ async function ensureLoaded(apkKey: string): Promise<void> {
 /**
  * 開啟一個 apk：回 manifest 與載入耗時（拿 apk／實例化 wasm／open 分開量）。
  * 同一個 apk 再叫一次就是重載；預設帶著磁碟上的使用者設定（`prefsOf`）。
+ * `priority` 逐呼叫帶：追更第一次碰到某個 apk 時，載入不該插在使用者呼叫前面。
  */
 export async function open(
   apkKey: string,
   apk: Uint8Array,
-  prefs: MihonPrefs = prefsOf(apkKey)
+  prefs: MihonPrefs = prefsOf(apkKey),
+  priority: SourcePriority = "user"
 ): Promise<MihonLoaded> {
   extensions.set(apkKey, { bytes: apk, prefs })
   sourceLists.delete(apkKey)
   return await attemptWithHealing(apkKey, "open", () =>
-    runSourceExclusive(apkKey, async () => {
-      const loaded = await loadMihonExtension(apk, apkKey, prefs)
-      return { manifest: loaded.manifest as MihonManifest, timings: loaded.timings }
-    })
+    runSourceExclusive(
+      apkKey,
+      async () => {
+        const loaded = await loadMihonExtension(apk, apkKey, prefs)
+        return { manifest: loaded.manifest as MihonManifest, timings: loaded.timings }
+      },
+      priority
+    )
   )
 }
 
@@ -226,7 +236,7 @@ export async function sources(apkKey: string): Promise<MihonSource[]> {
   return list
 }
 
-/** 搜尋（`filters` 是 dexvm 的 `FilterDef` 狀態；票 05 才接 UI，現在一律空陣列）。 */
+/** 搜尋（`filters` 是 dexvm 的 `FilterDef` 狀態；dexvm 的 filter state 無效，所以一律空陣列）。 */
 export async function search(
   apkKey: string,
   sourceId: string,
@@ -608,7 +618,7 @@ export function clearFailure(key: string): void {
   if (failures.delete(key)) stateListener?.()
 }
 
-/** 宿主或擴充自己把這個子源弄壞了（票 04 的呼叫路徑用；同一份 self-heal 策略）。 */
+/** 宿主或擴充自己把這個子源弄壞了（同一份 self-heal 策略）。 */
 export function markFailure(key: string, reason: string): void {
   failures.set(key, reason)
   log("error", "mihon", `${key} 已標記為不可用：${reason}`)
@@ -758,11 +768,11 @@ export function refOf(source: InstalledSource): MihonRef {
  * 確保這個 apk 載進 worker（第一次用到時才讀磁碟）。
  * 子源之間共用同一個 worker，所以這裡只認 apk。
  */
-export async function ensureExtension(apkKey: string): Promise<void> {
+export async function ensureExtension(apkKey: string, priority: SourcePriority = "user"): Promise<void> {
   if (extensions.has(apkKey) || isSourceLoaded(apkKey)) return
   const apk = readBytes(join(dirOf(apkKey), "extension.apk"))
   if (!apk) throw new Error(t("sources.mihon.missing"))
-  await open(apkKey, apk)
+  await open(apkKey, apk, prefsOf(apkKey), priority)
 }
 
 /** 宿主層的技術字換成人話，擴充自己的錯誤原樣保留（同 Aidoku）。 */
@@ -780,15 +790,102 @@ function assertAvailable(sourceKey: string): void {
   if (reason) throw new Error(t("sources.mihon.unavailable", { reason }))
 }
 
+// ---------------------------------------------------------------- Cloudflare
+//
+// 照 Aidoku 拆成兩段：代理（`performProxy`）碰到挑戰只記一筆 `pendingChallenge`，
+// 過盾在呼叫這一層做——宿主那條 /proxy 是 HttpServer 的原生回呼，`solveCloudflare` 的
+// `setTimeout` 會踩「Timer requires its active script on the main JS execution queue」。
+//
+// 代理記的 key 是**宿主 worker 的 key**（Mihon 是一個 apk 一個 worker，worker 送的是 apk），
+// 所以取挑戰要用 `ref.apkKey`；寫 jar、顯示來源名稱才用子源的 key。
+
+/** 過盾失敗不是源的錯：帶著原因往上丟，呼叫端不會因此把源標成不可用。 */
+export class MihonVerificationError extends Error {}
+
 /**
- * 一次對外的源操作：宿主／worker 壞掉重試後仍失敗就標記這個子源不可用（同 Aidoku），
- * 其餘錯誤包成「源出錯」。
+ * 只有 clearance 進宿主 jar。其餘的站方 cookie 在 dexvm 的 jar 裡就好：那裡的 `Set-Cookie`
+ * 會自己刷新，宿主再存一份，下一發 `withJarCookies` 就拿舊值蓋掉新的。
+ */
+const HOST_JAR_CLEARANCE: readonly string[] = ["cf_clearance"]
+
+/**
+ * 撞到 Cloudflare 挑戰就過盾、把 clearance 交給兩個 jar，然後重試一次。
+ * 沒撞到就只是把這次呼叫的成敗原樣帶出去。
+ */
+export async function withChallenge<T>(source: InstalledSource, task: () => Promise<T>): Promise<T> {
+  const ref = refOf(source)
+  let value: T | undefined
+  let failure: unknown = null
+  let failed = false
+  try {
+    value = await task()
+  } catch (error) {
+    failed = true
+    failure = error
+  }
+
+  const challenge = takeSourceChallenge(ref.apkKey)
+  if (!challenge) {
+    if (failed) throw failure
+    return value as T
+  }
+
+  log("info", "mihon", `${source.stored.key} 撞到 Cloudflare 挑戰（${challenge.url}），過盾後重試一次`)
+  const cookies = await passChallenge(source, challenge)
+  await deliverClearance(ref, challenge.url, cookies)
+  // 第一次就被判死的源要先解掉，不然重試會直接被 `assertAvailable` 擋下。
+  clearFailure(source.stored.key)
+  try {
+    return await task()
+  } finally {
+    // 重試自己撞到的挑戰不再留給下一次（避免每次呼叫都多過一次盾）。
+    takeSourceChallenge(ref.apkKey)
+  }
+}
+
+async function passChallenge(source: InstalledSource, challenge: SourceChallenge): Promise<Cookie[]> {
+  const ref = refOf(source)
+  try {
+    const cookies = await solveCloudflare(ref.sourceKey, challenge.url, challenge.userAgent, {
+      hostJarNames: HOST_JAR_CLEARANCE,
+    })
+    // 代理合成請求用的是 worker 的 key（apk），jar 也是按 key 分的：子源的 jar 給封面，
+    // apk 的 jar 給代理合併（dexvm 那邊沒塞進去時還有一層）。
+    if (ref.apkKey !== ref.sourceKey) {
+      setCookies(ref.apkKey, challenge.url, cookies.filter(cookie => HOST_JAR_CLEARANCE.includes(cookie.name)))
+    }
+    return cookies
+  } catch (failure) {
+    log("warning", "mihon", `${ref.sourceKey} 的 Cloudflare 過盾失敗`, failure)
+    throw new MihonVerificationError(t("sources.mihon.verification", { reason: messageOf(failure) }))
+  }
+}
+
+/**
+ * 把 clearance 也塞進 dexvm 的 jar：擴充自己（以及 `CookieManager`）讀的就是那一份。
+ * 塞不進去不算失敗——宿主 jar 那一份仍會併進代理請求。
+ */
+async function deliverClearance(ref: MihonRef, url: string, cookies: Cookie[]): Promise<void> {
+  // dexvm 的 jar 認 host 就是 host（不分 path、不做後綴比對），所以拿被擋的那個 host 當鍵。
+  const host = bareHost(hostOf(url))
+  const pairs = cookies.filter(cookie => cookie.name && host).map(cookie => [host, cookie.name, cookie.value ?? ""])
+  if (pairs.length === 0) return
+  try {
+    await call(ref.apkKey, "cookies", { set: pairs })
+  } catch (failure) {
+    log("warning", "mihon", `${ref.sourceKey} 的 clearance 沒進 dexvm 的 jar（宿主 jar 仍會補）`, failure)
+  }
+}
+
+/**
+ * 一次對外的源操作：撞到 Cloudflare 先過盾、宿主／worker 壞掉重試後仍失敗就標記不可用（同 Aidoku）。
  */
 async function mapAsk<T>(source: InstalledSource, step: string, task: () => Promise<T>): Promise<T> {
   assertAvailable(source.stored.key)
   try {
-    return await task()
+    return await withChallenge(source, task)
   } catch (failure) {
+    if (failure instanceof MihonVerificationError) throw failure
     log("error", "mihon", `${source.stored.key} 的 ${step} 失敗`, failure)
     if (isSourceHostError(failure)) markFailure(source.stored.key, userMessageOf(failure))
     throw new Error(t("sources.mihon.failed", { message: userMessageOf(failure) }))
@@ -916,7 +1013,7 @@ export async function detail(source: InstalledSource, comicId: string, backgroun
   const ref = refOf(source)
   const priority: SourcePriority = background ? "background" : "user"
   return await mapAsk(source, "detail", async () => {
-    await ensureExtension(ref.apkKey)
+    await ensureExtension(ref.apkKey, priority)
     const known = memo.mangaOf(ref.dir, ref.sourceKey, comicId)
     const update = await mangaUpdate(ref.apkKey, ref.sourceId, known, {
       fetchDetails: true,
@@ -1029,7 +1126,8 @@ function pageRequestOf(source: InstalledSource, imageKey: string): ImageRequest 
     method: "GET",
     data: null,
     headers: {},
-    fetch: () => fetchImage(ref.apkKey, ref.sourceId, page),
+    // 第一張圖被擋也會是一筆挑戰：走同一條過盾再重試一次，不然讀者只看到破圖。
+    fetch: () => withChallenge(source, () => fetchImage(ref.apkKey, ref.sourceId, page)),
   }
 }
 

@@ -534,6 +534,12 @@ export function takeSourceChallenge(sourceKey: string): SourceChallenge | null {
   return value
 }
 
+/** 標頭名稱不分大小寫：源自己宣告的叫 User-Agent，dexvm 補上的叫 user-agent。 */
+function headerOf(headers: Record<string, string>, name: string): string {
+  const key = Object.keys(headers).find(candidate => candidate.toLowerCase() === name)
+  return key ? String(headers[key]) : ""
+}
+
 /** 把 jar 的 cookie 補進代理請求（源自己給的 Cookie 保留，同名由 jar 覆蓋）。 */
 function withJarCookies(sourceKey: string | null, url: string, headers: Record<string, string>): void {
   if (!sourceKey) return
@@ -589,7 +595,10 @@ export async function performProxy(
     pendingChallenge = {
       sourceKey,
       url: finalUrl,
-      userAgent: headers["user-agent"] ?? headers["User-Agent"] ?? "",
+      // cf_clearance 綁 UA：過盾的 WebView 要用同一個。Mihon 的 UA 由擴充自己宣告
+      //（configureHeaders／headersBuilder），沒宣告時 dexvm 用 `open` 的 defaultUserAgent 補上；
+      // 兩個都沒有就退回同一個預設值，不要讓 WebView 用自己的 UA。
+      userAgent: headerOf(headers, "user-agent") || (request.engine === "mihon" ? mihonUserAgent() : ""),
       at: Date.now(),
     }
     log("info", "sourcehost", `${sourceKey} 的代理請求遇到 Cloudflare 挑戰，交給呼叫端過盾`)

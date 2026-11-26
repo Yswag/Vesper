@@ -34,6 +34,8 @@ export default {
   pageUnreadable: "第 {n} 页读不到（文件不存在或已损坏）",
 
   verificationTitle: "请完成安全验证 ({name})",
+  /** 过盾自己超过等待时间；`{seconds}` 是等了几秒。 */
+  verificationTimeout: "验证超时（{seconds} 秒）",
 
   aidoku: {
     failed: "源出错：{message}",
@@ -59,6 +61,8 @@ export default {
     initFailed: "源初始化失败",
     /** 重试后仍失败被标成不可用；`{reason}` 是最后一次的失败原因。 */
     unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
+    /** Cloudflare 过盾没过；`{reason}` 是 WebView 给的原因。不是源的错，源不会被标成不可用。 */
+    verification: "这个源被 Cloudflare 挡住，安全验证没完成（{reason}）",
     /** 探索页的两个列表。 */
     popular: "热门",
     latest: "最新",

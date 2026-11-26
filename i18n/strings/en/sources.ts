@@ -34,6 +34,8 @@ export default {
   pageUnreadable: "Page {n} cannot be read (the file is missing or damaged)",
 
   verificationTitle: "Complete the security check ({name})",
+  /** The challenge itself ran out of time; `{seconds}` is how long it waited. */
+  verificationTimeout: "The verification timed out ({seconds}s)",
 
   aidoku: {
     failed: "Source error: {message}",
@@ -59,6 +61,8 @@ export default {
     timeout: "The source timed out",
     initFailed: "The source failed to initialize",
     unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
+    /** The Cloudflare challenge did not pass; `{reason}` is what the WebView reported. Not the source's fault. */
+    verification: "Cloudflare is blocking this source and the security check did not finish ({reason})",
     popular: "Popular",
     latest: "Latest",
     missing: "This extension's files are missing (reinstall it)",

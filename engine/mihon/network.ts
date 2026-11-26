@@ -2,8 +2,8 @@
 //
 // `MIHON_DEFAULT_USER_AGENT` 是 Mihon `NetworkPreferences.defaultUserAgent` 的預設值
 // （mihonapp/mihon `core/common/.../network/NetworkPreferences.kt`，commit 0864ce0）。
-// Mihon 把它做成使用者偏好；Vesper 這張票先固定，之後接設定項時只改這裡。
-// 票 06 的 Cloudflare 過盾也要用同一個 UA（Mihon 的 `CloudflareInterceptor` 就是拿
+// Mihon 把它做成使用者偏好；Vesper 先固定，之後接設定項時只改這裡。
+// Cloudflare 過盾也要用同一個 UA（Mihon 的 `CloudflareInterceptor` 就是拿
 // `defaultUserAgentProvider()`）。
 
 export const MIHON_DEFAULT_USER_AGENT =

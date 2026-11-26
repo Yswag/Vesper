@@ -42,7 +42,7 @@ export function hostOf(url: string): string {
 }
 
 /** cookie 的 domain 不帶 port，`hostOf` 抓下來的 host 帶（loopback 就是這樣），比對前先拿掉。 */
-function bareHost(value: string): string {
+export function bareHost(value: string): string {
   return String(value ?? "").replace(/:\d+$/, "").toLowerCase()
 }
 
