@@ -7,7 +7,7 @@
 
 import { Script, fetch } from "scripting"
 
-import { cookieHeader, mergeCookieHeader } from "../cookies"
+import { absorbSetCookieHeaders, cookieHeader, mergeCookieHeader } from "../cookies"
 import { Convert } from "../convert"
 import { join, readBytes } from "../fs"
 import { log } from "../log"
@@ -492,6 +492,12 @@ export interface SourceProxyRequest {
   body?: string | null
   /** 二進位 body（base64）：Mihon 擴充的 POST 會送位元組。有值時優於 `body`。 */
   bodyBase64?: string | null
+  /**
+   * 這個請求來自哪個引擎（worker 自己宣告）。宿主不查 registry：`registry → sources → sourcehost`
+   * 這條依賴反過來就成環，而一個 worker 本來就只服務一個引擎，它帶過來最明確。
+   * 回應 cookie 要不要收進宿主 jar 就看這個。
+   */
+  engine?: SourceWorkerKind
 }
 
 export interface SourceProxyResult {
@@ -569,9 +575,15 @@ export async function performProxy(
   })
   const finalUrl = response.url || request.url
   outHeaders["X-Nemu-Final-Url"] = finalUrl
-  // XHR 的回應標頭依規範會濾掉 Set-Cookie，worker 讀不到；改放自訂標頭，一筆一個值。
+  // XHR 的回應標頭依規範會濾掉 Set-Cookie，worker 讀不到；改放自訂標頭，一筆一個值（Mihon 要交給 dexvm）。
+  // 只有 Aidoku 把 jar 交給宿主收：它的 runtime jar 一個標頭值只收第一筆（同名標頭又會疊掉）。
+  // Mihon 的 jar 在 dexvm 的 Java 端，那裡才是唯一真實來源：宿主再存一份，擴充清掉／改寫之後
+  // 下一發會被 withJarCookies 把舊值塞回去（包子 gatekeeper 的 binding 就是這樣壞的）。
   const setCookies = response.headers.getSetCookie()
-  if (setCookies.length > 0) outHeaders["X-Nemu-Set-Cookie"] = encodeURIComponent(JSON.stringify(setCookies))
+  if (setCookies.length > 0) {
+    outHeaders["X-Nemu-Set-Cookie"] = encodeURIComponent(JSON.stringify(setCookies))
+    if (sourceKey && request.engine === "aidoku") absorbSetCookieHeaders(sourceKey, finalUrl, setCookies)
+  }
 
   if (sourceKey && isCloudflareChallenge(response.status, outHeaders, buffer)) {
     pendingChallenge = {
@@ -591,6 +603,12 @@ function sourceKeyOf(payload: any): string | null {
   return payload && typeof payload.sourceKey === "string" && payload.sourceKey ? payload.sourceKey : null
 }
 
+/** 請求信封裡的引擎：只認這兩個字串，其餘當沒宣告（沒宣告就不收 cookie）。 */
+function engineOf(payload: any): SourceWorkerKind | undefined {
+  const value = payload?.engine
+  return value === "aidoku" || value === "mihon" ? value : undefined
+}
+
 /** HTTP 入口：只負責把 worker 的 JSON 信封轉成一次 performProxy。 */
 async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   const payload = jsonBody(request)
@@ -608,6 +626,7 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
         headers: payload.headers,
         body: payload.body,
         bodyBase64: payload.bodyBase64,
+        engine: engineOf(payload),
       },
       PROXY_TIMEOUT_MS,
       sourceKeyOf(payload)
@@ -736,7 +755,14 @@ async function proxyBatchResponse(request: HttpRequest): Promise<HttpResponse> {
       if (!item || typeof item.url !== "string") continue
       try {
         results[index] = await performProxy(
-          { url: item.url, method: item.method, headers: item.headers, body: item.body, bodyBase64: item.bodyBase64 },
+          {
+            url: item.url,
+            method: item.method,
+            headers: item.headers,
+            body: item.body,
+            bodyBase64: item.bodyBase64,
+            engine: engineOf(payload),
+          },
           PROXY_TIMEOUT_MS,
           sourceKey
         )

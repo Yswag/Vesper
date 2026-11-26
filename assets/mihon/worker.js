@@ -75,7 +75,8 @@ function proxySync(requestJson) {
     if (!Array.isArray(pair) || pair.length < 2) continue
     headers[String(pair[0])] = String(pair[1])
   }
-  const body = { sourceKey, op: currentOp, url: request.url, method: request.method || "GET", headers }
+  // 引擎別：宿主據此決定要不要把回應 cookie 收進它的 jar（Mihon 的 jar 在 dexvm 的 Java 端，宿主不收）。
+  const body = { sourceKey, engine: "mihon", op: currentOp, url: request.url, method: request.method || "GET", headers }
   if (request.bodyBase64) body.bodyBase64 = request.bodyBase64
 
   const xhr = new XMLHttpRequest()

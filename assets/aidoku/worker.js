@@ -98,13 +98,46 @@ function persistableValue(value) {
   return undefined
 }
 
-function parseHeaders(raw) {
+/**
+ * 宿主自己加的標頭，源不該看到：
+ * - `X-Nemu-Final-Url`：重新導向後的真實位址，已經放進回應的 `url`。
+ * - `X-Nemu-Set-Cookie`：打包的 Set-Cookie（XHR 讀不到原本那個標頭）。
+ *   cookie 由宿主收進 jar、下一個請求自動帶上（連多筆也收），源不必也不該自己管。
+ * - `Set-Cookie`：就算哪天宿主不再過濾，也照瀏覽器的 XHR 不給。
+ */
+const INTERNAL_HEADERS = new Set(["x-nemu-final-url", "set-cookie", "X-Nemu-Set-cookie"])
+
+/** XHR 的回應標頭（Name: value 逐行）→ 源看得到的那一份。 */
+function sourceHeaders(raw) {
   const headers = {}
   for (const line of String(raw || "").split(/\r?\n/)) {
     const index = line.indexOf(":")
-    if (index > 0) headers[line.slice(0, index).trim().toLowerCase()] = line.slice(index + 1).trim()
+    if (index <= 0) continue
+    const name = line.slice(0, index).trim().toLowerCase()
+    if (INTERNAL_HEADERS.has(name)) continue
+    headers[name] = line.slice(index + 1).trim()
   }
   return headers
+}
+
+/** 已經是個物件（`/proxy-batch` 的 meta）→ 同樣濾掉內部標頭。 */
+function sourceHeadersOf(map) {
+  const headers = {}
+  for (const [name, value] of Object.entries(map || {})) {
+    const lower = String(name).toLowerCase()
+    if (INTERNAL_HEADERS.has(lower)) continue
+    headers[lower] = String(value)
+  }
+  return headers
+}
+
+function headerValue(map, name) {
+  if (!map || typeof map !== "object") return ""
+  const lower = String(name).toLowerCase()
+  for (const [key, value] of Object.entries(map)) {
+    if (String(key).toLowerCase() === lower) return String(value)
+  }
+  return ""
 }
 
 /** `send_all` 預取回來的回應：同一份請求（JSON 完全相同）後續 `request()` 直接拿，不對就照常送。 */
@@ -123,7 +156,7 @@ const httpBridge = {
       xhr.open("POST", "/proxy-batch", false)
       xhr.responseType = "arraybuffer"
       xhr.setRequestHeader("Content-Type", "application/json")
-      xhr.send(JSON.stringify({ sourceKey: currentSourceKey, requests }))
+      xhr.send(JSON.stringify({ sourceKey: currentSourceKey, engine: "aidoku", requests }))
       if (xhr.status !== 200 || !xhr.response) return
       const buffer = xhr.response
       const metaLength = new DataView(buffer).getUint32(0, true)
@@ -133,14 +166,12 @@ const httpBridge = {
         if (!entry || entry.error) return
         const bytes = new Uint8Array(buffer.slice(offset, offset + entry.length))
         offset += entry.length
-        const headers = {}
-        for (const [name, value] of Object.entries(entry.headers || {})) headers[name.toLowerCase()] = value
         prefetched.set(prefetchKey(requests[index]), {
           status: entry.status,
-          headers,
+          headers: sourceHeadersOf(entry.headers),
           body: new TextDecoder("utf-8").decode(bytes),
           bytes,
-          url: headers["x-nemu-final-url"] || requests[index].url,
+          url: headerValue(entry.headers, "x-nemu-final-url") || requests[index].url,
         })
       })
     } catch (error) {
@@ -162,6 +193,7 @@ const httpBridge = {
     xhr.send(
       JSON.stringify({
         sourceKey: currentSourceKey,
+        engine: "aidoku",
         url: request.url,
         method: request.method || "GET",
         headers: request.headers || {},
@@ -170,13 +202,12 @@ const httpBridge = {
     )
     const buffer = xhr.response
     const bytes = buffer ? new Uint8Array(buffer) : null
-    const headers = parseHeaders(xhr.getAllResponseHeaders())
     return {
       status: xhr.status,
-      headers,
+      headers: sourceHeaders(xhr.getAllResponseHeaders()),
       body: bytes ? new TextDecoder("utf-8").decode(bytes) : "",
       bytes,
-      url: headers["x-nemu-final-url"] || request.url,
+      url: xhr.getResponseHeader("X-Nemu-Final-Url") || request.url,
     }
   },
 }

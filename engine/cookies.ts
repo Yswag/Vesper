@@ -41,11 +41,16 @@ export function hostOf(url: string): string {
   return m ? m[1].toLowerCase() : ""
 }
 
+/** cookie 的 domain 不帶 port，`hostOf` 抓下來的 host 帶（loopback 就是這樣），比對前先拿掉。 */
+function bareHost(value: string): string {
+  return String(value ?? "").replace(/:\d+$/, "").toLowerCase()
+}
+
 /** 網域比對：cookie domain 為空 → 視為通用；否則做後綴比對。port 不參與比對。 */
 export function domainMatchesHost(domain: string, host: string): boolean {
   if (!domain) return true
-  const d = domain.replace(/^\./, "").toLowerCase()
-  const h = host.split(":")[0].toLowerCase()
+  const d = bareHost(domain.replace(/^\./, ""))
+  const h = bareHost(host)
   return h === d || h.endsWith("." + d)
 }
 
@@ -63,8 +68,8 @@ export function setCookies(sourceKey: string, url: string, cookies: Cookie[]) {
   const list = load(sourceKey).slice()
   for (const incoming of cookies ?? []) {
     if (!incoming?.name) continue
-    const domain = incoming.domain || host
-    const idx = list.findIndex(c => c.name === incoming.name && c.domain === domain)
+    const domain = incoming.domain || bareHost(host)
+    const idx = list.findIndex(c => c.name === incoming.name && bareHost(c.domain) === domain)
     const next: Cookie = { name: incoming.name, value: incoming.value ?? "", domain }
     if (idx >= 0) list[idx] = next
     else list.push(next)
@@ -110,7 +115,91 @@ export function mergeCookieHeader(own: string | undefined, jar: string): string 
   return [...values].map(([name, value]) => `${name}=${value}`).join("; ")
 }
 
-/** 把回應的 Set-Cookie 收進 jar。 */
+/**
+ * 一筆 `Set-Cookie`（RFC 6265 的單一標頭值）只取 jar 用得到的三件事：`name=value`、Domain、到期。
+ * Path／Secure 不進 jar：jar 不分路徑、也不區分 http／https。上游（HTTPCookieStorage）兩者都分，
+ * 但靠它們區分的源幾乎不存在，先不收。
+ */
+interface SetCookie {
+  name: string
+  value: string
+  /** `Domain=` 給的網域（已去前導點、小寫）；沒給就是 null。 */
+  domain: string | null
+  expired: boolean
+}
+
+function parseSetCookie(header: string): SetCookie | null {
+  const parts = String(header ?? "").split(";")
+  const pair = (parts[0] ?? "").trim()
+  const eq = pair.indexOf("=")
+  if (eq <= 0) return null
+  const name = pair.slice(0, eq).trim()
+  if (!name) return null
+
+  let domain: string | null = null
+  let maxAge: number | null = null
+  let expiresAt: number | null = null
+  for (let index = 1; index < parts.length; index++) {
+    const attr = parts[index]
+    const cut = attr.indexOf("=")
+    const key = (cut < 0 ? attr : attr.slice(0, cut)).trim().toLowerCase()
+    const raw = cut < 0 ? "" : attr.slice(cut + 1).trim()
+    if (key === "domain" && raw) domain = raw.replace(/^\./, "").toLowerCase()
+    else if (key === "max-age") {
+      const seconds = Number(raw)
+      if (Number.isFinite(seconds)) maxAge = seconds
+    } else if (key === "expires" && raw) {
+      const at = Date.parse(raw)
+      if (Number.isFinite(at)) expiresAt = at
+    }
+  }
+
+  // RFC 6265：兩個都給時 Max-Age 優先（`sid=; Max-Age=0; Expires=<未來>` 是刪除）。
+  const expired = maxAge !== null ? maxAge <= 0 : expiresAt !== null ? expiresAt <= Date.now() : false
+  return { name, value: pair.slice(eq + 1).trim(), domain, expired }
+}
+
+/**
+ * 把回應的 `Set-Cookie`（一個標頭值一筆）收進 jar。
+ * 代理層是唯一讀得到 `Set-Cookie` 的地方（XHR 依規範會濾掉），所以 jar 的寫入都在這裡；
+ * 下一個請求由 `performProxy` 的 jar 合併自動帶上，worker 不必自己記。
+ * 內容沒變就不寫 Storage：站方幾乎每個回應都發 cookie，跟著寫會白白吃 I/O。
+ */
+export function absorbSetCookieHeaders(sourceKey: string, url: string, headers: readonly string[]): void {
+  if (!sourceKey || !headers || headers.length === 0) return
+  const host = hostOf(url)
+  if (!host) return
+  const list = load(sourceKey).slice()
+  let changed = false
+
+  for (const header of headers) {
+    const incoming = parseSetCookie(header)
+    if (!incoming) continue
+    // Domain 蓋不住回應的 host 就是別人的 cookie（瀏覽器也丟掉），不要收進這個源的 jar。
+    if (incoming.domain && !domainMatchesHost(incoming.domain, host)) continue
+    const domain = incoming.domain ?? bareHost(host)
+    const index = list.findIndex(item => item.name === incoming.name && bareHost(item.domain) === domain)
+
+    if (incoming.expired) {
+      if (index >= 0) {
+        list.splice(index, 1)
+        changed = true
+      }
+      continue
+    }
+    if (index < 0) {
+      list.push({ name: incoming.name, value: incoming.value, domain })
+      changed = true
+    } else if (list[index].value !== incoming.value || list[index].domain !== domain) {
+      list[index] = { name: incoming.name, value: incoming.value, domain }
+      changed = true
+    }
+  }
+
+  if (changed) save(sourceKey, list)
+}
+
+/** 把回應的 Set-Cookie 收進 jar（Venera 的 HTTP 層給的是已拆好的 cookie 物件）。 */
 export function absorbResponseCookies(sourceKey: string, url: string, response: { cookies?: any[] }) {
   const incoming = response?.cookies
   if (!Array.isArray(incoming) || incoming.length === 0) return
