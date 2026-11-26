@@ -569,6 +569,9 @@ export async function performProxy(
   })
   const finalUrl = response.url || request.url
   outHeaders["X-Nemu-Final-Url"] = finalUrl
+  // XHR 的回應標頭依規範會濾掉 Set-Cookie，worker 讀不到；改放自訂標頭，一筆一個值。
+  const setCookies = response.headers.getSetCookie()
+  if (setCookies.length > 0) outHeaders["X-Nemu-Set-Cookie"] = encodeURIComponent(JSON.stringify(setCookies))
 
   if (sourceKey && isCloudflareChallenge(response.status, outHeaders, buffer)) {
     pendingChallenge = {

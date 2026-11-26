@@ -47,6 +47,21 @@ function parseHeaderLines(raw) {
   return pairs
 }
 
+/** 代理回應的標頭；Set-Cookie 由宿主放在 `X-Nemu-Set-Cookie`（XHR 讀不到原本那個），這裡拆回一筆一個。 */
+function responseHeaders(xhr) {
+  const pairs = parseHeaderLines(xhr.getAllResponseHeaders()).filter(
+    ([name]) => name.toLowerCase() !== "x-nemu-set-cookie"
+  )
+  const packed = xhr.getResponseHeader("X-Nemu-Set-Cookie")
+  if (!packed) return pairs
+  try {
+    for (const value of JSON.parse(decodeURIComponent(packed))) pairs.push(["Set-Cookie", String(value)])
+  } catch (error) {
+    note(4, `bad X-Nemu-Set-Cookie: ${(error && error.message) || error}`)
+  }
+  return pairs
+}
+
 /** dexvm 的 `host.http`：同步進、同步出，回的是 JSON 字串（不是物件）。 */
 function proxySync(requestJson) {
   let request
@@ -76,7 +91,7 @@ function proxySync(requestJson) {
   const bytes = xhr.response ? new Uint8Array(xhr.response) : new Uint8Array(0)
   return JSON.stringify({
     status: xhr.status,
-    headers: parseHeaderLines(xhr.getAllResponseHeaders()),
+    headers: responseHeaders(xhr),
     bodyBase64: toBase64(bytes),
     finalUrl: xhr.getResponseHeader("X-Nemu-Final-Url") || request.url,
   })
