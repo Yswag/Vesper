@@ -14,6 +14,7 @@ import {
   accountSpec,
   findSource,
   hasAidokuSettings,
+  hasMihonSettings,
   reloadRegistry,
   setSourceEnabled,
   sourceKindOf,
@@ -23,6 +24,7 @@ import {
 } from "../../sources/registry"
 import { getRepository, repositoryNameFor } from "../../sources/repository"
 import { AidokuSettingsScreen } from "./AidokuSettingsScreen"
+import { MihonSettingsScreen } from "./MihonSettingsScreen"
 import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
 
@@ -122,6 +124,15 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
                 detail={t("settings.shared.countItems", { n: source.settingsSpec?.count ?? 0 })}
                 chevron
               />
+            </NavigationLink>
+          </>
+        ) : null}
+
+        {hasMihonSettings(source) ? (
+          <>
+            <Divider padding={{ leading: rowSeparatorInset }} />
+            <NavigationLink destination={<MihonSettingsScreen sourceKey={sourceKey} />}>
+              <IconRow icon="slider.horizontal.3" title={t("settings.sourceDetail.settingsRow")} chevron />
             </NavigationLink>
           </>
         ) : null}

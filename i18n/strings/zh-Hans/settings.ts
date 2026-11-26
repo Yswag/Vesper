@@ -252,6 +252,17 @@ export default {
     selected: { one: "已选 {n} 项", other: "已选 {n} 项" },
   },
 
+  /** Mihon 扩展的设置（`preferences` op）。 */
+  mihonSettings: {
+    title: "源设置",
+    empty: "这个源没有可调整的设置",
+    saving: "正在套用…",
+    saved: "已套用，源会重新加载",
+    footer: "共 {n} 项 · 值只存改过的字段，没改的用扩展自己声明的默认值。",
+    selected: "已选 {n} 项",
+    textPlaceholder: "输入值",
+  },
+
 
   downloads: {
     title: "下载",

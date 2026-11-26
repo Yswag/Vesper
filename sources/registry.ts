@@ -332,6 +332,14 @@ export function hasAidokuSettings(source: InstalledSource): boolean {
 }
 
 /**
+ * 源詳情要不要顯示「源設定」列：Mihon 擴充的設定要進 VM 才問得到，這裡一律給這一列，
+ * 進去才知道有沒有（掛掉的擴充不給）。
+ */
+export function hasMihonSettings(source: InstalledSource): boolean {
+  return mihon.isMihon(source) && !source.error
+}
+
+/**
  * 改一個 Aidoku 源的設定值：寫進 `installed.json` 的 `settings`，並讓源下次呼叫時重載。
  * 只寫改過的 key（沒有的就是 schema 預設）。
  */

@@ -29,6 +29,7 @@ import { t } from "../i18n"
 import { getContentLanguages } from "../app/contentLanguages"
 
 import * as memo from "./mihonMemo"
+import { prefsFileOf, rootNodesOf, type MihonPreference, type MihonPreferenceValues } from "./mihonPrefs"
 import type { StoredSource } from "./store"
 import type { InstalledSource } from "./registry"
 import type { ComicListItem, ComicListPage } from "../engine/adapt"
@@ -183,9 +184,13 @@ async function ensureLoaded(apkKey: string): Promise<void> {
 
 /**
  * 開啟一個 apk：回 manifest 與載入耗時（拿 apk／實例化 wasm／open 分開量）。
- * 同一個 apk 再叫一次就是重載。
+ * 同一個 apk 再叫一次就是重載；預設帶著磁碟上的使用者設定（`prefsOf`）。
  */
-export async function open(apkKey: string, apk: Uint8Array, prefs: MihonPrefs = {}): Promise<MihonLoaded> {
+export async function open(
+  apkKey: string,
+  apk: Uint8Array,
+  prefs: MihonPrefs = prefsOf(apkKey)
+): Promise<MihonLoaded> {
   extensions.set(apkKey, { bytes: apk, prefs })
   sourceLists.delete(apkKey)
   return await attemptWithHealing(apkKey, "open", () =>
@@ -494,6 +499,91 @@ export function installedSources(): InstalledSource[] {
     for (const child of children) out.push(childSource(packageKey, record, child, children.length))
   }
   return out
+}
+
+// ---------------------------------------------------------------- 設定（prefs）
+//
+//   <documents>/Vesper/sources/mihon/<packageId>/prefs.json
+//
+// 形狀就是 dexvm `exportPrefs` 的那一份（檔名 → key → 值），可以直接餵回 `open` 的 `prefs`。
+// 只寫使用者改過的 key：預設值不落地，擴充自己寫進 SharedPreferences 的東西也不落地。
+// 一個 apk 的多個子源共用一份檔案，各自的鍵在 `source_<sourceId>` 底下。
+
+function prefsPath(apkKey: string): string {
+  return join(dirOf(apkKey), "prefs.json")
+}
+
+/** 這個 apk 的使用者設定（重開 App 後還原用）。 */
+export function prefsOf(apkKey: string): MihonPrefs {
+  const record = readJson(prefsPath(apkKey))
+  return record && typeof record === "object" && !Array.isArray(record) ? (record as MihonPrefs) : {}
+}
+
+/** 寫回磁碟，同時讓記憶體裡那一份跟著換（下次 `ensureLoaded` 才帶得到新的）。 */
+function savePrefs(apkKey: string, prefs: MihonPrefs): void {
+  writeText(prefsPath(apkKey), JSON.stringify(prefs, null, 2))
+  const entry = extensions.get(apkKey)
+  if (entry) entry.prefs = prefs
+}
+
+/** 讀一個子源的設定定義與目前的值（值來自 `exportPrefs`，含擴充自己寫的部分）。 */
+export interface MihonPreferences {
+  nodes: MihonPreference[]
+  values: MihonPreferenceValues
+}
+
+export async function preferencesOf(source: InstalledSource): Promise<MihonPreferences> {
+  const ref = refOf(source)
+  return await mapAsk(source, "preferences", async () => {
+    // 先把 apk 載進來（`open` 自己會排一次隊列），再進隊列問——在隊列裡再排自己會互等。
+    await ensureExtension(ref.apkKey)
+    return await runSourceExclusive(ref.apkKey, async () => {
+      const nodes = (await callMihon(ref.apkKey, "preferences", { sourceId: ref.sourceId })) as MihonPreference[]
+      const exported = (await callMihon(ref.apkKey, "exportPrefs", {})) as MihonPrefs
+      return {
+        nodes: rootNodesOf(Array.isArray(nodes) ? nodes : []),
+        values: exported?.[prefsFileOf(ref.sourceId)] ?? {},
+      }
+    })
+  })
+}
+
+/**
+ * 改一個設定值：先讓 VM 套用（同一顆 handle 內會立即生效），把改過的 key 併回磁碟，
+ * 然後只丟掉這個 apk 的 worker——下次呼叫帶著新的 prefs 重開，其他源不受影響。
+ * 回傳的是改完當下 `exportPrefs` 的那一份（畫面直接拿去重畫）。
+ */
+export async function setPreferenceValue(
+  source: InstalledSource,
+  key: string,
+  value: unknown
+): Promise<MihonPreferenceValues> {
+  const ref = refOf(source)
+  const written = await mapAsk(source, "setPreference", async () => {
+    await ensureExtension(ref.apkKey)
+    return await runSourceExclusive(ref.apkKey, async () => {
+      const result = (await callMihon(ref.apkKey, "setPreference", { sourceId: ref.sourceId, key, value })) as {
+        file?: string
+        key?: string
+      }
+      const exported = (await callMihon(ref.apkKey, "exportPrefs", {})) as MihonPrefs
+      return {
+        file: typeof result?.file === "string" && result.file ? result.file : prefsFileOf(ref.sourceId),
+        key: typeof result?.key === "string" && result.key ? result.key : key,
+        exported,
+      }
+    })
+  })
+
+  const prefs = prefsOf(ref.apkKey)
+  const file = written.file
+  savePrefs(ref.apkKey, { ...prefs, [file]: { ...(prefs[file] ?? {}), [written.key]: value } })
+  forgetSource(ref.apkKey)
+  for (const child of installedOf(ref.apkKey).sources ?? []) {
+    sourceHeaders.delete(sourceKeyOf(packageIdOf(ref.apkKey), child.id))
+  }
+  log("info", "mihon", `${ref.sourceKey} 的設定 ${written.key} 已更新，這個 apk 的 worker 下次呼叫重建`)
+  return written.exported?.[file] ?? {}
 }
 
 // ---------------------------------------------------------------- 失敗狀態

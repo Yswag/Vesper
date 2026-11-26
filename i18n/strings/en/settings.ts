@@ -257,6 +257,17 @@ export default {
     selected: { one: "{n} selected", other: "{n} selected" },
   },
 
+  /** Mihon extension settings (`preferences` op). */
+  mihonSettings: {
+    title: "Source settings",
+    empty: "This source has no settings",
+    saving: "Applying…",
+    saved: "Applied — the source will reload",
+    footer: "{n} items · Only changed fields are stored; everything else uses the extension's own defaults.",
+    selected: "{n} selected",
+    textPlaceholder: "Enter a value",
+  },
+
 
   downloads: {
     title: "Downloads",

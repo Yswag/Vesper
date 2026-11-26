@@ -267,6 +267,17 @@ export default {
     selected: { one: "已選 {n} 項", other: "已選 {n} 項" },
   },
 
+  /** Mihon 擴充的設定（`preferences` op）。 */
+  mihonSettings: {
+    title: "源設定",
+    empty: "這個源沒有可調整的設定",
+    saving: "正在套用…",
+    saved: "已套用，源會重新載入",
+    footer: "共 {n} 項 · 值只存改過的欄位，沒改的用擴充自己宣告的預設。",
+    selected: "已選 {n} 項",
+    textPlaceholder: "輸入值",
+  },
+
 
   /** 下載管理頁。 */
   downloads: {
