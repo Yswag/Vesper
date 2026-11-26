@@ -110,6 +110,8 @@ export interface SourceHandle {
   detail(comicId: string, scope?: SourceScope): Promise<ComicDetail>
   /** 章節的頁面清單：離線優先（已下載的章不必連網）。 */
   chapter(comicId: string, epId: string, scope?: SourceScope): Promise<string[]>
+  /** 磁碟上存下的圖片鍵還算數嗎。沒這個方法＝鍵就是網址，永遠算數；Mihon 的鍵有格式版本。 */
+  acceptsImageKeys?(keys: string[]): boolean
   comments(
     comicId: string,
     subId: string | undefined,
@@ -259,6 +261,7 @@ function mihonHandle(source: InstalledSource): SourceHandle {
     list: (target, cursor) => mihonList(source, target, cursor),
     detail: (comicId, scope) => loadDetail(source, comicId, scope),
     chapter: (comicId, epId) => openChapterImages(source, comicId, epId),
+    acceptsImageKeys: keys => mihon.acceptsImageKeys(keys),
     comments: () => Promise.reject(new Error(t("sources.unsupported.comments"))),
     canPostComment: () => false,
     postComment: () => Promise.reject(new Error(t("sources.unsupported.sendComment"))),

@@ -355,9 +355,6 @@ export function forget(apkKey: string): void {
 
 function forgetChildMemory(sourceKey: string): void {
   memo.forget(sourceKey)
-  for (const key of [...pageRefs.keys()]) {
-    if (key.startsWith(`${sourceKey}\n`)) pageRefs.delete(key)
-  }
   for (const key of [...coverRequests.keys()]) {
     if (key.startsWith(`${sourceKey}\n`)) coverRequests.delete(key)
   }
@@ -872,40 +869,44 @@ export function chapterArgumentOf(source: InstalledSource, comicId: string, epId
   return memo.chapterOf(ref.dir, ref.sourceKey, comicId, epId)
 }
 
-/** 頁面 → 圖片鍵：鍵就是 `Page.url`（源的頁面身分），dexvm 的 PageRef 另外記在記憶體。 */
-const pageRefs = new Map<string, MihonPage>()
-const PAGE_REF_LIMIT = 4000
-
-function pageRefKey(sourceKey: string, comicId: string, epId: string, url: string): string {
-  return `${sourceKey}\n${comicId}\n${epId}\n${url}`
-}
-
-function rememberPageRefs(sourceKey: string, comicId: string, epId: string, pages: MihonPage[]): void {
-  for (const page of pages) {
-    const key = pageRefKey(sourceKey, comicId, epId, page.url || page.imageUrl)
-    pageRefs.delete(key)
-    pageRefs.set(key, page)
-  }
-  while (pageRefs.size > PAGE_REF_LIMIT) {
-    const oldest = pageRefs.keys().next().value as string | undefined
-    if (oldest === undefined) return
-    pageRefs.delete(oldest)
-  }
-}
+// ---------------------------------------------------------------- 圖片鍵
+//
+// 圖片鍵就是「一頁」的身分：正文快取的檔名、離線 manifest、下載與預取全部只認它。
 
 /**
- * 這一頁的 PageRef。整話都命中磁碟時（重開 App）沒有 `pages` 的結果，
- * 就用圖片鍵（＝Page.url）組一個只有 url 的 PageRef：絕大多數源的 `fetchImageUrl` 只讀它。
+ * 鍵的格式版本。舊版（沒有這一段）用裸的 `Page.url` 當鍵，對不上這裡的任何鍵，
+ * 所以舊快取檔一個都不會命中，開章時被 `dropStalePages` 清掉。
  */
-function pageRefOf(sourceKey: string, comicId: string, epId: string, imageKey: string): MihonPage {
-  return (
-    pageRefs.get(pageRefKey(sourceKey, comicId, epId, imageKey)) ?? {
-      index: 0,
-      name: "",
-      url: imageKey,
-      imageUrl: "",
-    }
-  )
+const IMAGE_KEY_TAG = "m1"
+
+/**
+ * 一頁的鍵：`m1` ⏎ 頁索引 ⏎ `Page.url` ⏎ `Page.imageUrl`。
+ *
+ * Mihon 用 `Page.index`（頁在清單裡的位置）定位一頁，而同一個 `Page.url` 可以出現在好幾頁上
+ * （極速漫畫 42 頁的 url 全是同一個章節網址，只有 `imageUrl` 不同）。索引因此必須在鍵裡；
+ * 鍵又是「整話命中磁碟就不問源」時唯一的線索，所以 url 與 imageUrl 也要一起帶，
+ * 才還原得出能直接抓的 PageRef。換行分隔：網址與索引都放不下換行，不會有歧義。
+ */
+export function imageKeyOfPage(page: MihonPage, index: number): string {
+  return [IMAGE_KEY_TAG, String(index), page.url ?? "", page.imageUrl ?? ""].join("\n")
+}
+
+/** 磁碟上的鍵還是現在這一版嗎。 */
+export function isCurrentImageKey(imageKey: string): boolean {
+  const parts = imageKey.split("\n")
+  return parts.length === 4 && parts[0] === IMAGE_KEY_TAG && /^\d+$/.test(parts[1])
+}
+
+/** 整份鍵清單還算數嗎（舊版的鍵是裸網址，一頁對不上就整份不用）。 */
+export function acceptsImageKeys(imageKeys: string[]): boolean {
+  return imageKeys.every(isCurrentImageKey)
+}
+
+/** 鍵 → PageRef；不是這一版的鍵就回 null。 */
+function pageOfImageKey(imageKey: string): MihonPage | null {
+  if (!isCurrentImageKey(imageKey)) return null
+  const [, index, url, imageUrl] = imageKey.split("\n")
+  return { index: Number(index), name: "", url, imageUrl }
 }
 
 export async function chapterImageKeys(
@@ -920,15 +921,15 @@ export async function chapterImageKeys(
     const raw = await pages(ref.apkKey, ref.sourceId, chapter)
     const list = Array.isArray(raw) ? raw : []
     if (list.length === 0) throw new Error(t("sources.emptyChapter"))
-    rememberPageRefs(ref.sourceKey, comicId, epId, list)
-    return list.map(page => page.url || page.imageUrl)
+    return list.map((page, index) => imageKeyOfPage(page, index))
   })
 }
 
 /** 正文取圖：`fetchImage` 在 VM 裡跑（含源的攔截器與解混淆），位元組回來後照常走快取與預取。 */
-function pageRequestOf(source: InstalledSource, imageKey: string, comicId: string, epId: string): ImageRequest {
+function pageRequestOf(source: InstalledSource, imageKey: string): ImageRequest {
   const ref = refOf(source)
-  const page = pageRefOf(ref.sourceKey, comicId, epId, imageKey)
+  // 舊鍵（裸網址）沒有索引與 imageUrl：照舊當 url 用，dexvm 會自己去解析那一頁。
+  const page = pageOfImageKey(imageKey) ?? { index: 0, name: "", url: imageKey, imageUrl: "" }
   return {
     url: page.imageUrl || page.url || imageKey,
     method: "GET",
@@ -943,7 +944,7 @@ export function comicModule(source: InstalledSource): {
   onImageLoad(imageUrl: string, comicId: string, epId: string): Promise<ImageRequest>
 } {
   return {
-    onImageLoad: async (imageUrl: string, comicId: string, epId: string) => pageRequestOf(source, imageUrl, comicId, epId),
+    onImageLoad: async (imageUrl: string) => pageRequestOf(source, imageUrl),
   }
 }
 

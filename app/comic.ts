@@ -817,8 +817,12 @@ export function createComicLibrary(): ComicLibrary {
     // 畫面顯示的章節標題也來自呼叫端的 `chapters`，不是這一份。
     // 整話都在磁碟上就連清單也不問源：有的源問一次清單就算一次額度。
     const cachedKeys = cachedChapterImageKeys(key)
-    if (cachedKeys) log("debug", "reader", `${ref.epId} 整話命中磁碟（${cachedKeys.length} 頁），不問源`)
-    const imageKeys = cachedKeys ?? (await handle.chapter(ref.comicId, ref.epId))
+    // 源的圖片鍵格式換過（Mihon 從裸網址改成「頁索引＋url＋imageUrl」）：舊的鍵一個都不能用，
+    // 重問源拿新鍵；`openChapterCache` 會把對不上新鍵的舊檔清掉。
+    const usableKeys = cachedKeys !== null && (handle.acceptsImageKeys?.(cachedKeys) ?? true) ? cachedKeys : null
+    if (cachedKeys && usableKeys === null) log("debug", "reader", `${ref.epId} 的磁碟圖片鍵是舊格式，重問源`)
+    if (usableKeys) log("debug", "reader", `${ref.epId} 整話命中磁碟（${usableKeys.length} 頁），不問源`)
+    const imageKeys = usableKeys ?? (await handle.chapter(ref.comicId, ref.epId))
     // 這一話的跨 session 快取目錄：同一話重開就是這個目錄，命中就不必問源、不必下載。
     // 目錄只列舉這一次，清舊檔與頁面索引都用同一份清單。
     const chapterCache = openChapterCache(key, imageKeys)
