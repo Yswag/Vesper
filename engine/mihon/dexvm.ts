@@ -7,10 +7,10 @@ import { Script } from "scripting"
 
 import { join, readBytes } from "../fs"
 
-export const DEXVM_VERSION = "v0.2.4"
+export const DEXVM_VERSION = "v0.2.5"
 
 /** `dist/dexvm_bridge.wasm`。 */
-export const DEXVM_WASM_SHA256 = "f37115033968a4e8b320e896cab0cce2e07d48e98c22d1a86cfd3dbebadb5e80"
+export const DEXVM_WASM_SHA256 = "5cdb3a0c155aec3beb3a3329bd6bc8c5f14d6d2d412bbf51613f3a792bdccb74"
 /** `dexvm-host.js`（WASI 子集與 `host` import 的 shim）。 */
 export const DEXVM_HOST_SHA256 = "64d97f8759b660e33a92d4a746c10dbf5729959aa49c4e22691c46eff4c3356d"
 
