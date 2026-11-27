@@ -1,11 +1,3 @@
-// 源的設定。四種欄位都支援：input（可帶 regex validator）、select、switch、callback。
-//
-// 版面全走 design/（頁面殼 · 卡片 · 列 · 狀態橫幅），跟設定分頁其他頁面同一套語言，
-// 這裡不再出現任何顏色、圓角或列結構的字面值。
-//
-// 這一頁是自架類的源能不能用的前提 —— komga / kavita / lanraragi 都只宣告一個
-// `base_url`（input），預設指向 demo 伺服器，使用者得填自己的位址。
-
 import { Divider, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { FieldRow, IconRow, OptionRow, ToggleRow, rowSeparatorInset } from "../../design/rows"
@@ -26,7 +18,6 @@ import {
   type InstalledSource,
 } from "../../sources/registry"
 
-/** 每個型別的圖示（純色線條風格，相容深淺色模式）。未知型別一律當 input 處理。 */
 const SPEC_STYLE: Record<string, { icon: string }> = {
   input: { icon: "character.cursor.ibeam" },
   select: { icon: "list.bullet" },
@@ -56,7 +47,6 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
 
   const specs = source?.settingsSpecs ?? []
 
-  /** input 的驗證：validator 是源給的 regex 字串，不是函式。 */
   function validate(spec: SettingSpec, raw: string): string | null {
     if (!spec.validator) return null
     try {
@@ -76,7 +66,6 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
     if (spec) {
       const error = validate(spec, raw)
       if (error) {
-        // `spec.title` 是源自己給的設定名（資料），只有外框那句是我們的文案。
         setStatus({
           kind: "error",
           text: t("settings.sourceSettings.invalidValue", { title: spec.title, error }),
@@ -100,7 +89,6 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setStatus({ kind: "ready", text: t("settings.sourceSettings.resetDone") })
   }
 
-  // 源自己用 showMessage／showDialog 報了結果就不再疊一層；沒報才用橫幅補上。
   async function runCallback(id: string, label: string) {
     setRunningId(id)
     setStatus({ kind: "loading", text: t("common.inProgress", { label }) })
@@ -133,7 +121,6 @@ export function SourceSettingsScreen({ sourceKey }: { sourceKey: string }) {
 }
 
 export interface SourceSettingsViewProps {
-  /** 源還沒從 registry 讀出來：顯示載入中，不要先說「沒有可調整的設定」。 */
   loading?: boolean
   specs: SettingSpec[]
   values: Record<string, unknown>
@@ -146,7 +133,6 @@ export interface SourceSettingsViewProps {
   onRun: (id: string, label: string) => void
 }
 
-/** 只有版面：把 specs / 狀態轉成卡片。抽出來是為了能用假資料預覽整頁。 */
 export function SourceSettingsView({
   loading = false,
   specs,
@@ -195,7 +181,6 @@ export function SourceSettingsView({
   )
 }
 
-/** 一個設定項 = 小標題 + 一張卡片。 */
 function SpecCard({
   spec,
   values,
@@ -271,7 +256,6 @@ function SpecCard({
     )
   }
 
-  // input（含未知型別）
   const fallback = typeof spec.default === "string" && spec.default.length > 0 ? spec.default : undefined
   return (
     <CardGroup

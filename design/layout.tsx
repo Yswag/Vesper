@@ -1,7 +1,3 @@
-// 版面骨架與卡片：頁面殼（背景 + 標題 + 捲動區）、卡片、分組。
-//
-// 全 App 的頁面都用同一套 padding 與間距，不然每一頁的內容邊界都會差幾點。
-
 import { HStack, RoundedRectangle, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack, type Color, type CommonViewProps, type DynamicShapeStyle, type VirtualNode } from "scripting"
 
 import { PageBackground } from "../app/theme"
@@ -9,13 +5,6 @@ import { scrollTopBar } from "./glass"
 import { searchToolbarItem, type ToolbarSearch } from "./search"
 import { cardBackground, cardGap, cardShape, hairlineStroke, pageInsets, pageSpacing, radius, type StackChildren } from "./tokens"
 
-/**
- * 頁面殼：極光背景 + inline 標題 + 內容捲動區。
- *
- * 要放導覽列按鈕請傳「元件」而不是節點（`leading={ExitToolbar}`）：
- * 把 toolbar 這種 modifier prop 的 VirtualNode 傳過元件邊界，這個 runtime 會把裡面的 view render 兩次
- * （實測：設定頁左上角出現兩個 X；同一個節點寫在頁面自己的 JSX 裡就正常）。
- */
 export function PageScroll({
   title,
   leading,
@@ -27,17 +16,11 @@ export function PageScroll({
   children,
 }: {
   title?: string
-  /** 導覽列左側的元件（例如 ExitToolbar）。 */
   leading?: () => VirtualNode | null
-  /** 導覽列右側的元件（例如加號動作按鈕）。 */
   trailing?: () => VirtualNode | null
-  /** 下拉重整回呼。 */
   onRefresh?: () => Promise<void> | void
-  /** 導覽列放大鏡搜尋（`useToolbarSearch`）；搜尋時下拉重整停用，免得兩者搶手勢。 */
   search?: ToolbarSearch
-  /** 直接指定 `searchable`（例如常駐的 drawer 搜尋框）；與 `search` 二選一。 */
   searchField?: CommonViewProps["searchable"]
-  /** 推入時從哪個 `matchedTransitionSource` zoom 出來。 */
   zoomFrom?: { sourceID: string; namespace: NamespaceID }
   children: StackChildren
 }) {
@@ -89,12 +72,6 @@ export function PageScroll({
   )
 }
 
-/**
- * 一張圓角卡片。列與列之間自己放 `Divider`（縮排見 rows 的 `rowSeparatorInset`）。
- *
- * 一律帶 1px 高光邊（`hairlineStroke`）：淺色靠那條線跟底色分開，深色是 8% 白線。
- * 頁面不要再自己刻 `background` + `clipShape` + `stroke={hairlineStroke}`。
- */
 export function Card({
   children,
   background = cardBackground,
@@ -102,7 +79,6 @@ export function Card({
 }: {
   children: StackChildren
   background?: Color | DynamicShapeStyle
-  /** 讓底下的列吃左滑動作；要包在列的外層容器上才生效（iOS 27）。 */
   swipeActionsContainer?: boolean
 }) {
   return (
@@ -119,7 +95,6 @@ export function Card({
   )
 }
 
-/** 分組小標題。清單如果是一疊獨立卡片（不是一張大卡），直接用它當標題。 */
 export function GroupHeader({ title }: { title: string }) {
   return (
     <Text font="footnote" fontWeight="medium" foregroundStyle="secondaryLabel" padding={{ leading: 4 }}>
@@ -128,7 +103,6 @@ export function GroupHeader({ title }: { title: string }) {
   )
 }
 
-/** 一組設定：小標題 + 卡片 +（可選）卡下註腳。headerAccessory 可放右側操作按鈕。 */
 export function CardGroup({
   title,
   headerAccessory,

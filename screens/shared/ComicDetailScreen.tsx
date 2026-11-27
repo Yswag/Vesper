@@ -1,5 +1,3 @@
-// 漫畫詳情、收藏與章節閱讀入口。
-
 import {
   Button,
   GeometryReader,
@@ -70,9 +68,6 @@ import { SkeletonBlock, SkeletonText } from "../../design/skeleton"
 import { GlassSurface } from "../../design/GlassSurface"
 import { liquidGlass, scrollTopBar } from "../../design/glass"
 
-/**
- * 批次解析章節下載狀態映射表（單次重繪單一章節僅查詢一次，提升效能）。
- */
 export function chapterDownloadStates(
   library: Pick<ComicLibrary, "downloadState">,
   ref: ComicRef,
@@ -82,19 +77,13 @@ export function chapterDownloadStates(
   for (const epId of epIds) {
     if (!states.has(epId)) states.set(epId, library.downloadState({ ...ref, epId }))
   }
-  // 攤成物件：呼叫端只讀自己問過的 epId，取值不必再判 undefined。
   return Object.fromEntries(states)
 }
 
-/** 「全部已讀」算的章節：鎖定的看不到內容，標了也沒意義，直接排除。 */
 export function readableChapters<T extends { locked?: boolean }>(chapters: readonly T[]): T[] {
   return chapters.filter(chapter => chapter.locked !== true)
 }
 
-/**
- * 選取模式的「待下載」：非鎖定、而且沒下載完的章節 id（保留傳入順序）。
- * 章節查表由呼叫端建好重用：這裡只走一輪，不對章節陣列逐筆線性找。
- */
 export function pendingChapterIds<T extends { locked?: boolean }>(
   chaptersById: Map<string, T>,
   epIds: readonly string[],
@@ -109,7 +98,6 @@ export function pendingChapterIds<T extends { locked?: boolean }>(
   return pending
 }
 
-/** 連載狀態的介面字（源只給代碼，畫面負責翻）。 */
 function statusText(status: NonNullable<ComicPage["status"]>): string {
   switch (status) {
     case "ongoing":
@@ -125,15 +113,12 @@ function statusText(status: NonNullable<ComicPage["status"]>): string {
   }
 }
 
-/** 選取圓點的欄位寬：平常 0，選取時撐開把標題推向右，圓點從卡片左緣外滑入。 */
 const markSlotWidth = 28
 
-/** 只有 `suggestive`／`nsfw` 會走到這裡（safe 不占位置）。 */
 function ratingText(rating: NonNullable<ComicPage["contentRating"]>): string {
   return rating === "nsfw" ? t("detail.ratingNsfw") : t("detail.ratingSuggestive")
 }
 
-/** hero 右欄顯示的資訊；抽出來是為了讓預覽用假資料畫同一份版面。 */
 export type ComicHeroData = Pick<
   ComicPage,
   | "title"
@@ -148,7 +133,6 @@ export type ComicHeroData = Pick<
   | "uploadTime"
 >
 
-/** 分級角標（R18 紅字、建議級白字）貼在封面右上角；safe 不畫。 */
 export function ComicRatingBadge({ rating }: { rating?: ComicPage["contentRating"] }) {
   if (!rating || rating === "safe") return null
   return (
@@ -167,7 +151,6 @@ export function ComicHeroMeta({
   onSwitchSource,
 }: {
   meta: ComicHeroData
-  /** 點來源 chip：開換源 sheet。 */
   onSwitchSource: () => void
 }) {
   const rating = formatStars(meta.stars)
@@ -189,7 +172,7 @@ export function ComicHeroMeta({
         {meta.title}
       </Text>
 
-      {/* 來源是可點的 chip（玻璃＝可操作）。 */}
+      {}
       <Chip
         compact
         text={meta.sourceName}
@@ -198,7 +181,7 @@ export function ComicHeroMeta({
         accessibilityLabel={t("detail.switchSource")}
       />
 
-      {/* 唯讀星等與喜愛數：源有給才出現。分級不在這裡，它是封面的角標。 */}
+      {}
       {rating || (meta.likesCount != null && meta.likesCount > 0) ? (
         <HStack spacing={8} alignment="center">
           {rating ? <Tag text={`${rating.glyphs} ${rating.score}`} tone="warning" /> : null}
@@ -220,7 +203,7 @@ export function ComicHeroMeta({
         </HStack>
       ) : null}
 
-      {/* 連載狀態、作者作畫、時間：共三層，各自一行。 */}
+      {}
       {meta.status ? <Tag text={statusText(meta.status)} /> : null}
 
       {meta.uploader ? (
@@ -246,13 +229,6 @@ export function ComicHeroMeta({
   )
 }
 
-/**
- * 詳情頁的「第一幀」快取：只在記憶體、跟著 app 一起消失。
- *
- * 用途只有一個——退回詳情頁時不要閃骨架：重掛時先畫上次的內容，背景照樣重抓一次最新。
- * 刻意**不**做 TTL、也**不**跳過重抓：詳情頁的職責是顯示最新話，跳過只會讓新章晚到。
- * 源變過（安裝／移除／更新）就靠 revision 換 key，舊資料自然淘汰。
- */
 const DETAIL_CACHE_LIMIT = 8
 const detailCache = new Map<string, ComicPage>()
 
@@ -266,7 +242,6 @@ function readDetailCache(sourceKey: string, comicId: string): ComicPage | undefi
 
 function writeDetailCache(sourceKey: string, comicId: string, page: ComicPage): void {
   const key = detailCacheKey(sourceKey, comicId)
-  // 重新寫入要排到最後：Map 的插入序就是我們的 LRU。
   detailCache.delete(key)
   detailCache.set(key, page)
   while (detailCache.size > DETAIL_CACHE_LIMIT) {
@@ -291,37 +266,26 @@ export function ComicDetailScreen({
   }
 }) {
   const library = comicLibrary()
-  // 換源＝就地換掉這一頁看的作品：以下全部讀這兩個名字，不必再推一層詳情頁。
   const [active, setActive] = useState<ComicRef>({ sourceKey: initialSourceKey, comicId: initialComicId })
   const sourceKey = active.sourceKey
   const comicId = active.comicId
-  // 換源後、新詳情回來前先顯示新書名（不然會停在舊的那本）。
   const [pendingTitle, setPendingTitle] = useState(initialTitle)
-  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
   const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [detail, setDetail] = useState<ComicPage | null>(() => readDetailCache(initialSourceKey, initialComicId) ?? null)
-  // 載入失敗的原因；null＝沒話要說（載入中也算，那一句在 render 時才算）。
   const [status, setStatus] = useState<string | null>(null)
   const [reverseOrder, setReverseOrder] = useState(false)
   const [descExpanded, setDescExpanded] = useState(false)
-  // 多選下載模式：已勾選待下載的章節 ID 清單
   const [selecting, setSelecting] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
-  // 依容器實測寬度動態計算 hero 封面尺寸
   const [heroContainerWidth, setHeroContainerWidth] = useState(0)
-  // 頂部氛圍光暈圖片
   const [ambientImage, setAmbientImage] = useState<UIImage | null>(null)
-  // 滾動離開視線時才在導航欄顯示書名
   const [showNavTitle, setShowNavTitle] = useState(false)
 
-  // 訂閱來源變更、下載進度、書架狀態與語言切換
   const refresh = useSubscription(library.onChange, subscribeLocale)
 
-  // 收藏狀態直接從書架讀取
   const favorite = isFavorite(sourceKey, comicId)
 
-  // 詳情頁在畫面上（含被閱讀器蓋住的期間）就是前台：背景追更先讓路，別跟這裡搶連線。
   useEffect(() => {
     pauseUpdates()
     return () => resumeUpdates()
@@ -329,12 +293,8 @@ export function ComicDetailScreen({
 
   useEffect(() => {
     let alive = true
-    // 換源時先把舊作品收掉：留著會短暫顯示上一個來源的封面與章節。
-    // 有快取就直接當第一幀（退回來不閃骨架），背景照樣重抓最新。
     setDetail(readDetailCache(sourceKey, comicId) ?? null)
     setStatus(null)
-    // 詳情走 ComicLibrary：這一頁不再自己 loadDetail，也不必知道源回傳的原始形狀。
-    // 找不到源／沒載入成功都在庫的邊界變成可讀的錯誤訊息。
     library
       .comic({ sourceKey, comicId })
       .then(
@@ -343,7 +303,6 @@ export function ComicDetailScreen({
           setDetail(result)
           setStatus(null)
           writeDetailCache(sourceKey, comicId, result)
-          // 零成本同步：章節清單已經在手上，不必再為了「有沒有新話」問一次源。
           if (result.chapters.length > 0) setComicUpdate(comicUpdateRecord(result))
         },
         error => {
@@ -355,26 +314,21 @@ export function ComicDetailScreen({
     }
   }, [sourceKey, comicId])
 
-  // 章節清單的轉換只有一份（`ComicLibrary.readerChapters`）：詳情頁與續讀拿到的是同一個形狀。
-  // 重繪不代表章節換了：`detail` 沒換就沿用同一份陣列，下游的分組與目前分組才不必重算。
   const chapters: ChapterRef[] = useMemo(
     () => (detail ? library.readerChapters(detail) : []),
     [detail, library]
   )
 
-  // 章節 id → 章節：待下載計數與鎖定判斷都查這裡，重繪時不線性掃整份清單。
   const chaptersById = useMemo(() => {
     const index = new Map<string, ChapterRef>()
     for (const chapter of chapters) if (!index.has(chapter.id)) index.set(chapter.id, chapter)
     return index
   }, [chapters])
 
-  // 續讀點：ComicLibrary 會把越界的頁碼 clamp 到合法範圍；沒讀過就是 null。
   const resumed = library.resume({ sourceKey, comicId })
   const comicTitle = detail?.title ?? pendingTitle
   const comicCover = detail?.cover
 
-  // 章節分組（當源有多個不同 group 時支援分組分頁切換）
   const chapterGroups: ChapterGroup<ChapterRef>[] = useMemo(() => groupChapters(chapters), [chapters])
   const isGrouped = chapterGroups.length > 1
   const initialGroupName = useMemo(
@@ -386,21 +340,17 @@ export function ComicDetailScreen({
     ? selectedGroup
     : initialGroupName
 
-  // 當前選取分組中的章節（若無分組則為全部章節）
   const currentGroupChapters: ChapterRef[] = useMemo(() => {
     if (!isGrouped) return chapters
     const matched = chapterGroups.find((g: ChapterGroup<ChapterRef>) => g.name === activeGroup)
     return matched ? matched.chapters : chapters
   }, [isGrouped, chapterGroups, activeGroup, chapters])
 
-  // 已讀章節：手動標記與閱讀結算共用同一份紀錄（`Progress.readEpIds`）。
-  // 寫入一定換一份新陣列，所以陣列參考就是「已讀清單變了」的訊號：沒變就不重建 Set。
   const readEpIds = getProgress(sourceKey, comicId)?.readEpIds
   const readIds = useMemo(() => readChapterIds(sourceKey, comicId), [sourceKey, comicId, readEpIds])
 
   useEffect(() => {
     if (!comicCover) {
-      // 換源後新作品還沒回來：舊作品的氛圍光暈要一起收掉。
       setAmbientImage(null)
       return
     }
@@ -427,7 +377,6 @@ export function ComicDetailScreen({
     viewer: detail?.viewer,
   }
 
-  // 確定首選閱讀章節：優先續讀上次進度，無進度則自第一話起算（鎖定的章節不自動開）。
   const firstReadable = chapters.find(chapter => !chapter.locked)
   const resumedReadable =
     resumed && chapters.some(c => c.id === resumed.chapter.epId && !c.locked) ? resumed.chapter.epId : undefined
@@ -435,13 +384,10 @@ export function ComicDetailScreen({
 
   const targetEpTitle = chapters.find(chapter => chapter.id === targetEpId)?.title
 
-  // 上次讀到的頁碼（只有續讀同一話時才帶，換話從頭）。
   const resumePage = resumed && resumed.chapter.epId === targetEpId ? resumed.page : undefined
 
-  // 整理所有標籤
   const allTags = (detail?.tags ?? []).flatMap(g => g.values)
 
-  // 簡介文字清洗
   const cleanDescription = (detail?.description ?? "")
     .replace(/\\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -449,20 +395,16 @@ export function ComicDetailScreen({
 
   const isLongDescription = cleanDescription.length > 60 || cleanDescription.split("\n").length > 2
 
-  // 章節排序（針對當前分組）；倒序清單只有分組或排序換了才重排。
   const displayChapters = useMemo(
     () => (reverseOrder ? [...currentGroupChapters].reverse() : currentGroupChapters),
     [currentGroupChapters, reverseOrder]
   )
 
-  // 下載狀態會隨下載進度與訂閱變，所以每次重繪都重查；範圍只有畫面上讀得到的：
-  // 目前分組的章節（章節列與「全部下載」）＋已選取的章節（選取列的下載數）。
   const chapterStates = chapterDownloadStates(library, { sourceKey, comicId }, [
     ...currentGroupChapters.map(chapter => chapter.id),
     ...selectedIds,
   ])
 
-  // 選取模式的兩個數字：都只算「尚未下載」且非鎖定的章節（鎖定的不能下載）。
   const pendingAll = pendingChapterIds(
     chaptersById,
     currentGroupChapters.map(chapter => chapter.id),
@@ -470,20 +412,17 @@ export function ComicDetailScreen({
   )
   const pendingSelected = pendingChapterIds(chaptersById, selectedIds, chapterStates)
 
-  // 「全部已讀」只看當前分組裡沒被源鎖定的章節。
   const readable = useMemo(() => readableChapters(currentGroupChapters), [currentGroupChapters])
   const unreadCount = useMemo(
     () => readable.filter(chapter => !readIds.has(chapter.id)).length,
     [readable, readIds]
   )
-  // 勾選集合：每列與選取列都查 Set，不對陣列 includes。
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const allSelected = useMemo(
     () => readable.length > 0 && readable.every(chapter => selectedSet.has(chapter.id)),
     [readable, selectedSet]
   )
 
-  /** 選取模式：「全選 / 取消全選」切換。 */
   function toggleSelectAll() {
     if (allSelected) {
       setSelectedIds([])
@@ -492,10 +431,8 @@ export function ComicDetailScreen({
     }
   }
 
-  /** 這一組章的漫畫資訊（下載頁要顯示的名稱與封面）；詳情還沒到就沒有。 */
   const downloadMeta = detail ? { comicTitle: detail.title, cover: detail.cover } : undefined
 
-  /** 換源 sheet：選了就把這一頁換成該來源的作品（同一個導覽位置，不推新頁）。 */
   async function openSwitch() {
     await Navigation.present({
       element: (
@@ -516,7 +453,6 @@ export function ComicDetailScreen({
     })
   }
 
-  /** 選取模式：點列＝切換勾選（不是進閱讀器）；鎖定的章節不能選。 */
   function toggleSelected(epId: string) {
     if (chaptersById.get(epId)?.locked) return
     setSelectedIds(previous => {
@@ -527,7 +463,6 @@ export function ComicDetailScreen({
     })
   }
 
-  /** 「下載 (n)」：只送還沒下載的章節，送出後退出選取模式。 */
   function downloadSelected() {
     const requests = pendingSelected.map(epId => ({
       sourceKey,
@@ -539,13 +474,11 @@ export function ComicDetailScreen({
     setSelectionMode(false)
   }
 
-  /** 「下載全部」：僅下載當前選中組別（避免多語言源一次下載所有語言）。 */
   function downloadAll() {
     const requests = currentGroupChapters.map(chapter => ({ sourceKey, comicId, epId: chapter.id, title: chapter.title }))
     if (requests.length > 0) void library.download(requests, downloadMeta)
   }
 
-  /** 單章下載的觸發（章節列左滑）。 */
   function downloadChapter(chapter: ChapterRef) {
     void library.download(
       [{ sourceKey, comicId, epId: chapter.id, title: chapter.title }],
@@ -553,18 +486,15 @@ export function ComicDetailScreen({
     )
   }
 
-  /** 章節列左滑：反轉這一話的已讀狀態。 */
   function toggleRead(chapter: ChapterRef) {
     markChapterRead(sourceKey, comicId, [chapter.id], !readIds.has(chapter.id))
   }
 
-  /** 這一話之前（章節順序，不是畫面排序）、同一分組裡讀得到的章節。 */
   function chaptersBefore(chapter: ChapterRef): ChapterRef[] {
     const index = currentGroupChapters.findIndex(item => item.id === chapter.id)
     return index > 0 ? readableChapters(currentGroupChapters.slice(0, index)) : []
   }
 
-  /** 長按選單「之前的章節」：一次標成已讀或未讀。 */
   function markChaptersBefore(chapter: ChapterRef, read: boolean) {
     const ids = chaptersBefore(chapter).map(item => item.id)
     if (ids.length > 0) markChapterRead(sourceKey, comicId, ids, read)
@@ -574,12 +504,10 @@ export function ComicDetailScreen({
     library.cancelDownload({ sourceKey, comicId, epId: chapter.id })
   }
 
-  /** 刪掉這一話的離線檔（下載中的先取消、等任務收尾再刪，見 offline.deleteChapter）。 */
   function removeChapterDownload(chapter: ChapterRef) {
     void library.offline.deleteChapter({ sourceKey, comicId, epId: chapter.id })
   }
 
-  /** 「全部標為已讀」：一次標完當前分組裡還讀得到的章節。 */
   function markGroupRead() {
     markAllChaptersRead(
       sourceKey,
@@ -588,14 +516,12 @@ export function ComicDetailScreen({
     )
   }
 
-  /** 選取模式的「標為已讀」：勾起來的一次標完，然後退出選取。 */
   function markSelectedRead() {
     if (selectedIds.length === 0) return
     markChapterRead(sourceKey, comicId, selectedIds, true)
     setSelectionMode(false)
   }
 
-  /** 進出選取模式：清空勾選，工具列與圓點用動畫切換。 */
   function setSelectionMode(on: boolean) {
     void withAnimation(selectionAnimation, () => {
       setSelecting(on)
@@ -603,7 +529,6 @@ export function ComicDetailScreen({
     })
   }
 
-  // 封面尺寸：容器給多少寬度就用多少（見 comicMetrics 與 docs/ui-ux-liquid-glass.md）。
   const hero = heroCoverSize(heroContainerWidth)
 
   return (
@@ -617,13 +542,11 @@ export function ComicDetailScreen({
             }
           : undefined
       }
-      // 被閱讀器蓋住時不會重繪；退回來要靠 onAppear 重新讀一次書架/進度，
-      // 否則收藏愛心與「上次讀到」會停在進閱讀器前的舊狀態。
       onAppear={() => refresh()}
     >
       <PageBackground />
 
-      {/* 頂部封面 Ambient Glow 氛圍漫射光暈（為什麼用寬度量測見下方 WidthReporter）。 */}
+      {}
       {ambientImage ? (
         <GeometryReader>
           {geometry => (
@@ -698,7 +621,7 @@ export function ComicDetailScreen({
     >
       <SelectionTabBarHider selecting={selecting} />
 
-      {/* 載入初態；失敗時同一個位置顯示錯誤訊息 */}
+      {}
       {!detail && status ? (
         <VStack padding={pageInsets} frame={{ maxWidth: "infinity" }}>
           <NoticeBanner tone="error" text={status} />
@@ -710,7 +633,6 @@ export function ComicDetailScreen({
         <ScrollView
           scrollContentBackground="hidden"
           frame={{ maxWidth: "infinity" }}
-          // 跟首頁一樣：內容捲到導覽列下面時是柔和淡出，不是硬邊的分隔線。
           {...scrollTopBar(null)}
           overlay={{
             alignment: "bottom",
@@ -733,9 +655,6 @@ export function ComicDetailScreen({
               setShowNavTitle(!(ids as string[]).includes("hero-title"))
             },
           }}
-          // 量到的容器寬（hero 封面尺寸用）。`maxWidth: "infinity"` 會讓圖片拿自己的寬高比
-          // （380 × 寬/高）當理想寬度，橫式封面就變成整頁寬度，把整頁推歪
-          // （實測：同一個橫式封面，量寬前 798、量寬後 402）。
           background={
             <GeometryReader>
               {geometry => (
@@ -754,7 +673,7 @@ export function ComicDetailScreen({
             frame={{ maxWidth: "infinity" }}
           >
 
-            {/* 1. Hero 頂部海報與元資訊 */}
+            {}
             <HStack
               key="hero-title"
               spacing={16}
@@ -763,9 +682,6 @@ export function ComicDetailScreen({
             >
             <NamespaceReader>
               {heroNs => (
-                // 點 hero 封面 → 全螢幕看原圖（不裁切的完整封面）。
-                // 用 NavigationLink **推入**（不是 modal）：只有推入頁面才會有 zoom 轉場動畫
-                // （modal 的 navigationTransition 引擎不觸發，實測過）。
                 <NavigationLink
                   destination={
                     <CoverViewerScreen
@@ -799,10 +715,9 @@ export function ComicDetailScreen({
               <ComicHeroMeta meta={detail} onSwitchSource={() => void openSwitch()} />
             </HStack>
 
-            {/* 2. 閱讀入口與動作列（開始閱讀 + 收藏 + 評論留言） */}
+            {}
             <HStack spacing={10} alignment="center" frame={{ maxWidth: "infinity" }}>
               {targetEpId ? (
-                // 閱讀器一律用全螢幕呈現（不是推入）：推入的話狀態列與 tab bar 的修飾子會被導覽容器吃掉。
                 <Button
                   action={() => void presentReader({ ...readerProps, epId: targetEpId, initialPage: resumePage })}
                   buttonStyle="plain"
@@ -837,7 +752,6 @@ export function ComicDetailScreen({
                   </GlassSurface>
                 </Button>
               ) : chapters.length > 0 ? (
-                // 有章節但全部鎖定：不讓入口消失，改成看得懂的狀態。
                 <GlassSurface shape={rect(radius.lg)}>
                   <HStack
                     spacing={10}
@@ -855,7 +769,7 @@ export function ComicDetailScreen({
                 </GlassSurface>
               ) : null}
 
-              {/* 收藏按鈕 */}
+              {}
               <Button
                 buttonStyle="plain"
                 accessibilityLabel={favorite ? t("detail.unfavorite") : t("detail.favorite")}
@@ -886,7 +800,7 @@ export function ComicDetailScreen({
                 </GlassSurface>
               </Button>
 
-              {/* 評論留言入口：源沒宣告 loadComments 就完全不出現 */}
+              {}
               {detail.comments ? (
                 <NavigationLink
                   destination={
@@ -911,7 +825,7 @@ export function ComicDetailScreen({
               ) : null}
             </HStack>
 
-            {/* 3. 標籤膠囊群 (Pills)：約束在 maxWidth: "infinity" 內，防止大量 tags 撐破父容器 */}
+            {}
             {allTags.length > 0 ? (
               <ScrollView axes="horizontal" scrollIndicator="hidden" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
@@ -922,7 +836,7 @@ export function ComicDetailScreen({
               </ScrollView>
             ) : null}
 
-            {/* 4. 故事簡介（長文本自然漸隱淡出，短文本完整清晰不模糊） */}
+            {}
             {cleanDescription ? (
               <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                 <HStack>
@@ -969,7 +883,7 @@ export function ComicDetailScreen({
               </VStack>
             ) : null}
 
-            {/* 5. 相關推薦漫畫（若源有提供，置於簡介下方與章節列表上方） */}
+            {}
             {detail.recommend && detail.recommend.length > 0 ? (
               <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}>
                 <HStack alignment="firstTextBaseline" spacing={6}>
@@ -1026,7 +940,7 @@ export function ComicDetailScreen({
               </VStack>
             ) : null}
 
-            {/* 6. 章節列表頭部（緊湊合一工具列，大幅減少垂直佔位） */}
+            {}
             <VStack spacing={12}>
               <ChapterListHeader
                 selecting={selecting}
@@ -1041,7 +955,7 @@ export function ComicDetailScreen({
                 onDownloadAll={downloadAll}
               />
 
-              {/* 5.1 分組切換標籤列（僅在有多個分組時顯示，水平滾動膠囊列） */}
+              {}
               {isGrouped ? (
                 <ScrollView axes="horizontal" scrollIndicator="hidden">
                   <HStack spacing={8} padding={{ vertical: 2 }}>
@@ -1065,21 +979,18 @@ export function ComicDetailScreen({
                 </ScrollView>
               ) : null}
 
-              {/* 章節卡片流（左滑＝切換已讀 ／ 單章下載；說明見 design/layout 的 `swipeActionsContainer`） */}
+              {}
               <LazyVStack spacing={8} swipeActionsContainer={true}>
                 {displayChapters.map(chapter => {
                   const isCurrent = resumed?.chapter.epId === chapter.id
                   const locked = chapter.locked === true
-                  // 已讀＝淡化；當前話的強調色優先，看得到自己讀到哪。
                   const read = readIds.has(chapter.id)
-                  // 這一列的狀態是上面那一輪算好的（與「下載 (n)」共用），不再自己問一次。
                   const download = chapterStates[chapter.id]
                   const settled = isActive(download.state) || download.state === "done"
                   const checked = selectedSet.has(chapter.id)
                   const highlight = selecting ? checked : isCurrent
                   const markVisible = selecting && !locked
 
-                  // 章節卡片內容
                   const body = (
                     <Card background={highlight ? tint.selectedRow : cardBackground}>
                       <HStack
@@ -1088,7 +999,7 @@ export function ComicDetailScreen({
                         frame={{ maxWidth: "infinity" }}
                         contentShape="rect"
                       >
-                        {/* 圓點常駐：進出選取只動寬度與位移，標題才會被推著走（插入新元件標題會被當成新的）。 */}
+                        {}
                         <ZStack frame={{ width: markVisible ? markSlotWidth : 0, alignment: "leading" }}>
                           <Image
                             systemName={checked ? "checkmark.circle.fill" : "circle"}
@@ -1142,8 +1053,6 @@ export function ComicDetailScreen({
                     </Card>
                   )
 
-                  // 鎖定的章節只顯示，不包按鈕（點了不會進去）。
-                  // 非鎖定章節一律包 Button：選取模式下點整張卡片任何地方都能切換勾選，正常模式下進閱讀器。
                   const row = locked ? (
                     body
                   ) : (
@@ -1166,8 +1075,6 @@ export function ComicDetailScreen({
                     </Button>
                   )
 
-                  // 左滑：切換已讀＋（還沒下載完才有的）下載。選取模式與鎖定章節不給左滑。
-                  // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底。
                   const actions: VirtualNode[] = [
                     <Button
                       key="read"
@@ -1176,7 +1083,6 @@ export function ComicDetailScreen({
                       action={() => toggleRead(chapter)}
                     />,
                   ]
-                  // 全滑只做第一顆（已讀切換）；下載完的就不必再擺一顆。
                   if (!settled) {
                     actions.push(
                       <Button
@@ -1188,7 +1094,6 @@ export function ComicDetailScreen({
                     )
                   }
 
-                  // 長按：左滑的全部再加上「之前的章節」與取消／移除下載。選取模式給空選單（空的不會彈出）。
                   const before = chaptersBefore(chapter)
                   const removable = download.state === "done" || download.state === "partial" || download.state === "failed"
                   const menuItems = selecting ? (
@@ -1244,7 +1149,6 @@ export function ComicDetailScreen({
                     </Group>
                   )
 
-                  // 選取模式只清空動作、不拿掉修飾子：結構一變整列會被換掉，圓點與位移就沒有動畫。
                   return locked ? (
                     <VStack key={chapter.id} spacing={0} clipShape={cardShape}>
                       {row}
@@ -1262,7 +1166,7 @@ export function ComicDetailScreen({
                   )
                 })}
               </LazyVStack>
-              {/* 選取時讓出底部列的高度。 */}
+              {}
               <VStack frame={{ height: selecting ? selectionBarClearance : 0 }} />
             </VStack>
 
@@ -1274,14 +1178,9 @@ export function ComicDetailScreen({
   )
 }
 
-/** 詳情頁動作列：兩顆方形按鈕 54×64，中間間距 10；剩下的寬是「開始閱讀」。 */
 const ACTION_BUTTON = 54
 const ACTION_HEIGHT = 64
 const ACTION_GAP = 10
-/**
- * 詳情載入中：照載入後的排法一區一區搭——hero（封面＋標題／來源 chip／星等／作者）、
- * 閱讀列、標籤膠囊、簡介、章節工具列與一話一張卡。區塊少一個或多一個，內容一來就會抽。
- */
 export function DetailSkeleton({ cover }: { cover: { width: number; height: number } }) {
   return (
     <ScrollView scrollDisabled={true} scrollContentBackground="hidden">
@@ -1290,41 +1189,41 @@ export function DetailSkeleton({ cover }: { cover: { width: number; height: numb
           <SkeletonBlock width={cover.width} height={cover.height} />
           <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
             <SkeletonText font="title3" fontWeight="bold" lineLimit={2} length={6} />
-            {/* 來源 chip（compact）：caption2 加上下 5 */}
+            {}
             <SkeletonBlock width={78} height={24} shape="capsule" />
-            {/* 星等與喜愛數（Tag：caption2 加上下 4） */}
+            {}
             <HStack spacing={8}>
               <SkeletonBlock width={46} height={21} />
               <SkeletonBlock width={54} height={21} />
             </HStack>
-            {/* 連載狀態、作者、時間：三行，跟真的同字級 */}
+            {}
             <SkeletonBlock width={52} height={21} />
             <SkeletonText font="footnote" length={2} />
             <SkeletonText font="caption2" length={3} />
           </VStack>
         </HStack>
 
-        {/* 開始閱讀（撐滿）＋收藏 54＋留言 54，都是 64 高 */}
+        {}
         <HStack spacing={ACTION_GAP} alignment="center" frame={{ maxWidth: "infinity" }}>
           <SkeletonBlock height={ACTION_HEIGHT} />
           <SkeletonBlock width={ACTION_BUTTON} height={ACTION_HEIGHT} />
           <SkeletonBlock width={ACTION_BUTTON} height={ACTION_HEIGHT} />
         </HStack>
 
-        {/* 標籤膠囊列（真的那排靠左） */}
+        {}
         <HStack spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <SkeletonBlock width={52} height={21} shape="capsule" />
           <SkeletonBlock width={68} height={21} shape="capsule" />
           <SkeletonBlock width={60} height={21} shape="capsule" />
         </HStack>
 
-        {/* 簡介：標題＋收合時的三行 */}
+        {}
         <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <SkeletonText font="headline" fontWeight="bold" length={2} />
           <SkeletonText font="footnote" lineLimit={3} length={14} />
         </VStack>
 
-        {/* 章節：工具列（標題＋兩顆圖示膠囊）＋一話一張卡 */}
+        {}
         <VStack spacing={12} frame={{ maxWidth: "infinity" }}>
           <HStack spacing={6} alignment="center" frame={{ maxWidth: "infinity" }}>
             <SkeletonText font="title3" fontWeight="bold" length={2} />
@@ -1335,8 +1234,6 @@ export function DetailSkeleton({ cover }: { cover: { width: number; height: numb
           </HStack>
           <VStack spacing={8} frame={{ maxWidth: "infinity" }}>
             {Array.from({ length: 6 }, (_, index) => (
-              // 外面要包一層 clipShape：`Card` 的底色不會被它自己的 clipShape 裁圓，
-              // 包在外層才會裁（跟上面真正的章節列同一個寫法，不然圓角外會露出方框）。
               <VStack key={index} spacing={0} clipShape={cardShape}>
                 <Card background={cardBackground}>
                   <HStack padding={rowPadding} frame={{ maxWidth: "infinity" }}>
@@ -1353,7 +1250,6 @@ export function DetailSkeleton({ cover }: { cover: { width: number; height: numb
   )
 }
 
-/** 章節列的離線狀態：未下載 / 下載中 x/y / 已下載（未完成是誠實的「有缺」，不假裝下載好了）。 */
 function DownloadStateText({ state }: { state: ChapterDownloadState }) {
   const tint = useTint()
   if (state.state === "queued") {

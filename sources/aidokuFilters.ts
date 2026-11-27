@@ -1,14 +1,3 @@
-// Aidoku 源的搜尋篩選。
-//
-// 定義有兩個來源，形狀不一樣，這裡收成同一組列：
-//   v2（有 `get_filters` 的源）→ runtime 的 `getFilters()`，`{ type: 0..6, name, options, default }`
-//   舊版（只有 `filters.json` 的源）→ `[{ type: "select"|"text"|"sort"|"check"|"multi-select"|"genre"|"group", id, title, options, ids }]`
-//
-// 送給 runtime 的值一律是描述子 `{ type, name, value }`，`type` 用定義的編號：
-//   title 0 / author 1 / select 2 / sort 3 / check 4 / group 5 / genre 6
-// select 送的是「選項字串」（runtime 自己用 `ids` 換成索引）；genre 送 included / excluded。
-
-/** 定義的型別編號（bundle 的 `$` enum）。 */
 const TYPE = { title: 0, author: 1, select: 2, sort: 3, check: 4, group: 5, genre: 6 } as const
 
 export interface AidokuFilterOption {
@@ -52,7 +41,6 @@ function isAuthor(name: string, label: string): boolean {
   return /author|作者/i.test(`${name} ${label}`)
 }
 
-/** v2：runtime `getFilters()` 的定義。 */
 function fromRuntime(raw: unknown): AidokuFilterRow | null {
   if (!raw || typeof raw !== "object") return null
   const def = raw as Record<string, unknown>
@@ -84,13 +72,11 @@ function fromRuntime(raw: unknown): AidokuFilterRow | null {
   }
 }
 
-/** 舊版：`filters.json` 的一項。 */
 function fromManifest(raw: unknown): AidokuFilterRow | null {
   if (!raw || typeof raw !== "object") return null
   const def = raw as Record<string, unknown>
   const id = text(def.id)
   const label = text(def.title) || text(def.name) || id
-  // runtime 用 title / name / id 認這一個篩選，id 最穩。
   const name = id || label
   if (!name) return null
   const options = optionList(def.options)
@@ -123,7 +109,6 @@ function fromManifest(raw: unknown): AidokuFilterRow | null {
   }
 }
 
-/** group 只是排版用的標題，裡面的列照樣要能操作，所以攤平。 */
 function flatten(defs: unknown[], pick: (raw: unknown) => AidokuFilterRow | null): AidokuFilterRow[] {
   const rows: AidokuFilterRow[] = []
   for (const raw of defs) {
@@ -139,12 +124,10 @@ function flatten(defs: unknown[], pick: (raw: unknown) => AidokuFilterRow | null
   return rows
 }
 
-/** v2 的定義（`getFilters()` 的結果）；空陣列就代表這個源只有舊版定義。 */
 export function runtimeFilterRows(defs: unknown[]): AidokuFilterRow[] {
   return flatten(defs, fromRuntime)
 }
 
-/** 舊版定義（`filters.json`）。 */
 export function manifestFilterRows(defs: unknown[]): AidokuFilterRow[] {
   return flatten(defs, fromManifest)
 }
@@ -182,7 +165,6 @@ export function hasCustomFilterValues(rows: AidokuFilterRow[], values: AidokuFil
   return rows.some((row, index) => !sameValue(defaultFilterValue(row), values[index] ?? defaultFilterValue(row)))
 }
 
-/** 有沒有「使用者真的設了東西」的篩選（給結果頁那條列顯示數量）。 */
 export function activeFilterCount(rows: AidokuFilterRow[], values: AidokuFilterValue[]): number {
   return rows.filter((row, index) => {
     const value = values[index] ?? defaultFilterValue(row)
@@ -195,7 +177,6 @@ export function activeFilterCount(rows: AidokuFilterRow[], values: AidokuFilterV
   }).length
 }
 
-/** UI 狀態 → runtime 的描述子；只送跟預設不同的列。 */
 export function encodeFilters(rows: AidokuFilterRow[], values: AidokuFilterValue[]): AidokuFilterDescriptor[] {
   const out: AidokuFilterDescriptor[] = []
   rows.forEach((row, index) => {
@@ -236,7 +217,6 @@ export function encodeFilters(rows: AidokuFilterRow[], values: AidokuFilterValue
   return out
 }
 
-/** 存下來的值 → UI 狀態（對不上就退回預設）。 */
 export function decodeFilters(rows: AidokuFilterRow[], raw: unknown): AidokuFilterValue[] {
   const list = Array.isArray(raw) ? raw : []
   return rows.map((row, index) => {

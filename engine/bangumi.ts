@@ -1,6 +1,3 @@
-// Bangumi Open API 整合模組
-// 負責取得漫畫高分榜 (Rank)、近期熱門作品，並具備本地快取機制（24 小時）。
-
 import { fetch } from "scripting"
 import { appDataRoot, exists, join, readText, writeText } from "./fs"
 import { log } from "./log"
@@ -18,22 +15,16 @@ export interface BangumiSubject {
   author?: string
 }
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24 小時
-// 改動查詢語意時要 +1，否則舊快取會在 24 小時內蓋掉新結果。
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000
 const CACHE_VERSION = 8
 
 const USER_AGENT = "VesperApp/1.0 (iOS)"
 
-// Bangumi 書籍類型過濾策略：
-// - BOOK_FILTER：不預掛公共標籤，抓回後前端篩選漫畫，確保榜單名次連續。
-// - TAGGED_MANGA_FILTER：預先過濾「漫画」標籤以提高熱門新作等清單的漫畫密度。
 const BOOK_FILTER = { type: [1] }
 const TAGGED_MANGA_FILTER = { type: [1], meta_tags: ["漫画"] }
 
-/** 單行本/分卷條目（如「少女終末旅行 (6)」）不是作品本身，榜上排除。 */
 const VOLUME_SUFFIX = /[（(]\s*\d+\s*[)）]\s*$/
 
-/** 版本字尾（完全版、愛藏版…）；去重用，避免「灌篮高手完全版」與「灌篮高手」各佔一格。 */
 const EDITION_WORDS = /(完全版|愛藏版|爱藏版|珍藏版|文庫版|文库版|新裝版|新装版|典藏版|豪華版|豪华版)/g
 
 function cacheFilePath(): string {
@@ -72,10 +63,8 @@ function saveCache(data: CachedData): void {
 function parseSubject(item: any): BangumiSubject | null {
   if (!item || !item.id) return null
 
-  // 匿名請求時 filter.nsfw 會被官方忽略（要 token 才真的生效），所以 R18 得自己擋。
   if (item.nsfw === true) return null
 
-  // 篩選漫畫分類：排除小說、畫集，確認 platform 或 tags 包含漫畫標籤
   const platform = item.platform || ""
   if (platform === "小说" || platform === "画集") return null
 
@@ -90,7 +79,6 @@ function parseSubject(item: any): BangumiSubject | null {
   const isManga = platform === "漫画" || metaTags.includes("漫画") || tags.includes("漫画") || tags.includes("漫畫")
   if (!isManga) return null
 
-  // 作者可能記在「作者」「作畫」或「原作」三個鍵上，先到先得
   let author = ""
   if (Array.isArray(item.infobox)) {
     for (const info of item.infobox) {
@@ -101,7 +89,6 @@ function parseSubject(item: any): BangumiSubject | null {
     }
   }
 
-  // 封面圖優先取 common (400px) 或 large，再退回 image
   const image = item.images?.common ?? item.images?.medium ?? item.images?.large ?? item.image ?? ""
 
   return {
@@ -118,7 +105,6 @@ function parseSubject(item: any): BangumiSubject | null {
   }
 }
 
-/** 呼叫條目搜尋端點（POST /v0/search/subjects），回傳原始 data 陣列。 */
 async function searchSubjects(body: object, query = ""): Promise<any[]> {
   const res = await fetch(`https://api.bgm.tv/v0/search/subjects${query}`, {
     method: "POST",
@@ -137,7 +123,6 @@ async function searchSubjects(body: object, query = ""): Promise<any[]> {
   return json.data || []
 }
 
-/** 並行抓數頁搜尋結果並去重（search 一次最多只回 20 筆，只能靠 offset 疊）。 */
 async function searchPages(filter: object, sort: string, pages: number): Promise<any[]> {
   const results = await Promise.all(
     Array.from({ length: pages }, (_, index) =>
@@ -157,7 +142,6 @@ async function searchPages(filter: object, sort: string, pages: number): Promise
   return out
 }
 
-/** 取得高分榜（Top 榜單漫畫）。rank 是分類內排名，榜上小說佔多數，所以要多抓幾頁再篩。 */
 async function fetchTopRankSubjects(): Promise<BangumiSubject[]> {
   const pool = await searchPages({ ...BOOK_FILTER, rank: [">0", "<=100"] }, "rank", 2)
 
@@ -181,7 +165,6 @@ async function fetchTopRankSubjects(): Promise<BangumiSubject[]> {
   return picked
 }
 
-/** 計算以當前時間為基準的近半年（~182 天前）ISO 日期字串 (YYYY-MM-DD) */
 function getHalfYearAgoDateString(): string {
   const date = new Date(Date.now() - 182 * 24 * 60 * 60 * 1000)
   const y = date.getFullYear()
@@ -190,23 +173,14 @@ function getHalfYearAgoDateString(): string {
   return `${y}-${m}-${d}`
 }
 
-/** 熱門新作：近半年內開始連載、依收藏人數排序的漫畫。 */
 async function fetchTrendingSubjects(): Promise<BangumiSubject[]> {
   const sinceDate = getHalfYearAgoDateString()
 
-  // Bangumi 只有 search 端點能按熱度排序：sort "heat" = 收藏總數（wish+collect+doing+…）。
-  // air_date 是「連載開始日」而非更新日，所以半年窗等於「近期才開新連載」的作品，
-  // 長青連載（如芙莉莲）不會出現在這裡。
   const pool = await searchPages({ ...TAGGED_MANGA_FILTER, air_date: [`>=${sinceDate}`] }, "heat", 2)
 
   return pool.map(parseSubject).filter(Boolean).slice(0, 20) as BangumiSubject[]
 }
 
-/**
- * 「大家在追」：以「在讀人數」(collection.doing) 排序的漫畫。
- * search 沒有 doing 排序，只能先拿出候選池再自己排；候選池要夠深排序才準，
- * 所以掛 TAGGED_MANGA_FILTER 讓每頁 20 個位子都給漫畫（不掛的話小説會佔掉 3 成）。
- */
 async function fetchFollowingSubjects(): Promise<BangumiSubject[]> {
   const pool = await searchPages(TAGGED_MANGA_FILTER, "heat", 3)
 
@@ -214,13 +188,8 @@ async function fetchFollowingSubjects(): Promise<BangumiSubject[]> {
   return pool.map(parseSubject).filter(Boolean).slice(0, 20) as BangumiSubject[]
 }
 
-/**
- * 取得熱門漫畫快取池（抓取熱門前 300 名中隨機 2 頁，共約 40 部漫畫儲存為大池）。
- * 供首頁輪播圖在本地隨機洗牌抽樣，保證零延遲秒開且每次進入都有全新推薦。
- */
 export async function fetchPopularPool(pages = 2): Promise<BangumiSubject[]> {
   try {
-    // 隨機選一個起始頁
     const randomStart = Math.floor(Math.random() * 12)
     const pageIndices = Array.from({ length: pages }, (_, i) => randomStart + i)
 
@@ -259,7 +228,6 @@ export interface BangumiHomeFeed {
   isCached: boolean
 }
 
-/** 取得首頁 Bangumi 推薦流（優先回傳快取，並非同步/過期時更新） */
 export async function getBangumiHomeFeed(forceRefresh = false): Promise<BangumiHomeFeed> {
   const cached = loadCache()
   const now = Date.now()

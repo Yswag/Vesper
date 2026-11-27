@@ -1,9 +1,5 @@
-// 圖像後處理（modifyImage）沙箱：執行來源自訂的 JavaScript 圖片重排演算法。
-// 內部紀錄 ImageOp 貼圖操作序列，最終由 UI 注入的 ImageCompositor 進行合成輸出。
-
 import { sandboxView } from "./globals"
 
-/** 一張來源圖的某個矩形，貼到輸出的 (dx, dy)，可選擇順時針轉幾個 90°。 */
 export interface ImageOp {
   src: UIImage
   sx: number
@@ -12,7 +8,6 @@ export interface ImageOp {
   sh: number
   dx: number
   dy: number
-  /** 0..3，順時針 90° 的倍數（奇數時目的寬高會互換）。 */
   quarterTurns: number
 }
 
@@ -22,7 +17,6 @@ export interface Composition {
   ops: ImageOp[]
 }
 
-/** 由 UI 層注入：把貼圖清單變成一張 PNG 的位元組。 */
 export type ImageCompositor = (composition: Composition) => Promise<Uint8Array>
 
 function positiveInt(name: string, value: number) {
@@ -35,12 +29,10 @@ function inRange(name: string, start: number, length: number, limit: number) {
   }
 }
 
-/** 貼圖在目的空間佔的尺寸（轉了奇數次 90° 就會互換）。 */
 export function opDestSize(op: ImageOp): { width: number; height: number } {
   return op.quarterTurns % 2 === 1 ? { width: op.sh, height: op.sw } : { width: op.sw, height: op.sh }
 }
 
-/** 目的矩形（貼圖內部座標）反推來源矩形；k 是順時針 90° 的倍數。 */
 function unmapSource(k: number, sw: number, sh: number, x0: number, x1: number, y0: number, y1: number) {
   switch (k & 3) {
     case 1:
@@ -54,10 +46,6 @@ function unmapSource(k: number, sw: number, sh: number, x0: number, x1: number, 
   }
 }
 
-/**
- * 把一張貼圖裁到指定矩形內，座標以該矩形的左上角為原點；完全在外就回 null。
- * 一定要裁：來源的貼圖常常比請求的區塊大（例如整張圖被切出一條帶）。
- */
 function clipOp(op: ImageOp, x: number, y: number, width: number, height: number): ImageOp | null {
   const size = opDestSize(op)
   const left = Math.max(op.dx, x)
@@ -105,7 +93,6 @@ class SandboxImage {
     return new SandboxImage(width, height, [])
   }
 
-  /** 只做來源裁切（Venera 的簽名就是 4 個參數，搬位置是 fillImageRangeAt 的事）。 */
   copyRange(x: number, y: number, width: number, height: number) {
     positiveInt("width", width)
     positiveInt("height", height)
@@ -115,8 +102,6 @@ class SandboxImage {
     return new SandboxImage(width, height, ops)
   }
 
-  /** 順時針 90°，寬高互換。只是把貼圖標記成要轉，真正的旋轉由合成器做——
-   *  UIImage.rotated() 會多出一像素並重新取樣，不是我們要的逐像素搬移。 */
   copyAndRotate90() {
     const ops = this.ops.map(op => ({
       ...op,
@@ -158,10 +143,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/**
- * 跑源的 `modifyImage` 腳本，回傳貼圖清單。
- * 腳本可以用 `let modifyImage = …` 或 `function modifyImage(…)` 定義入口（jm 用前者）。
- */
 export function runModifyImage(script: string, source: UIImage): Composition {
   const sandbox = sandboxView()
   const names = [...Object.keys(sandbox), "Image"]

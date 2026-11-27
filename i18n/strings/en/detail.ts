@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   singleChapter: "Single chapter",
   author: "Author: {name}",
@@ -8,13 +6,11 @@ export default {
   uploadedAt: "Uploaded {time}",
   likesCount: { one: "{n} like", other: "{n} likes" },
 
-  /** Publishing status from the source. */
   statusOngoing: "Ongoing",
   statusCompleted: "Completed",
   statusCancelled: "Cancelled",
   statusHiatus: "Hiatus",
   statusNotPublished: "Not published",
-  /** Content rating: only suggestive and nsfw are shown. */
   ratingSuggestive: "Suggestive",
   ratingNsfw: "18+",
 
@@ -22,7 +18,6 @@ export default {
   startReading: "Start reading",
   chapterAtPage: "{chapter} · Page {n}",
   firstChapter: "Read from the start",
-  /** Shown when the source locks every chapter (paid / login only). */
   allChaptersLocked: "All chapters are locked",
 
   favorite: "Favorite",
@@ -64,11 +59,9 @@ export default {
 
   coverFailed: "Couldn't load the cover",
 
-  /** More actions and recommendations. */
   openInBrowser: "Open in Browser",
   recommendTitle: "Recommended",
 
-  /** Switching source: find the same title on another source. */
   switchSource: "Switch source",
   switchSourceSearching: "Searching other sources",
   switchSourceEmpty: "No other source has this title",

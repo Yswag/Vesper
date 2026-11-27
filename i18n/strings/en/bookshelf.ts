@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   historyTab: "History",
   offlineTab: "Offline",

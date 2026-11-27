@@ -1,6 +1,3 @@
-// 讀 ZIP：`.aix` 是 zip，安裝時要把它解成 `Payload/` 的檔案。
-// 這個 runtime 沒有 `DecompressionStream`，deflate 走 node:zlib 的 `inflateRawSync`（要餵 Buffer）。
-
 import { Buffer } from "node:buffer"
 import { inflateRawSync } from "node:zlib"
 
@@ -12,7 +9,6 @@ export interface ZipEntry {
 const EOCD_SIGNATURE = 0x06054b50
 const CENTRAL_SIGNATURE = 0x02014b50
 const LOCAL_SIGNATURE = 0x04034b50
-/** 沒有註解的 EOCD 是 22 bytes；註解上限 64KB。 */
 const EOCD_SEARCH = 0xffff + 22
 
 function findEocd(view: DataView): number {
@@ -30,7 +26,6 @@ function inflate(raw: Uint8Array): Uint8Array {
   return new Uint8Array(Buffer.from(out))
 }
 
-/** 解出全部檔案（只支援 store 與 deflate，這兩種就是 zip 的預設）。 */
 export function unzip(bytes: Uint8Array): ZipEntry[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const eocd = findEocd(view)

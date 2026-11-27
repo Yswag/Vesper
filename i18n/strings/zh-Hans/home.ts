@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   title: "首页",
 

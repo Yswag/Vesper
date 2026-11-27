@@ -1,7 +1,3 @@
-// 注入給源的 shim 全域。命名與行為照 Venera 的 assets/init.js，但實作是我們的
-// （沒有 sendMessage RPC，直接呼叫宿主模組）。此檔可在瀏覽器外的地方被引用，
-// 但只有 loader 會把回傳物件當成 new Function 的參數注入沙箱。
-
 import { Convert } from "./convert"
 import type { Cookie } from "./cookies"
 import { deleteCookies, getCookies, setCookies } from "./cookies"
@@ -27,7 +23,6 @@ export interface HostUI {
 export interface HostContext {
   sourceKey: string
   locale: string
-  /** 源宣告的設定預設值（沙箱只讀）。 */
   settings: SourceSettings
   loadData(key: string): unknown
   saveData(key: string, data: unknown): void
@@ -38,14 +33,11 @@ export interface HostContext {
 
 const APP_VERSION = "1.17.0"
 
-// Scripting 的 d.ts 只有 setTimeout/clearTimeout，沒有 interval 系列。
 declare function setInterval(handler: () => void, timeout: number): number
 declare function clearInterval(id: number): void
 
-/** 沙箱視圖：源看得到的「全域」。modifyImage 的獨立引擎也用同一份白名單。 */
 export function sandboxView(): Record<string, unknown> {
   return {
-    // 只暴露無害的標準物件；FileManager / Storage / Script 等一律看不到。
     JSON,
     Math,
     Date,
@@ -110,7 +102,6 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
     subtitle?: string
     constructor(init: Record<string, any> = {}) {
       Object.assign(this, init)
-      // init.js 的 ctor 對 subtitle 有 ?? subTitle 的補救。
       this.subtitle = init.subtitle ?? init.subTitle
     }
   }
@@ -162,7 +153,6 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
 
   const Network = {
     async sendRequest(method: string, url: string, headers?: unknown, data?: unknown, extra?: Record<string, unknown>) {
-      // 在**呼叫當下**同步取走 signal（不留着等）：源檔不能改，signal 只能靠環境態進來。
       return requestText(sourceKey, method, url, headers, data, extra, currentSourceSignal(sourceKey))
     },
     async fetchBytes(method: string, url: string, headers?: unknown, data?: unknown, extra?: Record<string, unknown>) {
@@ -194,7 +184,6 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
     },
   }
 
-  /** 文件 key → 我們的 dom 模組 key，兩者用同一組數字即可。 */
   class HtmlDocument {
     key: number
     constructor(html: string) {
@@ -287,7 +276,6 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
     }
   }
 
-  /** 與 init.js 同形：用 fetchBytes 取得 ArrayBuffer 再包成 browser-like Response。 */
   async function fetchCompat(url: string, options?: { method?: string; headers?: Record<string, string>; body?: unknown }) {
     const result = await Network.fetchBytes(options?.method ?? "GET", url, options?.headers ?? {}, options?.body ?? null)
     return {
@@ -301,7 +289,6 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
     }
   }
 
-  /** 主沙箱拿不到真的 Image；modifyImage 的獨立引擎才有（見 imageprocess.ts）。 */
   class ImageStub {
     constructor(_key?: number) {}
     static empty(_width: number, _height: number): never {
@@ -391,17 +378,9 @@ export function createGlobals(ctx: HostContext): Record<string, unknown> {
     },
 
     compute: async (func: string, ...args: unknown[]) => {
-      // 語意：func 是一段會被求值的程式，取它的**完成值**當函式，該函式收到整個 args 陣列。
-      //
-      // 不能寫成 `new Function("return (" + func + ")")`：那只吃單一運算式，而源傳的是
-      // 一整段程式（comic_walker 的圖片解密是 `function onResponse(buffer){…} onResponse;`），
-      // 會直接拋 SyntaxError。間接 eval 會回傳程式最後一個述句的值，兩種寫法都吃。
       const evaluate = new Function("code", "return (0, eval)(code)") as (code: string) => unknown
       const value = evaluate(String(func))
       if (typeof value !== "function") throw new Error("compute：這段程式求值後不是函式")
-      // 參數是**展開**傳的。上游的 JSDoc 寫「receives the args as its only argument」，
-      // 但實作是 jsFunc.invoke(args)（也就是 apply），而唯一的真實呼叫者 comic_walker 的
-      // onResponse(buffer) 直接 new Uint8Array(buffer)——包成陣列它就拿不到位元組了。
       return (value as (...inner: unknown[]) => unknown)(...args)
     },
 

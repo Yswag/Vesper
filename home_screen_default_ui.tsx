@@ -1,11 +1,3 @@
-// Scripting 首頁入口（Home Screen Tab UI）：Vesper 的 Mini Hub。
-// 長駐於 Scripting 首頁分頁，不可調用 Script.exit()；完整的五分頁殼也不 present 進來（會在分頁裡再疊一層殼）。
-//
-// 區塊：搜尋、續讀 Hero、最新追更、待讀、閱讀熱力圖（順序與開關見 app/miniHubLayout.ts），
-// 加上導覽列的「開啟完整 App」。
-// 背景檢查是靜默的：資料載入完成、每次切回首頁各跑一輪，先漫畫源更新再追更；
-// TTL 各自把關（見 app/sourceUpdates.ts、app/updates.ts），所以這裡放心呼叫。
-
 import {
   Button,
   Divider,
@@ -72,32 +64,24 @@ import { ComicDetailScreen } from "./screens/shared/ComicDetailScreen"
 import { launchResumeReader } from "./screens/shared/ResumeReaderScreen"
 import { reloadRegistry } from "./sources/registry"
 
-/** 橫向封面列（追更、待讀）最多幾部。 */
 const RAIL_LIMIT = 10
 
 const HERO_COVER = { width: 84, height: 120 }
 const RAIL_COVER = { width: 84, height: 118 }
-/** 小封面的基準尺寸；實際寬度見 `recentCoverWidth`。 */
 const RECENT_COVER = { width: 48, height: 68 }
-/** 續讀按鈕上下各多出來的可點範圍：膠囊看起來 36pt，按起來 44pt。 */
 const TAP_SLOP = 4
-/** Hero 下方最多再放幾部最近在讀。 */
 const RECENT_LIMIT = 8
-/** 封面與文字之間。 */
 const COVER_GAP = 12
 const DORMANT_AFTER_DAYS = 90
 const SEARCH_FIELD_HEIGHT = 44
 const SEARCH_ZOOM_ID = "miniHub:search"
-/** 檢查超過這麼久才顯示轉圈：TTL 沒到的那一輪幾乎立刻結束，不該每次切回來都閃一下。 */
 const CHECKING_INDICATOR_DELAY = 400
 const DAY_MS = 24 * 60 * 60 * 1000
 
 const HEATMAP_COLS = 14
 const HEATMAP_ROWS = 5
-/** 量到卡片寬度前的暫用格子邊長。 */
 const HEATMAP_CELL = 20
 const HEATMAP_GAP = 3
-/** 第 1–4 階的 tint 不透明度（0 階用中性底色）。 */
 const HEATMAP_OPACITY = [0.45, 0.65, 0.85, 1]
 
 let isInitialized = false
@@ -106,36 +90,23 @@ function initVesperForHomeScreen() {
   if (isInitialized) return
   isInitialized = true
 
-  // 語言要在 render 期同步注入（讀 KV 是同步的，不需要授權也不用 await）：
-  // 這個入口不能 await，第一輪 render 就該是對的語言。
   installLocaleSetting(Device.systemLocales)
 
-  // 註冊退出/銷毀時落盤
   onBeforeExit(() => flushLibrary())
 
-  // 圖片離屏合成器
   setImageCompositor(composeImage)
 
-  // 畫面都透過 ComicLibrary 取資料，這個入口也是 composition root。
   installComicLibrary(createComicLibrary())
 }
 
-/**
- * 檔案授權確認後加載本機資料（若尚未授權則退守 KV 備援）。
- */
 async function loadVesperData() {
   const granted = await ensureFileAccess()
-  // 沒授權時 source 走 KV 備援，仍然是「現在該載的那份」，所以兩種情況都要 reload。
   reloadRegistry()
   if (granted) {
     reloadLibraryFromDisk()
   }
 }
 
-/**
- * 查一輪：先漫畫源更新，查完（不論成敗）再查追更，追更跑完才 resolve。
- * 兩邊都自己守 TTL 與去重，這裡不需要再判斷。`force`＝手動下拉：追更無視 TTL、用前台速度。
- */
 async function checkQuietly(alive: () => boolean, force: boolean = false) {
   try {
     await checkSourceUpdates()
@@ -144,7 +115,6 @@ async function checkQuietly(alive: () => boolean, force: boolean = false) {
   }
 }
 
-/** 背景那一輪，順便回報「檢查中」給看板。 */
 async function checkWithIndicator(alive: () => boolean, setChecking: (checking: boolean) => void) {
   const timer = setTimeout(() => {
     if (alive()) setChecking(true)
@@ -157,23 +127,18 @@ async function checkWithIndicator(alive: () => boolean, setChecking: (checking: 
   }
 }
 
-/** 完整 App 走 run URL scheme：首頁分頁不能 present，那會再疊一層殼在分頁裡。
- *  這版 API 沒有 `Script.openUrl`，用 `createRunURLScheme` 組出同一個網址交給系統。 */
 function openFullApp() {
   void Safari.openURL(Script.createRunURLScheme("Vesper"))
 }
 
 export default function HomeScreenDefaultUI() {
-  // 於 render 階段建立服務實例（子畫面在 render 期間即依賴 ComicLibrary）
   initVesperForHomeScreen()
 
   const [dataReady, setDataReady] = useState(() => fileAccess() !== null)
   const tint = useTint()
-  // 這裡是 Scripting 自己的首頁分頁：`preferredColorScheme` 會連宿主 App 一起切，只能用區域覆蓋。
   const scheme = useAppearanceOverride()
   const environments = scheme ? { colorScheme: scheme } : undefined
 
-  // 收藏、已讀、追更快取、離線層與語言一變就重繪：背景檢查寫回 library.json 時看板自己跟上。
   const refresh = useSubscription(subscribeLibrary, comicLibrary().onChange, subscribeLocale, subscribeSourceUpdates)
   const [checking, setChecking] = useState(false)
   const mounted = useRef(true)
@@ -182,19 +147,14 @@ export default function HomeScreenDefaultUI() {
   useEffect(() => {
     const check = () => void checkWithIndicator(alive, setChecking)
 
-    // 授權結算後才載得到源與書架。在載入完成前不渲染看板，
-    // 避免續讀卡在源尚未進入記憶體時就判斷成「源失效」。載完就開始背景檢查。
     void loadVesperData().finally(() => {
       setDataReady(true)
       if (mounted.current) check()
     })
 
-    // 監聽 Scripting 首頁分頁事件
     const unsubscribeTab = Script.onHomeTabEvent(event => {
       switch (event) {
         case "selected":
-          // 從其他分頁切換回首頁。完整 App 可能同時在寫 library.json（閱讀進度、追更），
-          // 先重讀盤上的那一份：不只看板要是新的，接下來的背景檢查也才不會蓋掉完整 App 的寫入。
           reloadRegistry()
           reloadLibraryFromDisk()
           reloadThemeFromStorage()
@@ -202,7 +162,6 @@ export default function HomeScreenDefaultUI() {
           check()
           break
         case "deselected":
-          // 切換至其他分頁，將資料落盤
           void flushLibrary()
           break
       }
@@ -224,13 +183,10 @@ export default function HomeScreenDefaultUI() {
     )
   }
 
-  // 順序與開關在完整 App 的設定裡改；切回首頁的 refresh() 會重讀。
   const sections: Record<MiniHubSection, () => VirtualNode | null> = {
     resume: () => {
       const [resume, ...rest] = listProgress()
-      // 還沒讀過任何東西：留一列帶去完整 App，頁面不會只剩導覽列。
       if (!resume) return <OpenAppRow key="resume" icon="book" title={t("home.miniHub.openApp")} />
-      // 開不起來的（源被移除又沒離線內容）不放：小封面只有「點了續讀」一個動作。
       const recent = rest
         .map(resumeEntry)
         .filter(entry => entry.openable)
@@ -258,7 +214,6 @@ export default function HomeScreenDefaultUI() {
       <ZStack tint={tint.tint} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <PageScroll title="Vesper" trailing={OpenAppButton} onRefresh={() => checkQuietly(alive, true)}>
           {sourceUpdates > 0 ? (
-            // 源的更新要在完整 App 的源管理做，這裡只負責帶過去。
             <OpenAppRow
               icon="arrow.up.forward.app"
               title={t("home.miniHub.sourceUpdates", { n: sourceUpdates })}
@@ -271,7 +226,6 @@ export default function HomeScreenDefaultUI() {
   )
 }
 
-/** 導覽列右上：交給完整的五個分頁 App。 */
 function OpenAppButton() {
   const tint = useTint()
   return (
@@ -290,7 +244,6 @@ function OpenAppButton() {
   )
 }
 
-/** 點了開完整 App 的一列。 */
 function OpenAppRow({ icon, title }: { icon: string; title: string }) {
   const tint = useTint()
   return (
@@ -300,11 +253,6 @@ function OpenAppRow({ icon, title }: { icon: string; title: string }) {
   )
 }
 
-/**
- * 續讀 Hero：封面、作品名、上次那一話與進度；封面與按鈕以上的整塊資訊推詳情，「繼續閱讀」按鈕直接開閱讀器。
- * 按鈕自己就是標題，所以這一區不另外放分組標題。
- * `recent` 是其餘最近在讀的作品，有才在同一張卡片下方多一排小封面。
- */
 function ResumeHero({ entry, recent }: { entry: ResumeEntry; recent: ResumeEntry[] }) {
   const tint = useTint()
   const [opening, setOpening] = useState(false)
@@ -313,7 +261,7 @@ function ResumeHero({ entry, recent }: { entry: ResumeEntry; recent: ResumeEntry
   return (
     <Card>
       <HStack spacing={COVER_GAP} alignment="top" padding={rowPadding} frame={{ maxWidth: "infinity" }}>
-        {/* 點封面進詳情 */}
+        {}
         <NavigationLink
           destination={<ComicDetailScreen sourceKey={entry.sourceKey} comicId={entry.comicId} title={entry.title} />}
           buttonStyle="plain"
@@ -328,13 +276,13 @@ function ResumeHero({ entry, recent }: { entry: ResumeEntry; recent: ResumeEntry
           />
         </NavigationLink>
 
-        {/* 右側資訊與操作欄：高度對齊封面，標題貼頂、進度與按鈕貼底 */}
+        {}
         <VStack
           spacing={8}
           alignment="leading"
           frame={{ maxWidth: "infinity", height: HERO_COVER.height, alignment: "leading" }}
         >
-          {/* 標題到進度條是同一個點擊區：中間的留白也推詳情 */}
+          {}
           <NavigationLink
             destination={<ComicDetailScreen sourceKey={entry.sourceKey} comicId={entry.comicId} title={entry.title} />}
             buttonStyle="plain"
@@ -365,13 +313,12 @@ function ResumeHero({ entry, recent }: { entry: ResumeEntry; recent: ResumeEntry
             </VStack>
           </NavigationLink>
 
-          {/* 底列：左邊主要動作，右邊頁碼 */}
+          {}
           <HStack spacing={8} alignment="center" frame={{ maxWidth: "infinity" }}>
             {entry.openable ? (
               <Button
                 buttonStyle="plain"
                 disabled={opening}
-                // 可點範圍比膠囊高，負內距讓它不佔版面。
                 padding={{ vertical: -TAP_SLOP }}
                 action={() => {
                   setOpening(true)
@@ -421,10 +368,6 @@ function ResumeHero({ entry, recent }: { entry: ResumeEntry; recent: ResumeEntry
   )
 }
 
-/**
- * 小封面的寬度：一列放不下時微調成「整數張加半張」，最後一張露一半才看得出還能捲。
- * 還沒量到列寬、或全部放得下就用基準寬度。
- */
 function recentCoverWidth(railWidth: number, count: number): number {
   const base = RECENT_COVER.width
   if (railWidth <= 0) return base
@@ -434,7 +377,6 @@ function recentCoverWidth(railWidth: number, count: number): number {
   return (inner - COVER_GAP * whole) / (whole + 0.5)
 }
 
-/** 其餘最近在讀的作品：一排小封面加進度條，點了直接續讀（詳情從 Hero 或書架去）。 */
 function RecentRail({ entries }: { entries: ResumeEntry[] }) {
   const [openingKey, setOpeningKey] = useState<string | null>(null)
   const [railWidth, setRailWidth] = useState(0)
@@ -487,7 +429,7 @@ function RecentRail({ entries }: { entries: ResumeEntry[] }) {
                     </ZStack>
                   ) : null}
                 </ZStack>
-                {/* 沒進度的也佔位（透明），整排封面才對得齊。 */}
+                {}
                 <ProgressView
                   value={entry.readFraction ?? 0}
                   progressViewStyle="linear"
@@ -508,7 +450,6 @@ interface HeatmapCell {
   level: number
 }
 
-/** 深淺看讀完的話數；只翻了頁沒讀完也算第 1 階。 */
 function heatLevel(activity: DayActivity | undefined): number {
   if (!activity) return 0
   if (activity.chapters >= 5) return 4
@@ -517,10 +458,8 @@ function heatLevel(activity: DayActivity | undefined): number {
   return activity.chapters > 0 || activity.pages > 0 ? 1 : 0
 }
 
-/** 最近 `HEATMAP_COLS × HEATMAP_ROWS` 天逐欄由上而下排（5 列），舊→新；今天固定在右下角。 */
 function heatmapColumns(activity: Record<string, DayActivity>, now: number): HeatmapCell[][] {
   const totalDays = HEATMAP_COLS * HEATMAP_ROWS
-  // 取中午，逐日加減時不會因日光節約時間跳日。
   const start = new Date(now)
   start.setHours(12, 0, 0, 0)
   start.setDate(start.getDate() - (totalDays - 1))
@@ -539,7 +478,6 @@ function heatmapColumns(activity: Record<string, DayActivity>, now: number): Hea
   return cols
 }
 
-/** 連續閱讀天數：今天還沒讀就從昨天算起，不讓一大早的紀錄歸零。 */
 function readingStreak(activity: Record<string, DayActivity>, now: number): number {
   const cursor = new Date(now)
   cursor.setHours(12, 0, 0, 0)
@@ -552,7 +490,6 @@ function readingStreak(activity: Record<string, DayActivity>, now: number): numb
   return days
 }
 
-/** 最近 7 天（含今天）讀完的話數。 */
 function recentChapters(activity: Record<string, DayActivity>, now: number): number {
   const cursor = new Date(now)
   cursor.setHours(12, 0, 0, 0)
@@ -564,7 +501,6 @@ function recentChapters(activity: Record<string, DayActivity>, now: number): num
   return chapters
 }
 
-/** 閱讀熱力圖：最近 70 天（14 欄 × 5 列）的每日閱讀量；範圍內完全沒紀錄就整塊不顯示。整塊點下去推閱讀紀錄頁。 */
 function ActivitySection({ activity }: { activity: Record<string, DayActivity> }) {
   const tint = useTint()
   const [gridWidth, setGridWidth] = useState(0)
@@ -573,7 +509,6 @@ function ActivitySection({ activity }: { activity: Record<string, DayActivity> }
   if (!cols.some(col => col.some(cell => cell.level > 0))) return null
   const streak = readingStreak(activity, now)
   const weekChapters = recentChapters(activity, now)
-  // 格子平分卡片內的寬度，左右貼齊卡片內距。
   const size = gridWidth > 0 ? (gridWidth - HEATMAP_GAP * (HEATMAP_COLS - 1)) / HEATMAP_COLS : HEATMAP_CELL
 
   return (
@@ -626,14 +561,12 @@ function ActivitySection({ activity }: { activity: Record<string, DayActivity> }
   )
 }
 
-/** 看板的一列：收藏接上追更紀錄與新話數。 */
 interface UpdateItem {
   favorite: Favorite
   record: ComicUpdateRecord
   newCount: number
 }
 
-/** 還在更新的作品（完結或超過 90 天未更的不算）。 */
 function isRecentUpdate(record: ComicUpdateRecord, now: number): boolean {
   if (record.status === "completed") return false
   if (record.updateTime) {
@@ -645,7 +578,6 @@ function isRecentUpdate(record: ComicUpdateRecord, now: number): boolean {
   return true
 }
 
-/** 有新話的收藏（上次碰它之後多出來的），最近更新的在前。 */
 function pendingUpdates(): UpdateItem[] {
   const favorites = new Map(listFavorites().map(favorite => [comicGroupKey(favorite), favorite]))
   const items: UpdateItem[] = []
@@ -658,10 +590,6 @@ function pendingUpdates(): UpdateItem[] {
   return items.sort((a, b) => byLatestUpdate(a.record, b.record))
 }
 
-/**
- * 看板有多新：還在更新的收藏裡，最久沒查的那一部的檢查時間（「這之後的更新都看得到」）。
- * 源被移除的查不了，不算；一部都沒查過就沒有。
- */
 function updatesCheckedAt(): number | undefined {
   const favorites = new Set(listFavorites().map(favorite => comicGroupKey(favorite)))
   const now = Date.now()
@@ -675,7 +603,6 @@ function updatesCheckedAt(): number | undefined {
   return oldest
 }
 
-/** 沒有新話時追更區該說什麼：沒收藏、收藏還沒查過、或真的都是最新。 */
 type IdleUpdatesState = "shelfEmpty" | "unchecked" | "upToDate"
 
 function idleUpdatesState(): IdleUpdatesState {
@@ -693,7 +620,6 @@ const IDLE_UPDATES: Record<IdleUpdatesState, { icon: string; text: () => string 
   upToDate: { icon: "checkmark.circle.fill", text: () => t("home.miniHub.allUpToDate") },
 }
 
-/** `items` 是全部有更新的作品：標題的數字是總數，橫列只放前 `RAIL_LIMIT` 部。標題右邊是檢查中的轉圈，否則是上次檢查的時間。 */
 function UpdatesSection({
   items,
   idle,
@@ -750,7 +676,6 @@ function UpdatesSection({
   )
 }
 
-/** 待讀：`items` 是全部的待讀作品，標題的數字是總數，橫列只放前 `RAIL_LIMIT` 部；沒有就整塊不顯示。 */
 function BacklogSection({ items }: { items: ShelfItem[] }) {
   if (items.length === 0) return null
 
@@ -769,7 +694,6 @@ function BacklogSection({ items }: { items: ShelfItem[] }) {
   )
 }
 
-/** 搜尋：長得像搜尋框的一顆膠囊，點了從膠囊 zoom 進聚合搜尋頁，進去就展開輸入框。 */
 function SearchSection() {
   return (
     <NamespaceReader>
@@ -799,22 +723,18 @@ function SearchSection() {
   )
 }
 
-/** 橫向封面列的一格：封面角標、作品名與一行副標。 */
 interface RailItem {
   favorite: Favorite
   count: number
-  /** 角標數字前的符號（追更是 `+`）。 */
   prefix?: string
-  /** 角標的讀屏說法。 */
   badgeLabel: string
   subtitle?: string
 }
 
-/** 橫向封面列（左右出血到頁面邊界）：每一格點了推詳情。 */
 function CoverRail({ items }: { items: RailItem[] }) {
   return (
     <ScrollView axes="horizontal" scrollIndicator="hidden" padding={{ horizontal: -pageInsets.horizontal }}>
-      {/* 沒副標的格子比較矮：靠上對齊，封面才在同一條線上。 */}
+      {}
       <HStack spacing={12} alignment="top" padding={{ horizontal: pageInsets.horizontal, top: 4, bottom: 18 }}>
         {items.map(item => (
           <NavigationLink
@@ -843,7 +763,7 @@ function CoverRail({ items }: { items: RailItem[] }) {
                 </HStack>
               </ZStack>
 
-              {/* 作品名稱（一行截斷） */}
+              {}
               <Text
                 font="caption"
                 fontWeight="semibold"
@@ -853,7 +773,7 @@ function CoverRail({ items }: { items: RailItem[] }) {
                 {item.favorite.title}
               </Text>
 
-              {/* 副標（一行截斷） */}
+              {}
               {item.subtitle ? (
                 <Text
                   font="caption2"

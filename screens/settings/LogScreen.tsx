@@ -1,6 +1,3 @@
-// 日誌：相容層的每一次 HTTP、每一次解析、每一次例外都會落在這裡。
-// 沒有這頁，「這個源壞了是源的錯還是 shim 的錯」只能瞎猜。
-
 import { Divider, HStack, LazyVStack, Spacer, Text, VStack, useState } from "scripting"
 
 import { useSubscription } from "../../app/useSubscription"

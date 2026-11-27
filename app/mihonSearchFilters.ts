@@ -1,9 +1,3 @@
-// Mihon 源的搜尋篩選：把 `filters` 的定義、使用者存的值與 UI 狀態接起來。
-//
-// 值存成 `{ "<sourceKey>": { signature, values } }`，跟 `aidoku-search-filters.json` 同一個目錄。
-// `signature` 是定義的指紋：擴充更新後多一個、少一個、改名或改 kind 都會變，那一份值就整份作廢，
-// 回到 `filters` 給的預設（位置與名稱都對不上了）。單項對不上（例如選項變少）另外在解碼時退回預設。
-
 import { appDataRoot, join, readText, writeText } from "../engine/fs"
 import * as mihon from "../sources/mihon"
 import {
@@ -47,13 +41,11 @@ function loadAll(): Stored {
   }
 }
 
-/** 這個子源的篩選定義（`mihon.filterDefs` 自己會快取，這裡只負責翻成節點）；沒有可改的項就回空陣列。 */
 export async function mihonFilterNodes(source: InstalledSource): Promise<MihonFilterNode[]> {
   const nodes = filterNodes(await mihon.filterDefs(source))
   return hasEditable(nodes) ? nodes : []
 }
 
-/** 使用者存的值；沒存過或定義變了就是預設值。 */
 export function loadMihonValues(sourceKey: string, nodes: MihonFilterNode[]): MihonFilterValues {
   const entry = loadAll()[sourceKey]
   if (!entry || entry.signature !== signatureOf(nodes)) return defaultValues(nodes)

@@ -1,50 +1,33 @@
-// 首頁（`screens/home/HomeScreen.tsx`）與 Bangumi 條目詳情頁（`BangumiDetailScreen.tsx`）。
-//
-// 來源與 Bangumi 回傳的資料（漫畫標題、作者、標籤、簡介內文）不翻，我們自己寫的介面字才收。
-
 export default {
   title: "首頁",
 
-  /** 首頁三個區塊的標題。 */
   resumeTitle: "繼續閱讀",
   trendingTitle: "熱門新作",
   followingTitle: "大家在追",
-  /** 榜單還沒回來／回不來時的兩句話。 */
   feedLoading: "正在獲取 Bangumi 推薦…",
   feedErrorTitle: "暫時無法連線至 Bangumi",
   feedErrorDetail: "請檢查網路連線或稍後點擊右上角重試。",
 
-  /** 繼續閱讀卡片：話數解析不出來，以及來源被刪掉時的兩種說法。 */
   lastRead: "上次閱讀",
   sourceInvalid: "源失效",
   sourceRemoved: "源已移除",
 
-  /** Scripting 首頁分頁的 Mini Hub（`home_screen_default_ui.tsx`）：開啟完整 App 與追更看板。 */
   miniHub: {
     openApp: "開啟 App",
-    /** 有漫畫源可更新時的那一列（點了開完整 App）。 */
     sourceUpdates: { one: "{n} 個漫畫源可更新", other: "{n} 個漫畫源可更新" },
     updatesTitle: "最新追更",
     allUpToDate: "所有收藏已是最新",
-    /** 有收藏但一部都還沒檢查過。 */
     notChecked: "尚未檢查更新",
-    /** 追更封面角標的讀屏說法。 */
     newChapters: { one: "新增 {n} 話", other: "新增 {n} 話" },
-    /** 有未讀、但沒有新話的收藏。 */
     backlogTitle: "待讀",
     activityTitle: "閱讀紀錄",
-    /** 搜尋框樣子的那一顆裡的提示語。 */
     searchPrompt: "搜尋漫畫",
     streak: "連續 {days} 天",
-    /** 最近 7 天讀完的話數。 */
     weekChapters: { one: "近 7 天 {n} 話", other: "近 7 天 {n} 話" },
-    /** 閱讀紀錄：當天讀完的話數。 */
     dayChapters: { one: "{n} 話", other: "{n} 話" },
-    /** 閱讀紀錄：一部當天碰過好幾話時的副標，last 是最後讀的那話。 */
     episodes: { one: "{n} 話 · {last}", other: "{n} 話 · {last}" },
   },
 
-  /** Bangumi 條目詳情頁。 */
   bangumi: {
     originalName: "原名：{name}",
     author: "作者：{author}",

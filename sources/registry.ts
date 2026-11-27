@@ -1,6 +1,3 @@
-// 來源執行期註冊中心：載入漫畫源沙箱實例，管理生命週期並對外廣播變更。
-// 單一真相源為 Storage（store.ts）。
-
 import { clearCookies } from "../engine/cookies"
 import { setCloudflareSourceNameLookup } from "../engine/cloudflare"
 import { clearCredentials, loadCredentials, saveCredentials } from "../engine/credentials"
@@ -32,30 +29,20 @@ export type SourceKind = "venera" | "aidoku" | "mihon"
 export interface InstalledSource {
   stored: store.StoredSource
   enabled: boolean
-  /** 載入失敗時為 undefined，原因記在 error。 */
   instance?: any
   meta?: SourceMeta
   capabilities?: SourceCapabilities
-  /** Venera 源宣告的設定項。 */
   settingsSpecs?: SettingSpec[]
-  /** Aidoku 源的 `settings.json`（順序與原欄位都保留）；沒有這個檔就是空的。 */
   settingsSpec?: aidoku.AidokuSettingsSpec
-  /** Mihon 子源的語言代碼（`all` 或 zh…）；其他源沒有。 */
   language?: string
-  /** Mihon 子源被使用者手動關掉（`disabledSources`）；不在內容語言不算手動關。 */
   manualDisabled?: boolean
   error?: string
 }
 
 let current: InstalledSource[] = []
 
-/**
- * 來源視圖版本號：在 reloadRegistry、更新登入狀態或 Aidoku 源的執行期狀態改變
- * （首頁能力、圖片後處理）時遞增，供外部快取判定失效。
- */
 let revision = 0
 
-/** 目前這一份視圖的版本號（見 revision）。 */
 export function sourcesRevision(): number {
   return revision
 }
@@ -64,7 +51,6 @@ const bus = createEmitter({
   onListenerError: error => log("error", "sources", "訂閱者拋錯", error),
 })
 
-/** Aidoku／Mihon 源在執行期改變狀態（標成不可用、首頁能力、圖片後處理）時，讓畫面跟著更新。 */
 aidoku.setStateListener(() => sourceStateChanged())
 mihon.setStateListener(() => sourceStateChanged())
 subscribeContentLanguages(() => reloadMihonSources())
@@ -74,7 +60,6 @@ function sourceStateChanged() {
   bus.emit()
 }
 
-/** 過盾視窗的標題要源的名字；cloudflare 不直接 import registry（循環依賴），在這裡接上。 */
 setCloudflareSourceNameLookup(key => {
   const source = findSource(key)
   return source?.meta?.name || source?.stored?.name
@@ -102,26 +87,22 @@ export function allSources(): InstalledSource[] {
   return current.map(withFailure)
 }
 
-/** 畫面要顯示來源類型時走這裡，不必知道各引擎的內部形狀。 */
 export function sourceKindOf(source: InstalledSource): SourceKind {
   if (aidoku.isAidoku(source)) return "aidoku"
   if (mihon.isMihon(source)) return "mihon"
   return "venera"
 }
 
-/** 這種源要靠本機 HttpServer（Scripting Pro）。 */
 export function sourceNeedsPro(kind: SourceKind): boolean {
   return kind !== "venera"
 }
 
-/** 這個源的引擎級失敗原因（沒有就是 undefined）。 */
 function failureOfSource(source: InstalledSource): string | undefined {
   if (aidoku.isAidoku(source)) return aidoku.failureOf(source.stored.key)
   if (mihon.isMihon(source)) return mihon.failureOf(source.stored.key)
   return undefined
 }
 
-/** 執行期被標成不可用的源：錯誤要能被畫面讀到。 */
 function withFailure(source: InstalledSource): InstalledSource {
   if (!aidoku.isAidoku(source) && !mihon.isMihon(source)) return source
   const reason = failureOfSource(source)
@@ -129,7 +110,6 @@ function withFailure(source: InstalledSource): InstalledSource {
   return { ...source, error: source.error ?? reason }
 }
 
-/** 這個源現在能不能用（Venera 要載入成功，Aidoku／Mihon 要在磁碟上、沒壞、也沒被標成不可用）。 */
 export function isReady(source: InstalledSource): boolean {
   if (aidoku.isAidoku(source) || mihon.isMihon(source)) {
     return source.error === undefined && failureOfSource(source) === undefined
@@ -146,7 +126,6 @@ export function findSource(key: string): InstalledSource | undefined {
   return found && withFailure(found)
 }
 
-/** 從盤上重新載入全部源。啟動時呼叫一次，安裝／移除／切換語言後再呼叫。 */
 export function reloadRegistry() {
   revision++
   initTasks.clear()
@@ -155,7 +134,6 @@ export function reloadRegistry() {
   bus.emit()
 }
 
-/** 內容語言變了：只重建 Mihon 子源的可見性，不動 Venera／Aidoku 的實例。 */
 export function reloadMihonSources() {
   if (!current.some(source => mihon.isMihon(source))) return
   const others = current.filter(source => !mihon.isMihon(source))
@@ -164,10 +142,8 @@ export function reloadMihonSources() {
   bus.emit()
 }
 
-/** Venera 源的載入次數，依 key 累加。 */
 const veneraLoads = new Map<string, number>()
 
-/** 唯讀觀測點：目前為止各源被載入（重新編譯）了幾次，不影響生產行為。 */
 export function debugSourceLoads(): { total: number; byKey: Record<string, number> } {
   const byKey: Record<string, number> = {}
   let total = 0
@@ -178,19 +154,12 @@ export function debugSourceLoads(): { total: number; byKey: Record<string, numbe
   return { total, byKey }
 }
 
-/** 從盤上建一個源的實例；這個鍵在盤上（含 Aidoku／Mihon 的目錄）都不存在就回 undefined。 */
 function buildSource(key: string): InstalledSource | undefined {
   const raw = store.getSource(key)
   if (raw) return loadVenera(raw)
   return [...aidoku.installedSources(), ...mihon.installedSources()].find(entry => entry.stored.key === key)
 }
 
-/**
- * 只重建一個源：改設定、啟用停用、登入登出都只影響它自己。
- *
- * 邊界：鍵已經不在盤上就從清單拿掉（位置不變、其他源不動）；編譯失敗與全量重載對同一個
- * 壞源一致（entry 帶 error）；清單順序照舊（這個鍵本來在哪就留在哪）。
- */
 export function reloadSource(key: string) {
   const index = current.findIndex(entry => entry.stored.key === key)
   const rebuilt = buildSource(key)
@@ -200,17 +169,14 @@ export function reloadSource(key: string) {
   } else if (index >= 0) {
     current = current.map((entry, at) => (at === index ? rebuilt : entry))
   } else {
-    // 清單上沒有這個鍵：只會發生在「剛裝好、還沒進清單」，那條路本來就是全量重載。
     reloadRegistry()
     return
   }
-  // 只有這個鍵的初始化要重跑；其他源已經跑完的 init() 留著。
   initTasks.delete(key)
   revision++
   bus.emit()
 }
 
-/** Venera 源：原始碼在 store 裡，這裡建沙箱實例。 */
 function loadVenera(rawEntry: store.StoredSource): InstalledSource {
   let entry = rawEntry
   const enabled = entry.enabled
@@ -224,14 +190,12 @@ function loadVenera(rawEntry: store.StoredSource): InstalledSource {
       code,
       createHostContext(entry.key, {
         settings: entry.settings ?? {},
-        // 源的 `APP.locale`、`this.translate()` 與我們翻設定標題都用同一個語言鍵。
         locale: sourceLocale(),
         loggedIn: entry.loggedIn === true,
         ui: hostUI,
       })
     )
     const { defaults, specs } = extractSettings(loaded.instance, text => sourceText(loaded.instance, text))
-    // 回填：自動補齊宣告的預設設定值
     const merged = mergeSettings(defaults, entry.settings)
     if (JSON.stringify(merged) !== JSON.stringify(entry.settings ?? {})) {
       store.updateSettings(entry.key, merged)
@@ -260,9 +224,6 @@ export function setSourceEnabled(key: string, enabled: boolean) {
   reloadSource(key)
 }
 
-/**
- * 拖曳排序：更新已安裝來源的順序並廣播變更（不重建沙箱實例與 revision）。
- */
 export function reorderSources(keys: string[]): boolean {
   if (!store.reorderSources(keys)) return false
   const byKey = new Map(current.map(entry => [entry.stored.key, entry]))
@@ -281,7 +242,6 @@ export function reorderSources(keys: string[]): boolean {
   return true
 }
 
-/** 拖曳排序：以組為單位寫回 sources/order.json，Mihon 的子源保持相鄰。 */
 export function reorderSourceGroups(ids: string[]): boolean {
   if (!reorderGroups(current, ids)) return false
   current = applyGroupOrder(current)
@@ -291,9 +251,6 @@ export function reorderSourceGroups(ids: string[]): boolean {
 
 const initTasks = new Map<string, Promise<void>>()
 
-/**
- * 確保來源的 init() 異步初始化已執行（按需觸發，共用 Promise 不重複發起）。
- */
 export function ensureSourceReady(key: string): Promise<void> {
   const existing = initTasks.get(key)
   if (existing) return existing
@@ -312,10 +269,6 @@ export function ensureSourceReady(key: string): Promise<void> {
   return task
 }
 
-/**
- * 改一個設定值。寫回 index.json 後只重建這一個源，所以它下次被用到時會用新設定重跑 init()。
- * 這對自架類的源（komga / kavita / lanraragi 的伺服器位址）是能不能用的前提。
- */
 export function updateSourceSetting(key: string, id: string, value: unknown) {
   const source = findSource(key)
   const next = { ...(source?.stored.settings ?? {}), [id]: value }
@@ -323,7 +276,6 @@ export function updateSourceSetting(key: string, id: string, value: unknown) {
   reloadSource(key)
 }
 
-/** 源詳情要不要顯示「源設定」列：Aidoku 源有設定 schema 或多語言。 */
 export function hasAidokuSettings(source: InstalledSource): boolean {
   return (
     aidoku.isAidoku(source) &&
@@ -331,73 +283,56 @@ export function hasAidokuSettings(source: InstalledSource): boolean {
   )
 }
 
-/**
- * 源詳情要不要顯示「源設定」列：Mihon 擴充的設定要進 VM 才問得到，這裡一律給這一列，
- * 進去才知道有沒有（掛掉的擴充不給）。
- */
 export function hasMihonSettings(source: InstalledSource): boolean {
   return mihon.isMihon(source) && !source.error
 }
 
-/**
- * 改一個 Aidoku 源的設定值：寫進 `installed.json` 的 `settings`，並讓源下次呼叫時重載。
- * 只寫改過的 key（沒有的就是 schema 預設）。
- */
 export function updateAidokuSetting(key: string, id: string, value: unknown) {
   aidoku.setSetting(key, id, value)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "basic"` 登入：寫入三個設定鍵後只重建這一個源。 */
 export function loginAidokuBasic(key: string, settingKey: string, username: string, password: string) {
   aidoku.loginBasic(key, settingKey, username, password)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "basic"` 登出：移除那三個鍵，只重建這一個源。 */
 export function logoutAidokuBasic(key: string, settingKey: string) {
   aidoku.logoutBasic(key, settingKey)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "web"` 登入：寫入 cookie／localStorage 後只重建這一個源。 */
 export function loginAidokuWebview(key: string, settingKey: string, data: aidoku.AidokuWebLoginData) {
   aidoku.loginWebview(key, settingKey, data)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "web"` 登出：移除 cookie、localStorage 與狀態鍵，只重建這一個源。 */
 export function logoutAidokuWebview(key: string, settingKey: string) {
   aidoku.logoutWebview(key, settingKey)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "oauth"` 登入：寫入 token 原文（或 callback URL）後只重建這一個源。 */
 export function loginAidokuOAuth(key: string, settingKey: string, value: string) {
   aidoku.loginOAuth(key, settingKey, value)
   reloadSource(key)
 }
 
-/** Aidoku 源的 `method: "oauth"` 登出：token 與 codeVerifier 一起拿掉，只重建這一個源。 */
 export function logoutAidokuOAuth(key: string, settingKey: string) {
   aidoku.logoutOAuth(key, settingKey)
   reloadSource(key)
 }
 
-/** 叫源自己的 `handle_notification`（登入／設定完成後）；源沒匯出就是 no-op。 */
 export async function notifyAidokuSource(key: string, notification: string) {
   const source = findSource(key)
   if (!source) return
   await aidoku.notify(source, notification)
 }
 
-/** 把 Aidoku 源的設定全部拿掉（回到 schema 預設），只重建這一個源。 */
 export function resetAidokuSettings(key: string) {
   aidoku.resetSettings(key)
   reloadSource(key)
 }
 
-/** 把某個設定回復成源宣告的預設值。 */
 export function resetSourceSetting(key: string, id: string) {
   const source = findSource(key)
   const spec = source?.settingsSpecs?.find(item => item.id === id)
@@ -405,7 +340,6 @@ export function resetSourceSetting(key: string, id: string) {
   updateSourceSetting(key, id, spec.default)
 }
 
-/** 呼叫源宣告的 `type: "callback"` 設定（例如 mxs 的「檢測當前域名」）。 */
 export async function runSourceSettingCallback(key: string, id: string): Promise<void> {
   await ensureSourceReady(key)
   const source = findSource(key)
@@ -431,16 +365,12 @@ export interface InstallResult {
   updated: boolean
 }
 
-/**
- * 從單一來源原始碼安裝或更新。
- */
 export function installSourceCode(code: string, origin: string | null, expectedKey?: string): InstallResult {
   const probe = loadSource(code, createHostContext("probe", { settings: {} }))
   if (expectedKey && probe.meta.key !== expectedKey) {
     throw new Error(t("sources.catalog.keyMismatch", { expected: expectedKey, actual: probe.meta.key }))
   }
   const existed = store.hasSource(probe.meta.key)
-  // 源宣告的設定預設值必須存下來，loadSetting 才有東西回；更新時保留使用者改過的值。
   const { defaults } = extractSettings(probe.instance)
   const settings = mergeSettings(defaults, store.getSource(probe.meta.key)?.settings)
   store.saveSource(
@@ -468,7 +398,6 @@ export async function fetchText(url: string): Promise<string> {
   return await response.text()
 }
 
-/** 二進位下載（Aidoku 的 `.aix`）。 */
 async function fetchBytes(url: string): Promise<Uint8Array> {
   const response = await fetch(url, { timeout: 60, allowInsecureRequest: true } as any)
   if (response.status < 200 || response.status >= 300) {
@@ -479,13 +408,9 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
 
 export interface ImportReport {
   installed: InstallResult[]
-  /** 被跳過的條目：撞 key（同批有兩個同 key 的變體）或下載失敗。 */
   skipped: Array<{ key: string; name: string; reason: string }>
 }
 
-/**
- * 安裝倉庫索引中的來源條目（同批若有同 key 條目僅安裝首項）。
- */
 export async function installCatalog(entries: CatalogEntry[], catalogUrl: string | null): Promise<ImportReport> {
   const installed: InstallResult[] = []
   const skipped: Array<{ key: string; name: string; reason: string }> = []
@@ -509,14 +434,12 @@ export async function installCatalog(entries: CatalogEntry[], catalogUrl: string
   return { installed, skipped }
 }
 
-/** 索引裡一條可用的源都沒有的錯誤；有被跳過的條目就附上第一個的原因。 */
 function catalogEmptyError(rejected: Array<{ reason: string }>): string {
   return rejected.length > 0
     ? t("sources.catalog.emptyWithReason", { reason: rejected[0].reason })
     : t("sources.catalog.empty")
 }
 
-/** 匯入使用者貼上的字串：開頭是 `[` 就當倉庫索引，否則當單一源（Venera 的判斷方式）。 */
 export async function importPasted(text: string, catalogUrl: string | null): Promise<ImportReport> {
   const trimmed = text.trim()
   if (trimmed.startsWith("[")) {
@@ -536,24 +459,17 @@ export async function importPasted(text: string, catalogUrl: string | null): Pro
   return { installed: [installSourceCode(trimmed, catalogUrl)], skipped: [] }
 }
 
-/** 從網址匯入：內容是索引就裝全部，是單一源就裝一個。 */
 export async function importFromUrl(url: string): Promise<ImportReport> {
   return importPasted(await fetchText(url), url)
 }
 
-/**
- * 手動加入單一源（貼原始碼，或先抓網址再交給這裡）。
- * 內容看起來像倉庫索引就直接擋掉——那要走倉庫，否則會一次裝進一堆源。
- */
 export function installManualSource(text: string, origin: string | null): InstallResult {
   const trimmed = text.trim()
   if (trimmed.startsWith("[")) throw new Error(t("sources.catalog.isRepository"))
   return installSourceCode(trimmed, origin)
 }
 
-// ---------------------------------------------------------------- 源倉庫
 
-/** 倉庫索引的長相：Mihon 的 `extensionList`／`pkg`、Aidoku 的 `sources`／`id` ＋ 下載路徑，剩下的是 Venera。 */
 function detectRepositoryKind(raw: unknown): RepositoryKind {
   if (mihonIndexSchema(raw) !== null) return "mihon-index"
   if (aidokuIndexSchema(raw) === "community") return "aidoku-index"
@@ -572,13 +488,10 @@ function detectRepositoryKind(raw: unknown): RepositoryKind {
 interface LoadedIndex {
   kind: RepositoryKind
   entries: CatalogEntry[]
-  /** 索引自己宣告的名稱（Aidoku community／Mihon 才有）。 */
   name?: string
-  /** 索引宣告的倉庫資訊（Mihon 新格式才有）。 */
   meta?: RepositoryMeta
 }
 
-/** 抓索引的原始位元組；gzip 先解（Mihon 的 index.pb 就是 gzip 過的 protobuf）。 */
 async function fetchIndexBody(url: string): Promise<Uint8Array> {
   const response = await fetch(url, { timeout: 60, allowInsecureRequest: true } as any)
   if (response.status < 200 || response.status >= 300) {
@@ -595,19 +508,12 @@ function parseIndexBody(body: Uint8Array): unknown {
   }
 }
 
-/** 第一個位元組不是 JSON 就是 protobuf 的 index.pb（Mihon 也是這樣判斷）。 */
 function kindOfBody(body: Uint8Array): RepositoryKind {
   const first = body[0]
   if (first !== 0x5b && first !== 0x7b) return "mihon-index"
   return detectRepositoryKind(parseIndexBody(body))
 }
 
-/**
- * 抓一份倉庫索引並解析；kind 沒指定就依內容判斷。
- *
- * Mihon 的四種網址（index.pb／index.json／index.min.json／repo.json）都由 loadMihonIndex 統一處理：
- * repo.json 的 index_v2 指向哪份索引就讀哪份，不另外退回別份檔案。
- */
 async function loadIndex(url: string, kind?: RepositoryKind): Promise<LoadedIndex> {
   const target = indexUrlOf(url)
   const body = await fetchIndexBody(target)
@@ -633,10 +539,6 @@ async function loadIndex(url: string, kind?: RepositoryKind): Promise<LoadedInde
   return { kind: resolved, entries }
 }
 
-/**
- * 加入一個倉庫：抓索引、驗證、存起來。同一個網址再加入就是重新抓取
- * （保留原本的加入時間、名稱與類型）。**這裡不裝任何源**，裝哪個由使用者在倉庫裡挑。
- */
 export async function addRepository(url: string, kind?: RepositoryKind): Promise<StoredRepository> {
   const target = url.trim()
   if (!target) throw new Error(t("sources.repository.urlRequired"))
@@ -657,7 +559,6 @@ export async function addRepository(url: string, kind?: RepositoryKind): Promise
   return repository
 }
 
-/** 重新抓索引。失敗時把原因寫進倉庫（清單顯示得到），舊快取留著。 */
 export async function refreshRepository(url: string): Promise<StoredRepository> {
   const existing = repositoryStore.getRepository(url)
   if (!existing) throw new Error(t("sources.repository.notFound"))
@@ -676,25 +577,19 @@ export function removeRepository(url: string) {
   log("info", "sources", `已移除倉庫 ${url}`)
 }
 
-/** 倉庫裡的一筆源，加上它在本地端的安裝狀態。 */
 export interface RepositoryEntryStatus {
   entry: CatalogEntry
-  /** 已裝了這個條目；Mihon 一個 apk 多個子源，這裡取第一個當代表。沒有就是未安裝。 */
   installed?: InstalledSource
-  /** 已安裝的那份是從這個倉庫裝的；否則安裝就是用這個倉庫的版本取代。 */
   fromThisRepo: boolean
-  /** 從這個倉庫裝的，而且倉庫的版本比較新。 */
   updateAvailable: boolean
 }
 
-/** 這個條目前能不能裝；不能就回原因（目前只有 Mihon 的 ext-lib）。 */
 export function entryUnsupportedReason(entry: CatalogEntry): string | null {
   if (!mihon.isMihonKey(entry.key)) return null
   if (mihon.isSupportedExtensionLib(entry.extensionLib)) return null
   return t("sources.mihon.unsupportedLib", { version: entry.extensionLib ?? "" })
 }
 
-/** 倉庫條目在已安裝清單裡對應的那一個源（Mihon 以擴充為單位比對）。 */
 function installedOfEntry(entry: CatalogEntry, sources: InstalledSource[] = allSources()): InstalledSource | undefined {
   if (mihon.isMihonKey(entry.key)) {
     return sources.find(source => mihon.isMihon(source) && mihon.packageKeyOf(source.stored.key) === entry.key)
@@ -705,7 +600,6 @@ function installedOfEntry(entry: CatalogEntry, sources: InstalledSource[] = allS
 export function repositoryEntries(repositoryUrl: string): RepositoryEntryStatus[] {
   const repository = repositoryStore.getRepository(repositoryUrl)
   if (!repository) return []
-  // 一次解析一份快照：keiyoushi 的索引有上千筆，逐筆重建清單就差得出來。
   const sources = allSources()
   return repository.entries.map(entry => {
     const installed = installedOfEntry(entry, sources)
@@ -720,7 +614,6 @@ export function repositoryEntries(repositoryUrl: string): RepositoryEntryStatus[
   })
 }
 
-/** 從倉庫安裝（或更新）單一筆源。 */
 export async function installRepositoryEntry(repositoryUrl: string, key: string): Promise<InstallResult> {
   const repository = repositoryStore.getRepository(repositoryUrl)
   if (!repository) throw new Error(t("sources.repository.notFound"))
@@ -728,7 +621,6 @@ export async function installRepositoryEntry(repositoryUrl: string, key: string)
   if (!entry) throw new Error(t("sources.repository.entryNotFound"))
 
   if (repositoryStore.kindOf(repository) === "aidoku-index") {
-    // 宿主頁要靠本機 HttpServer，那是 Scripting Pro 的功能：沒有就別讓檔案落地。
     requirePro("aidoku")
     if (!entry.url) throw new Error(t("sources.catalog.relativeOnly"))
     const existed = findSource(entry.key) !== undefined
@@ -764,14 +656,10 @@ export async function installRepositoryEntry(repositoryUrl: string, key: string)
   return installSourceCode(code, repository.url, entry.key)
 }
 
-// ------------------------------------------------------------------ 登入
 
-/** 源宣告的登入方式（給 UI 描述表單用）。 */
 export interface AccountSpec {
   supportsPassword: boolean
-  /** loginWithCookies 的欄位名稱（lanraragi 是 ["apiKey"]）。 */
   cookieFields: string[]
-  /** loginWithWebview 的起始網址；有值就代表這個源要開瀏覽器登入。 */
   webviewUrl?: string
   registerUrl?: string
 }
@@ -789,7 +677,6 @@ export function accountSpec(source: InstalledSource): AccountSpec | null {
   }
 }
 
-/** 帳密登入：呼叫源自己的 `account.login`，源會把 session 存進它自己的資料。 */
 export async function loginWithPassword(key: string, account: string, password: string): Promise<void> {
   const source = findSource(key)
   if (!source?.instance) throw new Error(t("sources.notLoadedShort"))
@@ -802,9 +689,6 @@ export async function loginWithPassword(key: string, account: string, password: 
   log("info", "account", `${key} 已登入（${account}）`)
 }
 
-/**
- * Cookie 欄位登入：由來源的 validate(values) 進行校驗與 cookie 注入。
- */
 export async function loginWithCookies(key: string, values: string[]): Promise<void> {
   const source = findSource(key)
   const spec = source?.instance?.account?.loginWithCookies
@@ -817,12 +701,6 @@ export async function loginWithCookies(key: string, values: string[]): Promise<v
   log("info", "account", `${key} 已登入（cookie 欄位）`)
 }
 
-/**
- * 瀏覽器登入：開一個真的瀏覽器讓使用者登入。Cloudflare 過盾與 localStorage 型的憑證
- * （mycomic / ccc / manga_dex / nhentai / ehentai）都走這條。回傳一句給 UI 顯示的狀態。
- *
- * 流程本身在 `webLogin.ts`；這裡負責挑出源的宣告、把狀態落地（loggedIn + 重建實例）。
- */
 export async function loginWithWebview(key: string): Promise<string> {
   const source = findSource(key)
   if (!source?.instance) throw new Error(t("sources.notLoadedShort"))
@@ -847,7 +725,6 @@ export async function loginWithWebview(key: string): Promise<string> {
   return result.outcome === "manual" ? t("sources.login.cookiesSaved", { count: result.cookies }) : t("sources.login.done")
 }
 
-/** 登出：讓源自己清理，再清掉 Keychain 與 cookie jar。 */
 export async function logoutSource(key: string): Promise<void> {
   const source = findSource(key)
   const instance = source?.instance
@@ -863,27 +740,14 @@ export async function logoutSource(key: string): Promise<void> {
   reloadSource(key)
 }
 
-// ------------------------------------------------------------------ 自動重登
 
-/**
- * 自動重登的結果：成功 / 有憑證但重登失敗 / 沒有可用的憑證。
- * 呼叫端（`operations.ts` 的重試包裝）依這個決定要重試、丟原本的錯誤，還是給看得懂的訊息。
- */
 export type ReloginOutcome = "ok" | "failed" | "no-credentials"
 
-/**
- * 登入狀態寫進 store 之後，把記憶體裡那份 `stored` 也換成 store 的最新版本（單一真相源是 store），
- * 並推進 revision。不重建註冊中心——進行中的操作還握著這個實例——但 `needsLogin` 這類
- * 從 `stored` 讀出來的描述必須跟著更新。
- */
 function syncStoredAccount(source: InstalledSource) {
   source.stored = store.getSource(source.stored.key) ?? source.stored
   revision++
 }
 
-/**
- * 登入過期時以既有憑證重試登入（直接在既有實例上執行，不重建沙箱）。
- */
 export async function reloginSource(source: InstalledSource): Promise<ReloginOutcome> {
   const account = source.instance?.account
   if (!account) return "no-credentials"

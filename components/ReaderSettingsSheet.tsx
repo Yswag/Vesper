@@ -21,9 +21,7 @@ export interface ReaderSettingsSheetProps {
   onTogglePerComic: (on: boolean) => void
 }
 
-/** 列底要半透明才接得上玻璃；系統列底不跟區域的深色覆蓋，會畫成白底。 */
 const rowBackground = <Rectangle fill={fill.chip} />
-/** 組內不畫分隔線，靠分組區隔。 */
 const rowStyle = { listRowBackground: rowBackground, listRowSeparator: "hidden" } as const
 
 function directionLabel(direction: ReaderSettings["direction"]): string {
@@ -32,7 +30,6 @@ function directionLabel(direction: ReaderSettings["direction"]): string {
   return t("reader.directionTtb")
 }
 
-/** 開關列：開關跟主題色。 */
 function SettingToggle({
   title,
   value,
@@ -54,7 +51,6 @@ function SettingToggle({
   )
 }
 
-/** 預取頁數列：全域設定，自己讀寫（不走 per-comic／viewer）；預取佇列下次翻頁就讀到新值。 */
 function PrefetchStepper() {
   const [pages, setPages] = useState<number>(getPrefetchPages)
   const change = (delta: number) => setPages(setPrefetchPages(pages + delta))
@@ -79,7 +75,6 @@ function PrefetchStepper() {
   )
 }
 
-/** 閱讀設定面板：改了立刻套用，漫畫留在後面看得到效果。 */
 export function ReaderSettingsSheet({
   settings,
   onUpdateSettings,
@@ -87,9 +82,7 @@ export function ReaderSettingsSheet({
   perComic,
   onTogglePerComic,
 }: ReaderSettingsSheetProps) {
-  // 縱向連續沒有點擊翻頁（縱向畫廊有，上下分區）。
   const tapZonesUnavailable = settings.direction === "ttb" && settings.mode !== "gallery"
-  // 寬圖切割只在畫廊：連續模式的寬圖本來就整張放得下。
   const splitUnavailable = settings.mode !== "gallery"
   const tint = useTint()
 
@@ -105,7 +98,6 @@ export function ReaderSettingsSheet({
       presentationDetents={["medium", "large"]}
       presentationDragIndicator="visible"
       presentationCornerRadius={24}
-      // 面板是另一個 presentation，接不到 App 根層的 tint。
       tint={tint.tint}
     >
       <Text
@@ -119,12 +111,12 @@ export function ReaderSettingsSheet({
       </Text>
 
       <Form scrollContentBackground="hidden">
-        {/* 預設跟隨源宣告（再退全域）；打開才把這本記成獨立設定。 */}
+        {}
         <Section>
           <SettingToggle title={t("reader.perComic")} value={perComic} onChanged={onTogglePerComic} />
         </Section>
 
-        {/* 翻頁與版面一組：模式是分段切換，方向是欄位式選單（點開是系統勾選清單）；切割寬圖緊跟模式，變灰的原因一眼看得到。 */}
+        {}
         <Section footer={tapZonesUnavailable ? <Text>{t("reader.tapZonesVerticalOnly")}</Text> : undefined}>
           <VStack spacing={10} {...rowStyle}>
             <Picker
@@ -195,7 +187,7 @@ export function ReaderSettingsSheet({
           ) : null}
         </Section>
 
-        {/* 畫面上的角落資訊：HUD 收起時右下角的頁碼與時間、電量，預設不顯示。 */}
+        {}
         <Section>
           <SettingToggle
             title={t("reader.cornerPage")}
@@ -209,7 +201,7 @@ export function ReaderSettingsSheet({
           />
         </Section>
 
-        {/* 圖片載入與畫質一組。 */}
+        {}
         <Section footer={canUpscale ? undefined : <Text>{t("reader.upscaleRequiresPro")}</Text>}>
           <SettingToggle
             title={t("reader.seamlessNext")}

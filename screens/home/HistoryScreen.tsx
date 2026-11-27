@@ -1,5 +1,3 @@
-// 閱讀歷史：從書架頂部的入口推進來。一本一張卡，點一下續讀，左滑刪除，長按可前往詳情。
-
 import {
   Button,
   LazyVStack,
@@ -27,7 +25,6 @@ import { launchResumeReader } from "../shared/ResumeReaderScreen"
 import { formatHistoryTime } from "./historyTime"
 
 export function HistoryScreen() {
-  // 長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
   const [detailOf, setDetailOf] = useState<Progress | null>(null)
   const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
   const progress = listProgress()
@@ -56,7 +53,6 @@ export function HistoryScreen() {
                 detail={t("bookshelf.emptyHistoryDetail")}
               />
             ) : (
-              // 左滑要外層容器（見 design/layout 的 `swipeActionsContainer`）。
               <LazyVStack spacing={12} padding={{ horizontal: 16, vertical: 12 }} swipeActionsContainer={true}>
                 {progress.map(entry => (
                   <HistoryCard
@@ -76,7 +72,6 @@ export function HistoryScreen() {
   )
 }
 
-/** 閱讀歷史卡片：小封面 + 標題／來源·話數／頁數·時間。 */
 export function HistoryCard({
   entry,
   onDelete,
@@ -85,13 +80,10 @@ export function HistoryCard({
 }: {
   entry: Progress
   onDelete?: () => void
-  /** 長按選單的「前往詳情」；源不在了就不給（詳情頁要源）。 */
   onOpenDetail?: () => void
-  /** 給了就把封面當 zoom 來源（跟收藏網格推詳情一樣）。 */
   zoomNamespace?: NamespaceID
 }) {
   const shown = resumeEntry(entry)
-  // 源被移除時，還有離線內容就只顯示「離線」——內容就在手機上，那筆紀錄不該是紅字「來源已移除」。
   const sourceName = shown.sourceName ?? (shown.source === "offlineOnly" ? null : t("bookshelf.sourceRemovedTitle"))
   const [opening, setOpening] = useState(false)
   const meta = [
@@ -107,7 +99,6 @@ export function HistoryCard({
       : t("bookshelf.pageOf", { page: shown.pageLabel.page })
     : null
   const barValue = shown.openable ? (shown.readFraction ?? null) : null
-  // 兩段都可能沒有（沒有頁碼的舊資料／時間解析不出來），所以還是「有值的才接」；分隔號是標點。
   const detail = shown.openable ? [pageLabel, formatHistoryTime(entry.updatedAt)].filter(Boolean).join(" · ") : null
 
   const body = (
@@ -154,7 +145,6 @@ export function HistoryCard({
   if (!onDelete && !canOpenDetail) return row
 
   return (
-    // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
     <VStack
       spacing={0}
       clipShape={cardShape}

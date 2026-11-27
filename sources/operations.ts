@@ -1,6 +1,3 @@
-// 源的操作層：把「載入後的源實例」包成 UI 好用的動作。
-// UI 不直接碰源的 explore / comic 物件，所有正規化與錯誤處理都收在這裡。
-
 import type { AbortSignal } from "scripting"
 
 import { isAbortError } from "../engine/http"
@@ -23,7 +20,6 @@ import { sourceText } from "./translation"
 export interface ExploreEntry {
   index: number
   title: string
-  /** multiPageComicList / multiPartPage / singlePageWithMultiPart / mixed */
   type: string
   supportsNext: boolean
 }
@@ -33,41 +29,31 @@ export interface ComicDetail {
   title: string
   cover?: string
   description?: string
-  /** 源的連載狀態；源沒給就沒有。畫面自己翻成介面字。 */
   status?: ComicStatus
-  /** 分級；只有 `suggestive`／`nsfw` 會顯示在畫面上。 */
   contentRating?: ContentRating
-  /** 源宣告的閱讀方式（Aidoku 的 viewer）；Venera 源沒有。 */
   viewer?: SourceViewer
-  /** 源給的星等（0–5、可為小數）；源沒給就沒有。只讀顯示，不寫入。 */
   stars?: number
-  /** 源自己的子識別碼（多數源忽略）；原封不動保留，之後留言 API 要用。 */
   subId?: string
   tags: Array<{ namespace: string; values: string[] }>
   chapters: Array<{ group: string; id: string; title: string; locked?: boolean; lang?: string }>
   updateTime?: string
   uploadTime?: string
   uploader?: string
-  /** 作畫（和 `uploader` 的作者分開）；源沒給就沒有。 */
   artists?: string
   url?: string
   recommend?: ComicListItem[]
   likesCount?: number
 }
 
-/** 連載狀態（Aidoku 的 PublishingStatus）：`unknown` 當作源沒給。 */
 export type ComicStatus = "ongoing" | "completed" | "cancelled" | "hiatus" | "notPublished"
 
-/** 內容分級（Aidoku 的 MangaContentRating）。 */
 export type ContentRating = "safe" | "suggestive" | "nsfw"
 
-/** 源給的分數（`stars`）：0–5 的數字；不是可辨識的數字就當源沒給。 */
 export function normalizeStars(raw: unknown): number | undefined {
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0 || raw > 5) return undefined
   return raw
 }
 
-/** 拿到可用的源實例；沒載入就抛，init（）還沒跑就現在跑（按需）。 */
 async function requireInstance(source: InstalledSource): Promise<any> {
   if (!source.instance) {
     throw new Error(source.error ?? t("sources.notLoaded", { name: source.stored.name }))
@@ -76,34 +62,21 @@ async function requireInstance(source: InstalledSource): Promise<any> {
   return source.instance
 }
 
-// ---------------------------------------------------------------- 登入過期自動重登
 
-/** 判定錯誤是否為登入過期訊號（大小寫不敏感，去除空白比對 loginexpired）。 */
 function isLoginExpired(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "")
   return message.toLowerCase().replace(/\s+/g, "").includes("loginexpired")
 }
 
-/** 重登動作；預設是 registry 的憑證重登，可由呼叫端換掉。 */
 export type Relogin = (source: InstalledSource) => Promise<ReloginOutcome>
 
-/**
- * 一次源呼叫的取消範圍（見 `engine/scope.ts`）。
- * **不傳就完全等於現在的行為**：沙箱的 `Network.*` 讀不到 signal，請求照舊發了就等。
- */
 export interface SourceScope {
   signal?: AbortSignal
-  /** 篩選：Aidoku 源的描述子，或 Mihon 的 `{ name, state }` 整份（`app/searchFilters.ts` 的 `filterPayload`）。 */
   filters?: unknown[]
-  /** 沒人在等的呼叫（追更）：Aidoku 源的隊列把它排在使用者的呼叫後面。目前只有詳情認它。 */
   background?: boolean
-  /** 一定要問源（詳情頁下拉重整、手動檢查更新）：不沿用任何快取。目前只有詳情認它。 */
   fresh?: boolean
 }
 
-/**
- * 為來源操作包裝登入過期自動重登機制（僅重試一次，未登入或重登失敗拋出原始錯誤）。
- */
 async function withRelogin<T>(
   source: InstalledSource,
   call: () => T | Promise<T>,
@@ -120,15 +93,11 @@ async function withRelogin<T>(
   }
 }
 
-/** 記錄來源操作失敗日誌（主動 abort 的取消請求不記錄）。 */
 export function logFailure(scope: string, message: string, error: unknown): void {
   if (isAbortError(error)) return
   log("error", scope, message, error)
 }
 
-/**
- * 為來源呼叫包裝取消作用域與自動重登。
- */
 function callSource<T>(
   source: InstalledSource,
   scope: SourceScope | undefined,
@@ -138,15 +107,10 @@ function callSource<T>(
   return withRelogin(source, () => withSourceScope(source.stored.key, scope?.signal, call), auth)
 }
 
-/**
- * 圖片解析（`engine/images.ts` 的 onImageLoad）要用的重試。engine 不可以 import sources，
- * 所以由呼叫端把這個閉包帶進圖片管線（`PageCache.bytes` 的 `retry`）。
- */
 export function imageRetryFor(source: InstalledSource, auth?: Relogin, scope?: SourceScope): SourceCallRetry {
   return call => callSource(source, scope, call, auth)
 }
 
-/** 源沒給絕對網址時，用源宣告的網站當基準補起來。 */
 function resolveUrl(base: string | undefined, url: string | undefined): string {
   if (!url) return ""
   if (/^(https?:)?\/\//i.test(url)) return url.startsWith("//") ? "https:" + url : url
@@ -160,7 +124,6 @@ export function exploreEntries(source: InstalledSource): ExploreEntry[] {
   if (!Array.isArray(explore)) return []
   return explore.map((entry: any, index: number) => ({
     index,
-    // 分頁名也是源寫的字串，照源自己的字典翻（沒有字典就是原文）。
     title: entry?.title != null
       ? sourceText(source.instance, String(entry.title))
       : t("sources.exploreFallback", { n: index + 1 }),
@@ -186,8 +149,6 @@ export async function loadExplorePage(
 
   const started = Date.now()
   try {
-    // 三種形狀都要吃：`load`（頁碼）、`loadNext`（游標）、以及只有 `loadNext` 的源——
-    // 它的第一頁就是「沒有游標」（ehentai 的三個探索條目都是這種；上游明文允許）。
     const raw = await callSource(source, scope, () =>
       "next" in cursor && typeof entry.loadNext === "function"
         ? entry.loadNext(cursor.next)
@@ -204,17 +165,10 @@ export async function loadExplorePage(
   }
 }
 
-/** 封面若源給的是相對路徑，用源宣告的網站補成絕對網址。 */
 function withCoverBase(source: InstalledSource, comics: ComicListItem[]): ComicListItem[] {
   return comics.map(item => ({ ...item, cover: resolveUrl(source.meta?.url, item.cover) || undefined }))
 }
 
-/**
- * 探索的分頁，但**保留區塊結構**。
- *
- * multiPartPage / singlePageWithMultiPart 的源只有一頁，更多內容的入口在每個區塊的
- * viewMore（跳分類頁/搜尋頁）——所以不能把區塊攤平掉。
- */
 export async function loadExploreSections(
   source: InstalledSource,
   index: number,
@@ -240,7 +194,6 @@ export async function loadExploreSections(
   return { ...page, sections: page.sections.map(section => ({ ...section, comics: withCoverBase(source, section.comics) })) }
 }
 
-/** viewMore 跳過去的頁面：category（分類列表）或 search（帶預設選項的搜尋）。 */
 export async function loadCategorySections(
   source: InstalledSource,
   target: JumpTarget,
@@ -254,7 +207,6 @@ export async function loadCategorySections(
   if (target.page === "category") {
     const module = instance.categoryComics
     if (typeof module?.load !== "function") throw new Error(t("sources.unsupported.category"))
-    // 未帶 param 傳 null，避免拼接出無效 query 參數
     raw = await callSource(source, scope, () =>
       module.load(
         target.attributes.category ?? "",
@@ -265,8 +217,6 @@ export async function loadCategorySections(
     )
   } else {
     if (typeof instance.search?.load !== "function") throw new Error(t("sources.unsupported.search"))
-    // 走 search 的跳轉目標（itemType: "search" 的分類 chip、帶預設選項的 viewMore）
-    // 把 category 當關鍵字帶上；沒帶的話會變成空關鍵字搜尋。
     raw = await callSource(source, scope, () =>
       instance.search.load(target.attributes.category ?? "", target.attributes.options ?? [], page)
     )
@@ -279,36 +229,25 @@ export async function loadCategorySections(
   }
 }
 
-// ---------------------------------------------------------------- 首頁（Aidoku 的 home layout）
 
-/**
- * 首頁元件裡的清單參照：原樣餵給源的 `getMangaListForListing`，也就是現有的 listing 分頁。
- * 它不一定是探索頁列出來的那幾條，所以不能只記索引。
- */
 export interface HomeListing {
   id: string
   name: string
-  /** Aidoku 的 ListingKind（一般／排行榜…）；源沒給就沒有。 */
   kind?: number
 }
 
-/** 首頁漫畫列的章節（`mangaChapterList` 第二行；只用來顯示，不拿它開閱讀器）。 */
 export interface HomeChapter {
   id: string
   title: string
   group?: string
   lang?: string
-  /** 上架時間（epoch 毫秒）。 */
   uploadedAt?: number
 }
 
-/** 首頁的一條連結：點下去是外部網址、一條 listing，或某部漫畫。 */
 export interface HomeLink {
   title: string
   subtitle?: string
-  /** 橫幅圖（`imageScroller` 用的就是它）。 */
   imageUrl?: string
-  /** 源沒有給目標時沒有（純圖片，不可點）。 */
   target?: HomeLinkTarget
 }
 
@@ -322,7 +261,6 @@ interface HomeComponentHead {
   subtitle?: string
 }
 
-/** 首頁的一個元件；`type` 就是 Aidoku 的元件種類。 */
 export type HomeComponent = HomeComponentHead &
   (
     | { type: "imageScroller"; links: HomeLink[]; autoScrollInterval?: number; width?: number; height?: number }
@@ -335,40 +273,29 @@ export type HomeComponent = HomeComponentHead &
   )
 
 export interface HomeChapterEntry {
-  /** 漫畫本身（與列表項同一個型別，點擊開詳情）。 */
   manga: ComicListItem
   chapter?: HomeChapter
 }
 
-/** 首頁的篩選捷徑：`values` 是源給的 FilterValue 原文（搜尋篩選直接吃這個）。 */
 export interface HomeFilterItem {
   title: string
   values?: unknown[]
 }
 
-/** 一份首頁。源沒回首頁或回了空版面時 `components` 是空陣列。 */
 export interface SourceHome {
   components: HomeComponent[]
 }
 
-// ---------------------------------------------------------------- 排行榜
 
 export interface RankingOption {
-  /** 傳給 `ranking.load` 的值。 */
   value: string
-  /** 顯示名稱。 */
   label: string
 }
 
-/**
- * 排行榜的選項寫法是 `"值-顯示名"`，跟分類的一樣走 `options.ts`。
- * 有些源的「值」故意是空的（`"-全部"`）。
- */
 function splitRankingOption(raw: string): RankingOption {
   return splitOption(raw)
 }
 
-/** 有 `ranking.load`、有選項，而且源沒有把它關掉（`enableRankingPage: false`）。 */
 export function hasRanking(source: InstalledSource): boolean {
   const ranking = source.instance?.categoryComics?.ranking
   return (
@@ -407,9 +334,7 @@ export async function loadRankingPage(
 }
 
 interface SearchOptions {
-  /** 源自己的篩選選項（`search.optionList` 的值，照列順序；dropdown 可以是 null）。 */
   options?: Array<string | null>
-  /** 篩選：Aidoku 源的描述子，或 Mihon 的 `{ name, state }` 整份（`app/searchFilters.ts` 的 `filterPayload`）。 */
   filters?: unknown[]
   page?: number
 }
@@ -426,7 +351,6 @@ export async function searchSource(
   }
   const instance = await requireInstance(source)
   const search = instance.search
-  // ehentai 的 search 只有 loadNext（第一頁 = 沒有游標）；搜尋頁只取第一頁，所以這樣就夠。
   const canLoad = typeof search?.load === "function"
   const canLoadNext = typeof search?.loadNext === "function"
   if (!canLoad && !canLoadNext) throw new Error(t("sources.unsupported.search"))
@@ -447,39 +371,24 @@ export async function searchSource(
   }
 }
 
-// ---------------------------------------------------------------- 詳情短時快取
 
-/**
- * 詳情的有效期。只為了接住「背景追更剛查過、使用者接著點進詳情」這個時間差：
- * 兩次呼叫通常相隔不到一分鐘，卻要重付 Aidoku 源的兩次序列呼叫與兩次網路往返。
- * 再久之後的更新交給使用者拉的 `fresh` 與下一輪追更，不必在這裡等。
- */
 export const DETAIL_CACHE_TTL_MS = 45_000
 
-/** 條目上限：一份詳情含完整章節清單（千話作品一份就不小），所以只留最近用到的幾份。 */
 export const DETAIL_CACHE_LIMIT = 4
 
 interface CachedDetail {
-  /** 產生這一份的源實例：源被重建（改設定、全量重載）就是另一個物件，自然不命中。 */
   source: InstalledSource
-  /** 產生這一份時的 `sourcesRevision()`：登入狀態這種就地更新不換實例，靠它失效。 */
   revision: number
   at: number
-  /** 快取自己的一份：呼叫端怎麼就地改都回寫不到這裡。 */
   detail: ComicDetail
 }
 
-/** 鍵＝源鍵＋作品；失效（實例、版本號、有效期）在命中時另外比對。 */
 const detailCache = new Map<string, CachedDetail>()
 
 function detailCacheKey(sourceKey: string, comicId: string): string {
   return `${sourceKey}\n${comicId}`
 }
 
-/**
- * 複本的深度只到「呼叫端會就地改」的那一層：物件本身、`tags`／`chapters`／`recommend` 三個陣列，
- * 以及陣列裡每個元素（`values`／`tags` 再下一層）。再往裡都是字串與數字，沒有共用參考了。
- */
 function copyDetail(detail: ComicDetail): ComicDetail {
   const copy: ComicDetail = {
     ...detail,
@@ -490,7 +399,6 @@ function copyDetail(detail: ComicDetail): ComicDetail {
   return copy
 }
 
-/** 有效期內就回一份複本（從快取拿的呼叫端改它不會回頭汙染快取）；沒有、過期或失效就回 undefined。 */
 function readCachedDetail(source: InstalledSource, comicId: string): ComicDetail | undefined {
   const key = detailCacheKey(source.stored.key, comicId)
   const entry = detailCache.get(key)
@@ -503,7 +411,6 @@ function readCachedDetail(source: InstalledSource, comicId: string): ComicDetail
     detailCache.delete(key)
     return undefined
   }
-  // 重新排到最後＝最近用過；淘汰從最前面（最久沒用）開始。
   detailCache.delete(key)
   detailCache.set(key, entry)
   return copyDetail(entry.detail)
@@ -525,10 +432,6 @@ function writeCachedDetail(source: InstalledSource, comicId: string, detail: Com
   }
 }
 
-/**
- * 詳情。有效期內剛有同一部的就沿用那一份（背景追更剛查過、使用者接著點進來），
- * `fresh` 或過期才真的問源。**失敗不進快取**：壞掉的源下一輪要能自己重試。
- */
 export async function loadDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
   if (scope?.fresh !== true) {
     const cached = readCachedDetail(source, comicId)
@@ -539,7 +442,6 @@ export async function loadDetail(source: InstalledSource, comicId: string, scope
   return detail
 }
 
-/** 真的問源（分岔點）：Venera 的 `comic.loadInfo`／Aidoku 的 `getMangaDetails` ＋ `getChapterList`。 */
 async function fetchDetail(source: InstalledSource, comicId: string, scope?: SourceScope): Promise<ComicDetail> {
   if (aidoku.isAidoku(source)) return await aidoku.detail(source, comicId, scope?.background === true)
   if (mihon.isMihon(source)) return await mihon.detail(source, comicId, scope?.background === true)
@@ -554,13 +456,10 @@ async function fetchDetail(source: InstalledSource, comicId: string, scope?: Sou
     title: String(raw?.title ?? t("sources.untitled")),
     cover: resolveUrl(source.meta?.url, raw?.cover) || undefined,
     description: raw?.description ?? undefined,
-    // 星等與 subId 原樣導出
     stars: normalizeStars(raw?.stars),
     subId: raw?.subId != null ? String(raw.subId) : undefined,
     tags,
-    // 單章漫畫（無 chapters）自動合成單一章節（epId = comicId）
     chapters: resolveChapters(raw?.chapters, comicId),
-    // `updateTime` 沒給就取「更新」這類 tag（部分源只在標籤裡放日期）
     updateTime: findUpdateTime(raw?.updateTime, tags),
     uploadTime: raw?.uploadTime ?? undefined,
     uploader: raw?.uploader ?? undefined,
@@ -596,9 +495,6 @@ export async function loadChapterImages(
   return images
 }
 
-/**
- * 開啟章節圖片清單（優先取離線 manifest 清單，離線無檔案時由來源線上加載）。
- */
 export async function openChapterImages(
   source: InstalledSource,
   comicId: string,
@@ -610,7 +506,6 @@ export async function openChapterImages(
   )
 }
 
-/** 搜尋頁用：把源的 Comic 轉成列表項（含封面絕對化）。 */
 export function toListItems(source: InstalledSource, page: ComicListPage): ComicListItem[] {
   return page.comics.map(item => ({
     ...item,
@@ -618,9 +513,7 @@ export function toListItems(source: InstalledSource, page: ComicListPage): Comic
   }))
 }
 
-// ---------------------------------------------------------------- 留言
 
-/** 一則留言（形狀照上游的 `Comment`）。`content` 是受限 HTML，交給渲染層處理。 */
 export interface SourceComment {
   id: string
   userName: string
@@ -630,27 +523,22 @@ export interface SourceComment {
   replyCount?: number
   isLiked?: boolean
   score?: number
-  /** 1：頂、-1：噓、0：沒投。 */
   voteStatus?: number
 }
 
 export interface CommentPage {
   comments: SourceComment[]
-  /** 源回報的頁數原值；不是數字就當沒給。能不能翻頁一律問 `hasMoreComments`。 */
   maxPage?: number
 }
 
-/** 是否還有下一頁留言（僅當 maxPage 數值大於當前頁時為 true）。 */
 export function hasMoreComments(maxPage: number | undefined, page: number): boolean {
   return typeof maxPage === "number" && Number.isFinite(maxPage) && maxPage > page
 }
 
-/** 源有沒有宣告「送出留言」—— 能力徽章與留言頁的輸入框都問這一個。 */
 export function canSendComment(source: InstalledSource): boolean {
   return typeof source.instance?.comic?.sendComment === "function"
 }
 
-/** 源的留言物件 → UI 吃的形狀。沒有 id 的（上游允許）給一個穩定但可辨的代替鍵。 */
 function normalizeComment(raw: unknown, index: number): SourceComment | null {
   if (!raw || typeof raw !== "object") return null
   const item = raw as Record<string, any>
@@ -677,7 +565,6 @@ function normalizeComments(raw: unknown): SourceComment[] {
   return out
 }
 
-/** 讀取一頁留言（留言不落地快取）。 */
 export async function loadComments(
   source: InstalledSource,
   comicId: string,
@@ -706,10 +593,6 @@ export async function loadComments(
   }
 }
 
-/**
- * 送出留言。失敗照源的原話拋出去（`nhentai` 的 stub `throw "Not implemented"` 就是這樣
- * 被誠實顯示的）；UI 自己 catch 並顯示訊息。
- */
 export async function sendComment(
   source: InstalledSource,
   comicId: string,

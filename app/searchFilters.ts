@@ -1,10 +1,3 @@
-// 單源搜尋結果頁的篩選：把兩種源的定義收成同一組呈現列，畫面只認 `FilterEntry`。
-//
-//   Aidoku → 五種平列的列（text／select／multi／sort／check），存的是源自己的值
-//   Mihon  → 八種 kind 的樹（含 header／separator／group），存的是以路徑 id 認的值
-//
-// 這裡負責兩件事：定義加值 → 列；列上的草稿 → 原引擎的值（順便寫回磁碟）。
-
 import { loadFilterValues, saveFilterValues, aidokuFilterRows } from "./aidokuSearchFilters"
 import { loadMihonValues, mihonFilterNodes, saveMihonValues } from "./mihonSearchFilters"
 import { defaultFilterValue, encodeFilters as encodeAidoku, type AidokuFilterRow, type AidokuFilterValue } from "../sources/aidokuFilters"
@@ -16,7 +9,6 @@ export type SearchFilterSet =
   | { kind: "aidoku"; sourceKey: string; rows: AidokuFilterRow[]; values: AidokuFilterValue[] }
   | { kind: "mihon"; sourceKey: string; nodes: MihonFilterNode[]; values: MihonFilterValues }
 
-/** 這個源有哪些篩選（沒有篩選的、Venera 源回 null）。定義問不到就丟出去，讓畫面維持沒有篩選可用。 */
 export async function loadSearchFilters(source: InstalledSource): Promise<SearchFilterSet | null> {
   const sourceKey = source.stored.key
   if (source.stored.kind === "aidoku") {
@@ -32,7 +24,6 @@ export async function loadSearchFilters(source: InstalledSource): Promise<Search
   return null
 }
 
-/** 送給源的篩選（Aidoku 的描述子／Mihon 的 `{name, state}` 整份）。 */
 export function filterPayload(set: SearchFilterSet): unknown[] {
   if (set.kind === "aidoku") return aidokuPayload(set.rows, set.values)
   return encodeMihon(set.nodes, set.values)
@@ -42,7 +33,6 @@ export function filterEntries(set: SearchFilterSet): FilterEntry[] {
   return set.kind === "aidoku" ? aidokuEntries(set.rows, set.values) : mihonEntries(set.nodes, set.values)
 }
 
-/** 草稿套回去：值換掉、寫回磁碟，回新的那一份（畫面直接拿去重畫）。 */
 export function applyFilterDraft(set: SearchFilterSet, draft: FilterDraft): SearchFilterSet {
   if (set.kind === "aidoku") {
     const values = aidokuValues(set.rows, set.values, draft)
@@ -54,7 +44,6 @@ export function applyFilterDraft(set: SearchFilterSet, draft: FilterDraft): Sear
   return { ...set, values }
 }
 
-// ---------------------------------------------------------------- Aidoku
 
 function aidokuPayload(rows: AidokuFilterRow[], values: AidokuFilterValue[]): unknown[] {
   return encodeAidoku(rows, values)
@@ -142,7 +131,6 @@ function aidokuValues(rows: AidokuFilterRow[], values: AidokuFilterValue[], draf
   })
 }
 
-// ---------------------------------------------------------------- Mihon
 
 function tristateOf(raw: unknown): Tristate {
   return raw === 1 || raw === 2 ? raw : 0

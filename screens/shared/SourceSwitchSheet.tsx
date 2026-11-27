@@ -1,8 +1,3 @@
-// 換源 sheet：用書名在目前來源以外找同一部作品，選了就交回去切換。
-//
-// 比對沿用 `engine/titleMatch`（跟 Bangumi 詳情同一套），門檻也一樣是 55 分：
-// 低於這個分數的都是「只沾到幾個字」，列出來只會讓人選錯。
-
 import {
   AbortController,
   Divider,
@@ -39,7 +34,6 @@ import { matchComicTitleScore } from "../../engine/titleMatch"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { type SourceSearchResult } from "../../sources/search"
 
-/** 候選的封面尺寸；骨架也用它，資料到了版面不跳。 */
 const COVER = { width: 44, height: 62 }
 
 interface Candidate {
@@ -48,7 +42,6 @@ interface Candidate {
   score: number
 }
 
-/** 把各源結果攤成候選：只留標題夠像的，分數高的在前。 */
 function collectCandidates(
   results: SourceSearchResult[],
   sources: ComicSourceInfo[],
@@ -72,14 +65,12 @@ export function SourceSwitchSheet({
   title,
   onPick,
 }: {
-  /** 目前這部作品的來源；不會出現在候選裡。 */
   sourceKey: string
   title: string
   onPick: (ref: ComicRef, title: string) => void
 }) {
   const library = comicLibrary()
   const dismiss = Navigation.useDismiss()
-  // sheet 是獨立的 render 根：語言一換就重繪。
   useSubscription(subscribeLocale)
 
   const [candidates, setCandidates] = useState<Candidate[]>([])
@@ -95,7 +86,6 @@ export function SourceSwitchSheet({
       return
     }
 
-    // 帶使用者存過的搜尋篩選：跟搜尋分頁看到的是同一組結果。
     const selections = loadSearchSelections()
     let alive = true
     const controller = new AbortController()

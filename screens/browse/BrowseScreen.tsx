@@ -1,8 +1,3 @@
-// 瀏覽：列出已啟用的源，點進去就是那源的一頁（探索 / 分類 / 排行）。
-// 放大鏡依名稱與 key 篩選；找不到就帶著關鍵字去源倉庫搜。
-// 不用常駐的下拉搜尋框：tab 根頁上它一進頁就展開，容易被當成搜漫畫。
-// 長按卡片直接進那個源的設定／帳號／詳情或停用；排序、移除、更新留在源管理。
-
 import {
   Button, Divider, Group, HStack, Image, NavigationLink, ScrollView, Spacer, Text, Toolbar, ToolbarItem, VStack, ZStack,
   useState, type VirtualNode,
@@ -32,7 +27,6 @@ import { matchesQuery, searchToolbarItem, useToolbarSearch } from "../../design/
 import { Footnote } from "../../design/text"
 import { cardGap, pageInsets, rowPadding, sourceIconSize } from "../../design/tokens"
 
-/** 長按選單推的頁。 */
 type SourcePage = "settings" | "aidokuSettings" | "account" | "detail"
 
 function sourcePageView(key: string, page: SourcePage): VirtualNode {
@@ -46,8 +40,6 @@ function sourcePageView(key: string, page: SourcePage): VirtualNode {
 
 export function BrowseScreen() {
   const library = comicLibrary()
-  // 安裝／移除／啟用來源都由庫的單一訂閱通知（不必自己 reloadRegistry 或訂 subscribeSources）。
-  // 語言是第二個訂閱源：導覽列標題與下面的字都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(library.onChange, subscribeLocale)
   const sources = library.sources()
   const search = useToolbarSearch(t("browse.searchSources"))
@@ -64,7 +56,6 @@ export function BrowseScreen() {
         navigationBarTitleDisplayMode="inline"
         searchable={search.searchable}
         navigationDestination={{
-          // key 跟著源與頁換：同一個推頁位置會沿用上一次的狀態。
           content: pushed ? (
             <VStack key={`${pushed.key}:${pushed.page}`}>{sourcePageView(pushed.key, pushed.page)}</VStack>
           ) : (
@@ -154,7 +145,6 @@ export function BrowseScreen() {
   )
 }
 
-/** 長按選單：有設定、有帳號才出現對應項；停用後卡片會從清單消失。 */
 function SourceMenuItems({ sourceKey, onOpen }: { sourceKey: string; onOpen: (page: SourcePage) => void }): VirtualNode {
   const installed = findSource(sourceKey)
   if (!installed) return <Group />
@@ -181,14 +171,12 @@ function SourceMenuItems({ sourceKey, onOpen }: { sourceKey: string; onOpen: (pa
   )
 }
 
-/** 來源種類的字串鍵；三種引擎都要有，否則 Mihon 會被標成 Venera。 */
 function kindLabelKey(kind: SourceKind): MessageKey {
   if (kind === "aidoku") return "settings.shared.kindAidoku"
   if (kind === "mihon") return "settings.shared.kindMihon"
   return "settings.shared.kindVenera"
 }
 
-/** 一個來源一列：圖標、名稱與種類／鍵，右邊版本號與箭頭。 */
 function SourceCard({ source }: { source: ComicSourceInfo }) {
   return (
     <Card>

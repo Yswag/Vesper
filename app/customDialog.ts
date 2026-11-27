@@ -1,7 +1,3 @@
-// 源的自訂彈窗：佇列＋emitter。源一次只能問一件事，後面的排隊等前一個收尾
-// （`CustomDialogOverlay` 只顯示 `activeCustomDialog()`），所以回傳的 Promise 不會照呼叫順序 settle。
-// 取消一律回 `null`（輸入與選項都是）；訊息類只回 void。
-
 import { createEmitter } from "../engine/emitter"
 
 import type { PromptRequest } from "./PromptSheet"

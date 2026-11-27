@@ -5,7 +5,6 @@ export interface GlassFilterOption<T extends string> {
   title: string
 }
 
-// The native picker owns selection, accessibility and its system material.
 export function GlassFilter<T extends string>({ title, value, options, onChanged }: {
   title: string
   value: T

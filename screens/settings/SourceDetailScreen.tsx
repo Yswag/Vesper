@@ -1,5 +1,3 @@
-// 單一源的詳情：基本資料、能力徽章、啟用/停用、移除。
-
 import { Divider, Navigation, NavigationLink, VStack, useEffect, useState } from "scripting"
 
 import { Chip } from "../../design/chip"
@@ -28,7 +26,6 @@ import { MihonSettingsScreen } from "./MihonSettingsScreen"
 import { SourceAccountScreen } from "./SourceAccountScreen"
 import { SourceSettingsScreen } from "./SourceSettingsScreen"
 
-/** 源類型的中文名（源詳情頁）。 */
 function sourceKindLabel(kind: SourceKind): string {
   if (kind === "aidoku") return t("settings.shared.kindAidoku")
   if (kind === "mihon") return t("settings.shared.kindMihon")
@@ -88,7 +85,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
         </VStack>
       ) : null}
 
-      {/* 1. 控制與操作 */}
+      {}
       <CardGroup title={t("settings.sourceDetail.controls")}>
         <ToggleRow
           icon="power"
@@ -156,7 +153,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
         ) : null}
       </CardGroup>
 
-      {/* 2. 基本資料 */}
+      {}
       <CardGroup title={t("settings.sourceDetail.profile")}>
         <InfoRow label={t("settings.sourceDetail.kind")} value={sourceKindLabel(sourceKindOf(source))} />
         <Divider padding={{ leading: 16 }} />
@@ -176,7 +173,7 @@ export function SourceDetailScreen({ sourceKey }: { sourceKey: string }) {
         />
       </CardGroup>
 
-      {/* 3. 危險操作 */}
+      {}
       <Card>
         <IconRow
           icon="trash"

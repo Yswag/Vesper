@@ -1,12 +1,8 @@
-// 從圖檔開頭讀出寬高（不解碼）：JPEG／PNG／GIF／WebP／AVIF・HEIC。
-// 預取拿到位元組時就知道比例，畫廊能在翻到之前把寬圖拆好。
-
 export interface ImageSize {
   width: number
   height: number
 }
 
-/** 讀不出來（格式不認得或檔頭殘缺）回 null。JPEG 會照 EXIF 方向轉正，與 `UIImage` 的尺寸一致。 */
 export function readImageSize(bytes: Uint8Array): ImageSize | null {
   if (bytes.length < 24) return null
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return readJpeg(bytes)
@@ -21,11 +17,9 @@ export function readImageSize(bytes: Uint8Array): ImageSize | null {
   return null
 }
 
-/** ISO-BMFF：meta → iprp → ipco 裡的 ispe（取面積最大的，縮圖較小）＋irot 旋轉。 */
 function readHeif(bytes: Uint8Array): ImageSize | null {
   const meta = findBox(bytes, 0, bytes.length, "meta")
   if (!meta) return null
-  // meta 是 full box：內容前有 4 bytes 版本／旗標
   const iprp = findBox(bytes, meta.start + 4, meta.end, "iprp")
   const ipco = iprp ? findBox(bytes, iprp.start, iprp.end, "ipco") : null
   if (!ipco) return null
@@ -61,7 +55,6 @@ function readJpeg(bytes: Uint8Array): ImageSize | null {
   while (at + 9 < bytes.length) {
     if (bytes[at] !== 0xff) return null
     const marker = bytes[at + 1]
-    // 填充位元組與無長度的標記
     if (marker === 0xff) {
       at++
       continue
@@ -75,7 +68,6 @@ function readJpeg(bytes: Uint8Array): ImageSize | null {
       const orientation = exifOrientation(bytes, at + 10, at + 2 + length)
       swap = orientation !== null && orientation >= 5 && orientation <= 8
     }
-    // SOF0–SOF15，扣掉 DHT(C4)、JPG(C8)、DAC(CC)
     if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
       const height = be16(bytes, at + 5)
       const width = be16(bytes, at + 7)
@@ -86,7 +78,6 @@ function readJpeg(bytes: Uint8Array): ImageSize | null {
   return null
 }
 
-/** TIFF 標頭從 `start` 起；回傳 0x0112 的值。 */
 function exifOrientation(bytes: Uint8Array, start: number, end: number): number | null {
   if (start + 8 > end) return null
   const little = bytes[start] === 0x49

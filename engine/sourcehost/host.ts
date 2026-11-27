@@ -1,10 +1,3 @@
-// 源宿主（Aidoku／Mihon）：本機 HttpServer 服務頁面與 runtime，WebView 內每個源一個 module worker。
-// 與超分分開：各自的 server 與 WebView（超分頁面需要 COOP/COEP，這裡不需要）。
-//
-// 生命週期：第一次用到才開 → 常駐 → 閒置逾時 dispose。每個源一條隊列（同一個源序列，不同源並行）；
-// 頁面層級的動作（建頁、重建、dispose）會先等所有源的隊列排空，所以不會拆在請求中間。
-// 隊列分兩級：使用者在等的（詳情、翻頁）排在背景追更前面；只在任務邊界讓位，跑起來的不會被中斷。
-
 import { Script, fetch } from "scripting"
 
 import { absorbSetCookieHeaders, cookieHeader, mergeCookieHeader } from "../cookies"
@@ -20,28 +13,14 @@ import { timerAfter, timerEvery, type TimerHandle } from "../timers"
 const CALL_TIMEOUT_MS = 15_000
 const LOAD_TIMEOUT_MS = 30_000
 const PROXY_TIMEOUT_MS = 15_000
-/** 把工作丟進頁面這一步的逾時：頁面死了就不該等到呼叫本身的逾時。 */
 const START_TIMEOUT_MS = 5_000
 const IMAGE_TIMEOUT_MS = 30_000
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000
-/**
- * 同時最多幾個源的 worker。實測一般 Mihon worker 約 5MB、32 個同時開著也穩，真正的限制是記憶體：
- * 個數只是底線，超過 `WORKER_MEMORY_BUDGET` 時先收佔最多的。
- */
 const DEFAULT_WORKER_LIMIT = 12
-/**
- * 所有 worker 回報的 wasm 記憶體合計上限。wasm 只長不縮（包子解一次 PoW 就是 70MB+），
- * 只有回收 worker 才放得掉；WebContent 實測約 1.5–1.8GB 被殺，舊機更低，所以留很大的餘裕。
- */
 const WORKER_MEMORY_BUDGET = 384 * 1024 * 1024
 
-/**
- * worker 的種類：同一個宿主、同一套隊列與上限，差別只在載入時用哪個 worker 腳本。
- * 一個 apk（Mihon）一個 worker；Aidoku 是一個源一個 worker。
- */
 export type SourceWorkerKind = "aidoku" | "mihon"
 
-/** 宿主這一層壞掉（頁面沒了、伺服器起不來）。呼叫端據此重建整個宿主再重試。 */
 export class SourceHostError extends Error {
   constructor(message: string) {
     super(message)
@@ -49,7 +28,6 @@ export class SourceHostError extends Error {
   }
 }
 
-/** 只有某個源的 worker 壞了／逾時：丟掉它就夠了，其他源與頁面不受影響。 */
 export class SourceWorkerError extends SourceHostError {
   constructor(message: string) {
     super(message)
@@ -61,7 +39,6 @@ export function isSourceHostError(error: unknown): boolean {
   return error instanceof SourceHostError
 }
 
-/** 這個源自己的 worker 掛了（而不是頁面沒了）。 */
 export function isSourceWorkerError(error: unknown): boolean {
   return error instanceof SourceWorkerError
 }
@@ -74,7 +51,6 @@ function hostError(error: unknown): SourceHostError {
 let nextTaskId = 1
 const taskWaiters = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>()
 
-/** 一張等待 `process_page_image` 的圖片：位元組只給一次，結果由 POST 帶回來。 */
 interface PageJob {
   bytes: Uint8Array | null
   served: boolean
@@ -91,64 +67,40 @@ const DROPPED_REQUEST_HEADERS = new Set(["host", "content-length", "connection",
 let server: HttpServer | null = null
 let controller: WebViewController | null = null
 let port = 0
-/** 頁面上有哪些源的 worker（一個源一個）。 */
 interface WorkerSlot {
   key: string
   lastUsed: number
 }
 
 const slots = new Map<string, WorkerSlot>()
-/**
- * 每個源手上的呼叫數（執行中＋排隊中）：>0 就不能回收。
- * 刻意與 `slots` 分開：重建頁面會清 `slots`，但計數必須跟著還在跑的呼叫。
- */
 const pendingCounts = new Map<string, number>()
-/** 哪些源的 worker 真的載好了（重載判斷用；回收或 dispose 之後消失）。 */
 const loadedKeys = new Set<string>()
-/**
- * 每個源的 worker 還有幾個背景 job（dexvm 的 GlobalScope.launch）。
- * 回收時有 job 的排在最後：丟掉就得丟掉那些 job，能留就留。
- */
 const pendingJobs = new Map<string, number>()
-/** 每個 worker 最近回報的 wasm 記憶體（位元組）；沒回報的當 0。 */
 const footprints = new Map<string, number>()
-/** 載入中的源：載入期間源就可能寫設定，這時 loadedKeys 裡還不是它。 */
 const loadingKeys = new Set<string>()
-/** 還沒被 worker 取走的載入素材（依源分開，兩個源同時載入也不會互相蓋掉）。 */
 const pendingAix = new Map<string, Uint8Array>()
 const pendingPackages = new Map<string, AidokuPackage>()
-/** Mihon：apk 位元組（worker 用同步 XHR 向宿主拿）。 */
 const pendingApks = new Map<string, Uint8Array>()
 
-/** 源自己寫設定（`defaults.set`）的落地函式；由 `sources/aidoku.ts` 注冊。 */
 let settingsWriter: ((key: string, name: string, value: unknown) => void) | null = null
 
 export function setSourceSettingWriter(writer: (key: string, name: string, value: unknown) => void): void {
   settingsWriter = writer
 }
 
-/** 頁面被建立過幾次（回歸驗証用它數「只重建一次」）。 */
 let generation = 0
 let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
 let workerLimit = DEFAULT_WORKER_LIMIT
-/** setTimeout 的第一個 handle 是 0，所以不能用 truthy 判斷。 */
 let idleTimer: number | null = null
 let lastActivity = 0
 
-// ---------------------------------------------------------------- 隊列
 
-/** 任務的優先級：使用者在等（詳情、翻頁）的排在背景追更前面。 */
 export type SourcePriority = "user" | "background"
 
-/** 隊列裡的一筆：排序只看 `priority`。 */
 export interface SourceQueueItem {
   priority: SourcePriority
 }
 
-/**
- * 下一個該跑誰：**最早的使用者任務**先跑；沒有使用者任務才輪到最早的背景任務。
- * 純函式、不碰宿主（離線驗証驗這支）。回 -1 表示隊列是空的。
- */
 export function nextSourceTaskIndex(items: readonly SourceQueueItem[]): number {
   let background = -1
   for (let index = 0; index < items.length; index++) {
@@ -165,14 +117,10 @@ interface QueuedCall {
   reject: (error: unknown) => void
 }
 
-/** 每個源一條隊列：還沒開始跑的呼叫（執行中的不在裡面）。 */
 const sourceQueues = new Map<string, QueuedCall[]>()
-/** 手上有呼叫在跑的源：同一個源一次只跑一個，先開始的不會被後來的打斷。 */
 const busySources = new Set<string>()
-/** 目前手上有多少個源的呼叫做到一半（排隊的不算）。 */
 let running = 0
 const idleWaiters: (() => void)[] = []
-/** 等「有 worker 空下來」的人（回收不成就等）。 */
 const slotWaiters: (() => void)[] = []
 
 function slotOf(key: string): WorkerSlot {
@@ -183,22 +131,18 @@ function slotOf(key: string): WorkerSlot {
   return created
 }
 
-/** 這個源手上的呼叫數。 */
 function busyCount(sourceKey: string): number {
   return pendingCounts.get(sourceKey) ?? 0
 }
 
-/** 這個源的 worker 還有幾個背景 job（頁面回報的，0 就是沒有）。 */
 export function sourcePendingJobs(sourceKey: string): number {
   return pendingJobs.get(sourceKey) ?? 0
 }
 
-/** 頁面上現在有哪幾個 worker（診斷與探針用：上限是 `sourceWorkerLimit()`）。 */
 export function sourceWorkerSlots(): string[] {
   return [...slots.keys()]
 }
 
-/** 這個源的 worker 最近回報的 wasm 記憶體。 */
 export function sourceWorkerFootprint(sourceKey: string): number {
   return footprints.get(sourceKey) ?? 0
 }
@@ -221,18 +165,11 @@ function bumpPending(sourceKey: string, delta: number): void {
   else pendingCounts.set(sourceKey, next)
 }
 
-/**
- * 一次源呼叫排進這個源自己的隊列。
- * 呼叫數在**入列時**就加一：回收一個源之前要看它手上有沒有還沒跑的呼叫。
- * `priority` 由呼叫端明講（逐呼叫帶進來，不讀環境態）：同一個源並行的背景與使用者呼叫才分得開。
- */
 export function runSourceExclusive<T>(
   sourceKey: string,
   task: () => Promise<T>,
   priority: SourcePriority = "user"
 ): Promise<T> {
-  // 這裡**不能**建 slot：slot 代表「頁面上真的有這個 worker」，
-  // 先建的話 acquireSlot 會以為它已經存在，上限就永遠輪不到回收。
   bumpPending(sourceKey, 1)
   touch(sourceKey)
   return new Promise<T>((resolve, reject) => {
@@ -244,7 +181,6 @@ export function runSourceExclusive<T>(
   })
 }
 
-/** 這個源的下一個任務：挑一個就交給 `execute`，同一個源同時只有一個在跑。 */
 function pumpSource(sourceKey: string): void {
   if (busySources.has(sourceKey)) return
   const queue = sourceQueues.get(sourceKey)
@@ -279,12 +215,7 @@ function wake(): void {
   for (const resolve of slotWaiters.splice(0)) resolve()
 }
 
-// ---------------------------------------------------------------- 頁面層級的動作
 
-/**
- * 頁面層級的動作（建頁、重建、dispose、收 worker）在跑時，源的呼叫先等在門外，
- * 而且要等手邊的呼叫做完才動手：銷毀不會落在請求中間。
- */
 let pageGate: Promise<void> = Promise.resolve()
 let pageQueue: Promise<unknown> = Promise.resolve()
 
@@ -311,14 +242,12 @@ function runPageTask<T>(task: () => Promise<T>, drainBefore = true): Promise<T> 
   return run
 }
 
-/** 等到手邊沒有任何源的呼叫（排隊的都在門外等，不會突然插進來）。 */
 async function drainRunning(): Promise<void> {
   while (running > 0) {
     await new Promise<void>(resolve => idleWaiters.push(resolve))
   }
 }
 
-// ---------------------------------------------------------------- 閒置回收
 
 function touch(sourceKey?: string): void {
   lastActivity = Date.now()
@@ -343,12 +272,10 @@ function scheduleIdle(): void {
       void disposeWhenIdle()
     }, remaining)
   } catch {
-    // 呼叫端可能不在主佇列（WebView 回呼的續行），下一輪 touch() 再排就好。
     idleTimer = null
   }
 }
 
-/** 每個 worker 自己算閒置；最後一個收掉之後才釋放頁面與伺服器。 */
 async function disposeWhenIdle(): Promise<void> {
   await runPageTask(async () => {
     const now = Date.now()
@@ -364,41 +291,31 @@ async function disposeWhenIdle(): Promise<void> {
   scheduleIdle()
 }
 
-/** 閒置多久之後 dispose（預設 10 分鐘；驗証用短的值）。 */
 export function setSourceIdleTimeout(ms: number): void {
   idleTimeoutMs = Math.max(0, ms)
   scheduleIdle()
 }
 
-/** 頁面與伺服器都在。 */
 export function sourceHostAlive(): boolean {
   return controller !== null && server !== null
 }
 
-/** 頁面被建立過幾次。 */
 export function sourceHostGeneration(): number {
   return generation
 }
 
-/** 宿主伺服器的埠號（沒開就是 0）。 */
 export function sourceHostPort(): number {
   return port
 }
 
-/** 這個源的 worker 裡載著它的源嗎（引擎用它判斷要不要重載）。 */
 export function isSourceLoaded(sourceKey: string): boolean {
   return loadedKeys.has(sourceKey)
 }
 
-/**
- * 同時最多幾個源的 worker（聚合搜尋據此限流：超過只會把剛載好的源擠掉，白載一輪）。
- * 呼叫端讀這個數字，不要自己抄一份。
- */
 export function sourceWorkerLimit(): number {
   return workerLimit
 }
 
-/** 探針量上限用：只影響之後的分配，已經開著的 worker 不收。 */
 export function setSourceWorkerLimit(limit: number): void {
   workerLimit = Math.max(1, Math.floor(limit))
 }
@@ -437,7 +354,6 @@ function readAidokuAsset(name: string, contentType: string): HttpResponse {
   return staticResponse(bytes, contentType)
 }
 
-/** dexvm 的兩個成品檔：只能供驗過的那一份（驗証在載入前做，載入過了就不可能不合）。 */
 function dexvmAssetResponse(pick: "wasm" | "host"): HttpResponse {
   try {
     const assets = dexvmAssets()
@@ -454,7 +370,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     try {
       setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
     } catch {
-      // 不在主佇列時建不了 timer（原生回呼的續行）：那就沒有逾時，直接把結果交出去。
     }
     promise.then(resolve, reject)
   })
@@ -470,7 +385,6 @@ function jsonBody(request: HttpRequest): any {
   }
 }
 
-/** 原始位元組：`Data` 或 `Uint8Array`。 */
 function bodyBytes(request: HttpRequest): Uint8Array | null {
   const raw = (request as any).body
   if (!raw || typeof raw.toArrayBuffer !== "function") return null
@@ -481,18 +395,15 @@ function bodyBytes(request: HttpRequest): Uint8Array | null {
   }
 }
 
-/** `GET /job/<token>`：回原始位元組；同一個 token 只給一次。 */
 function pageJobResponse(request: HttpRequest): HttpResponse {
   const job = pageJobs.get(request.params.token)
   if (!job || job.served || !job.bytes) return HttpResponse.notFound()
   const bytes = job.bytes
   job.served = true
-  // 交出去之後就不必再留一份（POST 回來時也不需要原始位元組）。
   job.bytes = null
   return staticResponse(bytes, "application/octet-stream")
 }
 
-/** `POST /result/<token>`：收處理後的位元組，叫醒等這個 job 的人。 */
 function pageResultResponse(request: HttpRequest): HttpResponse {
   const token = request.params.token
   const job = pageJobs.get(token)
@@ -503,11 +414,9 @@ function pageResultResponse(request: HttpRequest): HttpResponse {
   return HttpResponse.raw(200, "OK", { headers: { "Content-Type": "application/octet-stream" } })
 }
 
-/** 已解開的源（安裝後放在磁碟上的形狀）。 */
 export interface AidokuPackage {
   manifest: Record<string, unknown>
   settingsJson?: unknown
-  /** 使用者改過的設定值（只含改過的 key）；載入時交給 worker 疊在 schema 預設上。 */
   settings?: Record<string, unknown>
   wasm: Uint8Array
 }
@@ -517,13 +426,7 @@ export interface SourceProxyRequest {
   method?: string
   headers?: Record<string, string>
   body?: string | null
-  /** 二進位 body（base64）：Mihon 擴充的 POST 會送位元組。有值時優於 `body`。 */
   bodyBase64?: string | null
-  /**
-   * 這個請求來自哪個引擎（worker 自己宣告）。宿主不查 registry：`registry → sources → sourcehost`
-   * 這條依賴反過來就成環，而一個 worker 本來就只服務一個引擎，它帶過來最明確。
-   * 回應 cookie 要不要收進宿主 jar 就看這個。
-   */
   engine?: SourceWorkerKind
 }
 
@@ -531,11 +434,9 @@ export interface SourceProxyResult {
   status: number
   headers: Record<string, string>
   bytes: Uint8Array
-  /** 重新導向後的真實位址。 */
   url: string
 }
 
-/** 代理請求撞到的 Cloudflare 挑戰（由呼叫端決定何時去過盾）。 */
 export interface SourceChallenge {
   sourceKey: string
   url: string
@@ -543,12 +444,10 @@ export interface SourceChallenge {
   at: number
 }
 
-/** 沒人去處理的挑戰不要留太久，不然下一次同名源的呼叫會莫名多過一次盾。 */
 const CHALLENGE_TTL_MS = 120_000
 
 let pendingChallenge: SourceChallenge | null = null
 
-/** 取走這個源待處理的挑戰；別的源的不算，也不清掉。 */
 export function takeSourceChallenge(sourceKey: string): SourceChallenge | null {
   if (!pendingChallenge) return null
   if (Date.now() - pendingChallenge.at > CHALLENGE_TTL_MS) {
@@ -561,13 +460,11 @@ export function takeSourceChallenge(sourceKey: string): SourceChallenge | null {
   return value
 }
 
-/** 標頭名稱不分大小寫：源自己宣告的叫 User-Agent，dexvm 補上的叫 user-agent。 */
 function headerOf(headers: Record<string, string>, name: string): string {
   const key = Object.keys(headers).find(candidate => candidate.toLowerCase() === name)
   return key ? String(headers[key]) : ""
 }
 
-/** 把 jar 的 cookie 補進代理請求（源自己給的 Cookie 保留，同名由 jar 覆蓋）。 */
 function withJarCookies(sourceKey: string | null, url: string, headers: Record<string, string>): void {
   if (!sourceKey) return
   const jar = cookieHeader(sourceKey, url)
@@ -577,7 +474,6 @@ function withJarCookies(sourceKey: string | null, url: string, headers: Record<s
   else headers["cookie"] = jar
 }
 
-/** 實際幫 worker 打那發請求；與伺服器隔開，讓它可以被直接測。 */
 export async function performProxy(
   request: SourceProxyRequest,
   timeoutMs: number = PROXY_TIMEOUT_MS,
@@ -588,8 +484,6 @@ export async function performProxy(
     if (!DROPPED_REQUEST_HEADERS.has(key.toLowerCase())) headers[key] = String(value)
   }
 
-  // 過盾拿到的 cf_clearance 存在 jar 裡；源自己從設定組的 Cookie 只會在畫面那幾條路徑拿到，
-  // 所以代理這一層一定要補上（同名以 jar 為準，才不會被舊值卡住）。
   withJarCookies(sourceKey, request.url, headers)
 
   const method = String(request.method || "GET").toUpperCase()
@@ -608,10 +502,6 @@ export async function performProxy(
   })
   const finalUrl = response.url || request.url
   outHeaders["X-Nemu-Final-Url"] = finalUrl
-  // XHR 的回應標頭依規範會濾掉 Set-Cookie，worker 讀不到；改放自訂標頭，一筆一個值（Mihon 要交給 dexvm）。
-  // 只有 Aidoku 把 jar 交給宿主收：它的 runtime jar 一個標頭值只收第一筆（同名標頭又會疊掉）。
-  // Mihon 的 jar 在 dexvm 的 Java 端，那裡才是唯一真實來源：宿主再存一份，擴充清掉／改寫之後
-  // 下一發會被 withJarCookies 把舊值塞回去（包子 gatekeeper 的 binding 就是這樣壞的）。
   const setCookies = response.headers.getSetCookie()
   if (setCookies.length > 0) {
     outHeaders["X-Nemu-Set-Cookie"] = encodeURIComponent(JSON.stringify(setCookies))
@@ -622,9 +512,6 @@ export async function performProxy(
     pendingChallenge = {
       sourceKey,
       url: finalUrl,
-      // cf_clearance 綁 UA：過盾的 WebView 要用同一個。Mihon 的 UA 由擴充自己宣告
-      //（configureHeaders／headersBuilder），沒宣告時 dexvm 用 `open` 的 defaultUserAgent 補上；
-      // 兩個都沒有就退回同一個預設值，不要讓 WebView 用自己的 UA。
       userAgent: headerOf(headers, "user-agent") || (request.engine === "mihon" ? mihonUserAgent() : ""),
       at: Date.now(),
     }
@@ -634,18 +521,15 @@ export async function performProxy(
   return { status: response.status, headers: outHeaders, bytes: new Uint8Array(buffer), url: finalUrl }
 }
 
-/** 請求信封裡的源：worker 自己帶過來，代理層不再猜「目前載著誰」。 */
 function sourceKeyOf(payload: any): string | null {
   return payload && typeof payload.sourceKey === "string" && payload.sourceKey ? payload.sourceKey : null
 }
 
-/** 請求信封裡的引擎：只認這兩個字串，其餘當沒宣告（沒宣告就不收 cookie）。 */
 function engineOf(payload: any): SourceWorkerKind | undefined {
   const value = payload?.engine
   return value === "aidoku" || value === "mihon" ? value : undefined
 }
 
-/** HTTP 入口：只負責把 worker 的 JSON 信封轉成一次 performProxy。 */
 async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   const payload = jsonBody(request)
   const target: string | null = payload && typeof payload.url === "string" ? payload.url : null
@@ -668,8 +552,6 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
       sourceKeyOf(payload)
     )
   } catch (failure) {
-    // fetch 自己丟（TLS、DNS、連線中斷）也在這裡接：這個回呼若往外丟，就會變成
-    // 沒有呼叫端的未處理錯誤，而 worker 只會看到 XHR 失敗、不知道為什麼。
     const message = failure instanceof Error ? failure.message : String(failure ?? "")
     const op = typeof payload?.op === "string" ? payload.op : "?"
     log(
@@ -693,24 +575,19 @@ async function proxyResponse(request: HttpRequest): Promise<HttpResponse> {
   })
 }
 
-/** 已經進到 `/proxy`、還沒回的請求數（探針用它確認收尾時沒有還在飛的東西）。 */
 let proxyInFlight = 0
 
 export function sourceProxyInFlight(): number {
   return proxyInFlight
 }
 
-/** 一次代理請求的紀錄（診斷用：拆得開「源在等網路」與「源在算」）。 */
 export interface ProxyCall {
   sourceKey: string
   url: string
   status: number
-  /** 發出時間（毫秒）。 */
   at: number
   ms: number
-  /** 送出的 header 名稱（小寫、排序）；用來分辨同一個網址是不是同一個呼叫端。 */
   headerNames: string
-  /** 實際送出的 User-Agent（源自己宣告的或宿主補的）。 */
   userAgent: string
 }
 
@@ -743,19 +620,16 @@ function noteProxyCall(
   if (proxyCalls.length > PROXY_CALL_LIMIT) proxyCalls.splice(0, proxyCalls.length - PROXY_CALL_LIMIT)
 }
 
-/** 取出目前累積的代理請求並清空（探針用來對「這一段做了幾發 HTTP、各花多久」）。 */
 export function takeProxyCalls(): ProxyCall[] {
   const out = proxyCalls.slice()
   proxyCalls.length = 0
   return out
 }
 
-/** 與 dexvm-host 的 `SLEEP_CAP_MS` 一致：再長就是擴充寫錯了，不該讓 worker 卡住。 */
 const MIHON_SLEEP_CAP_MS = 60_000
 
 let mihonSleeps = 0
 
-/** dexvm 的同步 sleep：worker 在這個請求上阻塞，等待期間不燒 CPU（worker 沒有 SharedArrayBuffer，用不了 Atomics.wait）。 */
 async function mihonSleepResponse(request: HttpRequest): Promise<HttpResponse> {
   const requested = Number(jsonBody(request)?.ms)
   const ms = Number.isFinite(requested) ? Math.min(Math.max(0, requested), MIHON_SLEEP_CAP_MS) : 0
@@ -764,18 +638,12 @@ async function mihonSleepResponse(request: HttpRequest): Promise<HttpResponse> {
   return staticResponse(new Uint8Array(0), "application/octet-stream")
 }
 
-/** `/mihon/sleep` 被打過幾次（探針用：確認限流走的是宿主 sleep，不是 busy-wait）。 */
 export function mihonSleepTotal(): number {
   return mihonSleeps
 }
 
-/** 一批最多同時幾個（源自己通常一批 5 個）。 */
 const BATCH_CONCURRENCY = 6
 
-/**
- * `send_all` 的整批預取：平行送出，一次回給 worker。
- * 回應格式：4 byte LE meta 長度 + meta JSON（每筆 status／headers／length 或 error）+ 各 body 依序接起來。
- */
 async function proxyBatchResponse(request: HttpRequest): Promise<HttpResponse> {
   const payload = jsonBody(request)
   const requests: any[] = Array.isArray(payload?.requests) ? payload.requests : []
@@ -803,7 +671,6 @@ async function proxyBatchResponse(request: HttpRequest): Promise<HttpResponse> {
           sourceKey
         )
       } catch {
-        // 留 null：worker 那邊會退回單筆送出
       }
     }
   }
@@ -832,14 +699,12 @@ async function waitForHostReady(target: WebViewController): Promise<void> {
       const ready = await target.evaluateJavaScript("return typeof window.__sourceHost === 'object'")
       if (ready === true) return
     } catch {
-      // 頁面還沒起來，繼續等
     }
     await new Promise<void>((resolve) => setTimeout(() => resolve(), 100))
   }
   throw new Error("source host page did not become ready")
 }
 
-// 對外服務的檔名 → 磁碟上的檔名（目前同名，大檔也直接放 .js）。
 const RUNTIME_FILES: Record<string, string> = {
   "runtime.bundle.js": "runtime.bundle.js",
   "canvas.js": "canvas.js",
@@ -897,7 +762,6 @@ async function ensureServer(): Promise<number> {
     const key = typeof payload?.sourceKey === "string" ? payload.sourceKey : ""
     const name = typeof payload?.key === "string" ? payload.key : ""
     if (!key || !name) return HttpResponse.badRequest()
-    // 只接「這個 key 有載著或正在載」的寫入，避免交叉寫到別的源。
     if (!loadedKeys.has(key) && !loadingKeys.has(key)) return HttpResponse.badRequest()
     settingsWriter?.(key, name, payload.value)
     return HttpResponse.raw(204, "No Content", {})
@@ -917,10 +781,7 @@ let creatingHost: Promise<WebViewController> | null = null
 
 async function ensureHost(): Promise<WebViewController> {
   if (controller) return controller
-  // 宿主頁與 runtime 都住在本機 HttpServer（Scripting Pro）。在 createHost 之前擋，
-  // 才不會被 withHealing 當成「宿主壞掉」重建一輪。
   requirePro("aidoku")
-  // 兩個源同時第一次用到時只建一個頁面。
   if (!creatingHost) creatingHost = createHost().finally(() => {
     creatingHost = null
   })
@@ -937,7 +798,6 @@ async function createHost(): Promise<WebViewController> {
   const target = new WebViewController({ ephemeral: true })
   try {
     await target.addScriptMessageHandler("sourceResult", (payload: any) => {
-      // 背景 job 的剩餘數：沒有 taskId，也不代表任何一次呼叫成功或失敗。
       if (payload?.pending === true) {
         notePendingJobs(String(payload.sourceKey ?? ""), Number(payload.remaining) || 0)
         return true
@@ -950,7 +810,6 @@ async function createHost(): Promise<WebViewController> {
       if (!waiter) return true
       taskWaiters.delete(payload.id)
       if (payload.ok === true) waiter.resolve(payload.value)
-      // 只有那個源的 worker 壞了：剩下的源與頁面都還能用。
       else if (payload.fatal === true) waiter.reject(new SourceWorkerError(String(payload.error ?? "source worker failed")))
       else waiter.reject(new Error(String(payload.error ?? "source error")))
       return true
@@ -966,7 +825,6 @@ async function createHost(): Promise<WebViewController> {
   }
   controller = target
   generation++
-  // 新頁面上一個 worker 都沒有：之前的載入紀錄全部作廢。
   slots.clear()
   loadedKeys.clear()
   loadingKeys.clear()
@@ -980,16 +838,10 @@ async function createHost(): Promise<WebViewController> {
   return controller
 }
 
-/**
- * 畫面外的 WebView 一陣子沒被碰就會被 WebKit 暫停：一次呼叫連發幾十個同步 XHR
- * （例如逐頁抓解密 key）會停在半路，直到下一次 evaluateJavaScript 才醒。
- * 有呼叫在跑時每 500ms 碰一下頁面；所有呼叫共用一個計時器。
- */
 const AWAKE_INTERVAL_MS = 500
 let awakeCount = 0
 let awakeTimer: number | null = null
 
-/** 要在主佇列呼叫（建 timer 的限制同 runTask）。 */
 function keepAwake(): void {
   awakeCount += 1
   if (awakeTimer !== null) return
@@ -1006,28 +858,22 @@ function releaseAwake(): void {
   awakeTimer = null
 }
 
-/** 先把工作丟給頁面（立即返回），結果由 script message handler 推回來。 */
 async function runTask(sourceKey: string, startScript: (id: number) => string, timeoutMs: number, label: string): Promise<any> {
   const id = nextTaskId++
-  // 計時器要在呼叫當下（主佇列）就建好：`ensureHost()` 回來時可能已經不是主佇列，
-  // 那時建 timer 會丟「Timer requires its active script on the main JS execution queue」。
   const result = new Promise<any>((resolve, reject) => {
     taskWaiters.set(id, { resolve, reject })
     try {
       setTimeout(() => {
-        // 一次呼叫拖太久是這個源自己的事（卡住的源不該連累別的源）。
         if (taskWaiters.delete(id)) reject(new SourceWorkerError(`${label} timed out after ${timeoutMs}ms`))
       }, timeoutMs)
       keepAwake()
     } catch {
-      // 連這裡都建不了就沒有逾時。
     }
   })
   result.then(releaseAwake, releaseAwake)
 
   let target: WebViewController
   try {
-    // 頁面與這個源的 worker 都得在：排到這裡時它可能已經被回收或重建掉了。
     target = await ensureHost()
     await acquireSlot(sourceKey)
   } catch (failure) {
@@ -1038,17 +884,12 @@ async function runTask(sourceKey: string, startScript: (id: number) => string, t
   try {
     await withTimeout(Promise.resolve(target.evaluateJavaScript(startScript(id))), START_TIMEOUT_MS, `${label} start`)
   } catch (failure) {
-    // 頁面不見了（或卡住）就不是那個呼叫的問題，而是宿主：丟給上層重建。
     taskWaiters.delete(id)
     throw hostError(failure)
   }
   return await result
 }
 
-/**
- * 這個源要一個 worker：記憶體超過預算先收佔最多而且閒著的，個數滿了再收最久沒用的，
- * 全都忙就等其中一個閒下來。回收會讓那個源下次呼叫時重載（`loadedKeys` 一起清掉）。
- */
 async function acquireSlot(sourceKey: string): Promise<void> {
   for (;;) {
     if (slots.has(sourceKey)) return
@@ -1072,10 +913,6 @@ async function acquireSlot(sourceKey: string): Promise<void> {
   }
 }
 
-/**
- * 要回收誰：手上有呼叫的不算；有背景 job 的排在最後（真的只剩它們才丟）。
- * 純函式，離線驗証驗這支。全部都在忙就回 null。
- */
 export function nextWorkerVictim(candidates: readonly WorkerVictimCandidate[]): string | null {
   let idleKey: string | null = null
   let idleAt = Number.POSITIVE_INFINITY
@@ -1098,10 +935,6 @@ export function nextWorkerVictim(candidates: readonly WorkerVictimCandidate[]): 
   return idleKey ?? holdingKey
 }
 
-/**
- * 記憶體超過預算時要回收誰：閒著的裡佔最多的（有背景 job 的排最後）。沒超過、或全都在忙就回 null。
- * 純函式。
- */
 export function nextBudgetVictim(candidates: readonly WorkerVictimCandidate[], budget: number): string | null {
   const total = candidates.reduce((sum, candidate) => sum + candidate.footprint, 0)
   if (total <= budget) return null
@@ -1126,11 +959,8 @@ export function nextBudgetVictim(candidates: readonly WorkerVictimCandidate[], b
 export interface WorkerVictimCandidate {
   key: string
   lastUsed: number
-  /** 手上有呼叫（執行中＋排隊中）。 */
   busy: number
-  /** dexvm 還沒跑完的背景 job。 */
   pendingJobs: number
-  /** worker 回報的 wasm 記憶體（位元組；沒回報是 0）。 */
   footprint: number
 }
 
@@ -1144,12 +974,10 @@ function victimCandidates(): WorkerVictimCandidate[] {
   }))
 }
 
-/** 最久沒用而且閒著的源（有背景 job 的排最後；全都忙就回 null）。 */
 function pickVictim(): string | null {
   return nextWorkerVictim(victimCandidates())
 }
 
-/** 叫頁面把這個 worker 收掉，並把它的狀態清除。 */
 async function dropWorker(sourceKey: string): Promise<void> {
   const droppedJobs = sourcePendingJobs(sourceKey)
   slots.delete(sourceKey)
@@ -1165,7 +993,6 @@ async function dropWorker(sourceKey: string): Promise<void> {
   }
   if (!controller || !server) return
   try {
-    // 頁面真的沒了也不用管：下一次呼叫會自己重建，到時這份狀態就不算數了。
     const target = controller
     await withTimeout(
       Promise.resolve(target.evaluateJavaScript(`return window.__sourceHost.dropSource(${JSON.stringify(sourceKey)})`)),
@@ -1177,10 +1004,6 @@ async function dropWorker(sourceKey: string): Promise<void> {
   }
 }
 
-/**
- * 丟掉這個源的載入狀態（檔案換掉、設定改掉、移除時叫）：下一次呼叫重載。
- * 只動這個源的紀錄，其他源的 worker 不受影響；worker 本身留著（重載就是重載）。
- */
 export function forgetSource(sourceKey: string): void {
   loadedKeys.delete(sourceKey)
   loadingKeys.delete(sourceKey)
@@ -1190,10 +1013,8 @@ export function forgetSource(sourceKey: string): void {
   scheduleIdle()
 }
 
-/** 真的把這個源的 worker 收掉（自癒用：worker 自己卡住或死了）。 */
 export function dropSource(sourceKey: string): Promise<void> {
   forgetSource(sourceKey)
-  // 不等別的源排空：這個動作只碰自己那一個 worker，而且呼叫端已經把它的隊列放掉了。
   return runPageTask(async () => {
     await dropWorker(sourceKey)
   }, false)
@@ -1202,7 +1023,6 @@ export function dropSource(sourceKey: string): Promise<void> {
 async function load(sourceKey: string, label: string, start: (id: number) => string, prepare: () => void): Promise<any> {
   await ensureHost()
   loadedKeys.delete(sourceKey)
-  // 新實例從空的佇列開始：上一份的背景 job 跟著舊實例一起沒了。
   pendingJobs.delete(sourceKey)
   footprints.delete(sourceKey)
   loadingKeys.add(sourceKey)
@@ -1219,7 +1039,6 @@ async function load(sourceKey: string, label: string, start: (id: number) => str
   }
 }
 
-/** 從 `.aix` 原封不動載入（舊路徑用）。 */
 export async function loadAidokuSource(
   aix: Uint8Array,
   sourceKey: string,
@@ -1236,7 +1055,6 @@ export async function loadAidokuSource(
   )
 }
 
-/** 從解開的檔案載入：manifest 走 `/manifest`、wasm 走 `/wasm`（兩者都帶 sourceKey）。 */
 export async function loadAidokuPackage(pkg: AidokuPackage, sourceKey: string): Promise<any> {
   return await load(
     sourceKey,
@@ -1249,9 +1067,7 @@ export async function loadAidokuPackage(pkg: AidokuPackage, sourceKey: string): 
   )
 }
 
-// ---------------------------------------------------------------- Mihon（dexvm-wasm）
 
-/** worker 回報的載入耗時：分得開「拿 apk」、「實例化 wasm」與「open」。 */
 export interface MihonLoadTimings {
   apk: number
   wasm: number
@@ -1264,17 +1080,12 @@ export interface MihonLoaded {
   timings: MihonLoadTimings
 }
 
-/**
- * 載入一個 Mihon apk：一個 apk 一個 worker，內部的語言子源共用同一個 dexvm handle。
- * 呼叫端要自己在 `runSourceExclusive` 裡叫（與 Aidoku 的載入路徑一樣）。
- */
 export async function loadMihonExtension(
   apk: Uint8Array,
   apkKey: string,
   prefs: Record<string, unknown> = {},
   userAgent: string = mihonUserAgent()
 ): Promise<MihonLoaded> {
-  // 雜湊不符就在開宿主之前失敗，並說清楚是哪一個檔（不要變成頁面上的 404）。
   dexvmAssets()
   return await load(
     apkKey,
@@ -1291,7 +1102,6 @@ export async function loadMihonExtension(
   )
 }
 
-/** 對 Mihon 擴充做一次 op（`handle` 由 worker 自己補上）。 */
 export async function callMihon(
   apkKey: string,
   op: string,
@@ -1309,14 +1119,9 @@ export async function callMihon(
 
 export interface MihonImageRequest {
   sourceId: string
-  /** `pages` 回來的其中一頁（PageRef）。 */
   page: unknown
 }
 
-/**
- * 抓一頁圖：`fetchImage` 在 VM 裡跑（含源的攔截器與解混淆），位元組由 worker 交給 `/result/<token>`，
- * 不經 messageHandlers。呼叫端要自己排進 `runSourceExclusive`，並先確認 worker 載著那個 apk。
- */
 export async function fetchMihonImage(
   apkKey: string,
   request: MihonImageRequest,
@@ -1335,11 +1140,6 @@ export async function fetchMihonImage(
   return await result
 }
 
-/**
- * 測試縫（比照 `detachSourceHostPage`）：worker 自己模擬 trap 與 `eval_js`。
- * 實機上找不到穩定能讓 dexvm panic 的 apk，trap 這條路只能這樣驗。
- * 呼叫端要自己排進 `runSourceExclusive`。
- */
 export async function probeMihonWorker(apkKey: string, probe: Record<string, unknown>): Promise<any> {
   return await runTask(
     apkKey,
@@ -1349,7 +1149,7 @@ export async function probeMihonWorker(apkKey: string, probe: Record<string, unk
   )
 }
 
-/** worker 現在的 `currentSettings`（schema 預設 ＋ 使用者值 ＋ manifest 預設）：只讀。 */export async function sourceSettingsSnapshot(sourceKey: string): Promise<Record<string, unknown>> {
+export async function sourceSettingsSnapshot(sourceKey: string): Promise<Record<string, unknown>> {
   const value = await runTask(
     sourceKey,
     (id) => `return window.__sourceHost.startSettingsSnapshot(${id}, ${JSON.stringify(sourceKey)})`,
@@ -1368,7 +1168,6 @@ export async function initializeAidokuSource(sourceKey: string): Promise<boolean
   )
 }
 
-/** 源設定完成後的通知（`handle_notification`）；源沒匯出就是 no-op。 */
 export async function notifyAidoku(sourceKey: string, notification: string): Promise<void> {
   await runTask(
     sourceKey,
@@ -1383,7 +1182,6 @@ export interface AidokuImageProcessors {
   cover: boolean
 }
 
-/** 源有沒有 `process_page_image`／`process_cover_image`（圖要解密／解拼）：載入後問一次。 */
 export async function hasImageProcessorAidoku(sourceKey: string): Promise<AidokuImageProcessors> {
   const value = await runTask(
     sourceKey,
@@ -1417,7 +1215,6 @@ export async function callAidoku(
   )
 }
 
-/** 建立一個頁面圖工作（`processAidokuPageImage` 與協定層測試共用）。`null` = 沒有輸入位元組（Mihon 的 `fetchImage` 由 VM 自己抓）。 */
 export function createSourcePageJob(bytes: Uint8Array | null): string {
   pageJobTotal += 1
   const token = `${Date.now().toString(36)}-${nextPageJobId++}-${Math.random().toString(36).slice(2, 8)}`
@@ -1431,21 +1228,18 @@ export function createSourcePageJob(bytes: Uint8Array | null): string {
   return token
 }
 
-/** 等工作結果；逾時就 reject 並把工作從表裡拿掉。 */
 export function waitSourcePageJob(token: string, timeoutMs: number = IMAGE_TIMEOUT_MS): Promise<Uint8Array> {
   const job = pageJobs.get(token)
   if (!job) return Promise.reject(new SourceHostError("source page job not found"))
   return new Promise<Uint8Array>((resolve, reject) => {
     job.resolve = resolve
     job.reject = reject
-    // 不在主佇列時建不了 timer：那就沒有自己的逾時，交給呼叫端的 runTask 逾時。
     job.timer = timerAfter(() => {
       discardPageJob(token, new Error(`source processPageImage timed out after ${timeoutMs}ms`))
     }, timeoutMs)
   })
 }
 
-/** 收掉一個工作：reject 等待者並從表裡移除。 */
 function discardPageJob(token: string, error: Error): void {
   const job = pageJobs.get(token)
   if (!job) return
@@ -1462,17 +1256,14 @@ function finishPageJob(token: string, bytes: Uint8Array): void {
   job.resolve(bytes)
 }
 
-/** 主動收掉一個工作（錯誤路徑與協定層測試用）。 */
 export function failSourcePageJob(token: string, reason: string): void {
   discardPageJob(token, new Error(reason))
 }
 
-/** 還沒收尾的工作數。 */
 export function sourcePageJobCount(): number {
   return pageJobs.size
 }
 
-/** 從頭到尾開過幾個頁面圖工作（對照組用它證明「一次都沒有多走」）。 */
 export function sourcePageJobTotal(): number {
   return pageJobTotal
 }
@@ -1480,20 +1271,12 @@ export function sourcePageJobTotal(): number {
 export interface AidokuPageImageRequest {
   url: string
   headers: Record<string, string>
-  /** `getPageList` 給這一頁的 context（例如解密 key）；沒有就是 null。 */
   context?: Record<string, string> | null
-  /** 走 `process_cover_image`（封面／縮圖）而不是頁面處理。 */
   cover?: boolean
   status: number
   responseHeaders: Record<string, string>
 }
 
-/**
- * 把一張頁面圖交給 worker 的 `process_page_image`。位元組走 loopback HTTP：
- * worker `GET /job/<token>` 取原圖，處理完 `POST /result/<token>` 交回。
- *
- * 呼叫端要自己排進 `runSourceExclusive`，並先確認 worker 載著那個源。
- */
 export async function processAidokuPageImage(
   sourceKey: string,
   bytes: Uint8Array,
@@ -1509,20 +1292,14 @@ export async function processAidokuPageImage(
     timeoutMs,
     "source processPageImage"
   )
-  // worker 自己的例外（解析失敗、POST 失敗）也要叫醒等結果的人。
   task.catch(failure => failSourcePageJob(token, failure instanceof Error ? failure.message : String(failure)))
   return await result
 }
 
-/** 丟掉頁面與伺服器（會先等手邊的呼叫做完）。 */
 export function disposeSourceHost(): Promise<void> {
   return runPageTask(async () => teardown())
 }
 
-/**
- * 把目前的頁面換成空白頁：worker 跟著消失，但**不動**「載著哪個源」的狀態。
- * 下一次呼叫必須自己發現頁面沒了、重建後重載（模擬 WebKit 把頁面收掉）。
- */
 export function detachSourceHostPage(): Promise<void> {
   return runPageTask(async () => {
     if (!controller) return
@@ -1543,7 +1320,6 @@ function failPending(message: string): void {
   taskWaiters.clear()
 }
 
-/** 重建／收尾：丟掉所有 worker、頁面與伺服器，下一次呼叫重新開始。 */
 export function resetSourceHost(): Promise<void> {
   return runPageTask(async () => teardown())
 }

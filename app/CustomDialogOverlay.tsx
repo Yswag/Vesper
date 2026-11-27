@@ -24,7 +24,7 @@ export function CustomDialogOverlay() {
 
   return (
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      {/* 遮罩：只有遮罩沒有陰影，卡片靠它跟頁面分開 */}
+      {}
       <VStack
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         background={dialog.scrim}
@@ -35,10 +35,7 @@ export function CustomDialogOverlay() {
   )
 }
 
-/** 卡片本體。匯出只為了藝廊直畫三種卡片（不改對外行為）。 */
 export function DialogCard({ request }: { request: CustomDialogRequest }) {
-  // 修飾符順序不能換：background → clipShape → glassEffect → overlay，
-  // background 才會被裁進圓角、不溢出四個直角。
   return (
     <VStack
       spacing={0}
@@ -55,7 +52,6 @@ export function DialogCard({ request }: { request: CustomDialogRequest }) {
   )
 }
 
-/** 膠囊按鈕：預設（role default）用 tint 實心底；取消與破壞性維持微透底。 */
 function NativeAlertButton({
   title,
   role,
@@ -93,7 +89,6 @@ function NativeAlertButton({
   )
 }
 
-// ── Input Dialog ─────────────────────────────────────────────────────────
 
 function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind: "input" }> }) {
   const [value, setValue] = useState("")
@@ -119,7 +114,7 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
 
   return (
     <VStack spacing={0} frame={{ width: 270 }}>
-      {/* 上方內容 */}
+      {}
       <VStack
         spacing={14}
         padding={{ top: 20, leading: 14, trailing: 14, bottom: 16 }}
@@ -172,7 +167,7 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
           </VStack>
         ) : null}
 
-        {/* 原生風格輸入框 */}
+        {}
         <HStack
           alignment="center"
           padding={{ horizontal: 10, vertical: 7 }}
@@ -202,7 +197,7 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
         ) : null}
       </VStack>
 
-      {/* 底部按鈕列：寬度 242，左右雙按鈕各 116，間距 10，完全撐滿底線 */}
+      {}
       <HStack
         spacing={10}
         padding={{ leading: 14, trailing: 14, bottom: 14 }}
@@ -225,7 +220,6 @@ function InputDialog({ request }: { request: Extract<CustomDialogRequest, { kind
   )
 }
 
-// ── Message Dialog ───────────────────────────────────────────────────────
 
 function MessageDialog({ request }: { request: Extract<CustomDialogRequest, { kind: "message" }> }) {
   async function choose(action: (typeof request.actions)[number]) {
@@ -234,7 +228,6 @@ function MessageDialog({ request }: { request: Extract<CustomDialogRequest, { ki
   }
 
   const isTwoButtons = request.actions.length === 2
-  // 多行內容（清單、逐筆結果）置中會參差不齊，靠左才對得齊；單句維持置中。
   const contentAlignment: "leading" | "center" = request.content?.includes("\n") ? "leading" : "center"
 
   return (
@@ -305,7 +298,6 @@ function MessageDialog({ request }: { request: Extract<CustomDialogRequest, { ki
   )
 }
 
-// ── Select Dialog ────────────────────────────────────────────────────────
 
 function SelectDialog({ request }: { request: Extract<CustomDialogRequest, { kind: "select" }> }) {
   return (

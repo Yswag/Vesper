@@ -11,7 +11,6 @@ export interface GlassSurfaceProps {
   interactive?: boolean
 }
 
-/** 玻璃面。不加陰影：系統材質自帶邊緣與深度。 */
 export function GlassSurface({
   children,
   variant = "regular",

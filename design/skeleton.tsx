@@ -1,7 +1,3 @@
-// 載入中的骨架：尺寸跟載入後的版面一樣，資料來了畫面不會跳。
-// 塊＝`fill.surface` 底；字＝一行看不見的字撐住行高，上面疊一條實心灰條。
-// 每塊自帶掃光：同時掛上、同一節奏，看起來是整片一起掃。
-
 import {
   Divider,
   GeometryReader,
@@ -28,22 +24,16 @@ import { badgeSize, capsule, cardGap, fill, pageInsets, pageSpacing, radius, rec
 
 const SKELETON_TEXT = "XXXX"
 
-/**
- * 掃光：整個螢幕只有一道斜光，從左上掃到右下；每塊只畫它經過自己的那段。
- * 亮帶寬（pt）、傾斜角、速度（pt/秒）、掃完後在畫面外多走的距離（＝停頓）、掛上後多久開始動。
- */
 const SHIMMER_BAND = 140
 const SHIMMER_ANGLE = 20
 const SHIMMER_SPEED = 420
 const SHIMMER_REST = 320
 const SHIMMER_DELAY_MS = 100
-/** 五個色標：中間最亮、兩側慢慢淡出，邊緣才不硬。深色用白光、淺色用灰光（白光在淺灰底上看不到）。 */
 const SHIMMER_GLOW: Record<"light" | "dark", { peak: Color; soft: Color; clear: Color }> = {
   light: { peak: "rgba(150,158,168,0.16)", soft: "rgba(150,158,168,0.06)", clear: "rgba(150,158,168,0)" },
   dark: { peak: "rgba(255,255,255,0.14)", soft: "rgba(255,255,255,0.05)", clear: "rgba(255,255,255,0)" },
 }
 
-/** 這塊的螢幕中心點（每次量到就用新的）。 */
 interface Anchor {
   x: number
   y: number
@@ -56,8 +46,6 @@ function ShimmerLight({ width, height, anchor }: { width: number; height: number
     const timer = setTimeout(() => setMoving(true), SHIMMER_DELAY_MS)
     return () => clearTimeout(timer)
   }, [])
-  // 光的中心線在螢幕上是 x = X − y·tanθ，X 從「整條光都在左邊外」走到「整條光都在右邊外」再多走一段停頓。
-  // 每塊都用同一個 X 換算成自己的位移，所以看起來是同一道光。
   const radians = (SHIMMER_ANGLE * Math.PI) / 180
   const tan = Math.tan(radians)
   const halfBand = SHIMMER_BAND / 2 / Math.cos(radians)
@@ -79,7 +67,6 @@ function ShimmerLight({ width, height, anchor }: { width: number; height: number
           startPoint: "leading",
           endPoint: "trailing",
         }}
-        // 斜著的亮帶要長到上下緣都碰不到它的端點。
         frame={{ width: SHIMMER_BAND, height: (height + SHIMMER_BAND) / Math.cos(radians) }}
         rotationEffect={SHIMMER_ANGLE}
         offset={{ x: (moving ? end : start) - shift, y: 0 }}
@@ -92,13 +79,6 @@ function ShimmerLight({ width, height, anchor }: { width: number; height: number
   )
 }
 
-/**
- * 疊在骨架上的掃光，用骨架同一個形狀裁切。
- *
- * 不要在尺寸或位置變了就重建（不要下 `key`）：重建等於讓這塊從自己那一刻重新起跑，
- * 而灰塊是分幾幀才量到尺寸的，各自起跑就會變成「每塊速度不一樣」。位置每次重新算就好，
- * 光帯在初始那一幀還在畫面外，換算値只會影響它接下來掃過哪。
- */
 function ShimmerOverlay({ shape }: { shape: Shape }) {
   return (
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} clipShape={shape} clipped={true}>
@@ -118,11 +98,6 @@ function ShimmerOverlay({ shape }: { shape: Shape }) {
   )
 }
 
-/**
- * 一塊灰底。`shape` 預設跟封面同一級圓角；`bar` 是字條（小圓角、比封面亮一階）。
- * 畫在 `Rectangle` 上：容器（VStack）在 HStack 裡的 `maxWidth: "infinity"` 會塌成 0 寬，
- * Rectangle 才會真的分到剩下的寬。
- */
 export function SkeletonBlock({
   width,
   height,
@@ -143,14 +118,9 @@ export function SkeletonBlock({
   )
 }
 
-/** 灰條占行高的比例；多行時最後一條的長度（像真的段落收尾）。 */
 const BAR_HEIGHT_RATIO = 0.6
 const LAST_LINE_RATIO = 0.6
 
-/**
- * 一行灰條字：字級與真的那行一樣，高度就一樣。`length` 是字數的倍數（越長灰條越寬，受外框限制）。
- * `lineLimit` > 1 時拆成幾條單行、撑滿寬，最後一條較短。
- */
 export function SkeletonText({
   font,
   fontWeight,
@@ -163,7 +133,6 @@ export function SkeletonText({
   length?: number
 }) {
   const multiline = lineLimit > 1
-  // 不用 redacted 的灰條：它是半透明的，掃光只能靠遮罩，光會被壓到幾乎看不到。
   return (
     <VStack alignment="leading" spacing={0} frame={multiline ? { maxWidth: "infinity", alignment: "leading" } : undefined}>
       {Array.from({ length: lineLimit }, (_, index) => {
@@ -201,7 +170,6 @@ export function SkeletonText({
   )
 }
 
-/** 橫向卡片排：封面塊＋封面下的幾行字，跟真的卡片同尺寸。 */
 export function SkeletonCardRow({
   size,
   lines = ["caption"],
@@ -209,7 +177,6 @@ export function SkeletonCardRow({
   accessibilityLabel = t("common.loading"),
 }: {
   size: { width: number; height: number }
-  /** 封面下幾行字、各自的字級；行數要跟真的卡片一樣，資料來了才不會跳。 */
   lines?: Font[]
   count?: number
   accessibilityLabel?: string
@@ -237,7 +204,6 @@ export function SkeletonCardRow({
   )
 }
 
-/** 設定類頁面：幾組「小標題＋卡片」，每列跟 `IconRow` 同尺寸。`groups` 是每組的列數。 */
 export function SkeletonCardGroups({ groups = [2, 3] }: { groups?: number[] }) {
   return (
     <VStack spacing={pageSpacing} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("common.loading")}>
@@ -264,7 +230,6 @@ export function SkeletonCardGroups({ groups = [2, 3] }: { groups?: number[] }) {
   )
 }
 
-/** 封面在左、文字在右的一列。`lines` 是右側每行的字級。 */
 export function SkeletonListRow({
   cover,
   lines,

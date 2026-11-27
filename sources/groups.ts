@@ -1,7 +1,3 @@
-// 已安裝清單的分組單位：Mihon 一個 apk 一組，Aidoku／Venera 一個源一組。
-// 排序以組為單位持久化在 `sources/order.json`；舊的逐源排序（index.json 的陣列順序）在第一次
-// 讀不到這個檔時自然成為初始順序，逐源 key 也會收斂成所屬的組。
-
 import { appDataRoot, ensureDir, hasFileAccess, join, readText, writeText } from "../engine/fs"
 import { kv } from "../engine/storage"
 

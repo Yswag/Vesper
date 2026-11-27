@@ -1,6 +1,3 @@
-// 閱讀器的 HUD：底部控制列（頁碼／滑桿／目錄／設定）與自己的收放動畫。
-// 顯示狀態由 `ReaderScreen` 給；頁碼訂閱 `pageSignal`，HUD 重繪不會拖整頁。
-
 import {
   Button,
   HStack,
@@ -25,16 +22,10 @@ import { ReaderSettingsSheet } from "./ReaderSettingsSheet"
 import { capsule, fill, radius, rect, toneText } from "../design/tokens"
 import type { ReaderSettings } from "../library/readerSettings"
 
-/** 控制列滑入／滑出的彈性動畫 */
 export const HUD_ANIM = Animation.spring({ duration: 0.32, bounce: 0 })
-/**
- * HUD 面板收回時的位移量。
- * 只取「略大於面板高度」——取太大會讓動畫前段耗在螢幕外，看起來就會變成「先沒動、再衝進來」。
- */
 export const HUD_SLIDE_TOP = 130
 export const HUD_SLIDE_BOTTOM = 145
 
-/** 角落資訊的字：同一行要用同一組字型屬性，才不會各自飄。 */
 function CornerText({ children }: { children: string }) {
   return (
     <Text font="caption2" fontWeight="medium" monospacedDigit={true} foregroundStyle="label">
@@ -43,15 +34,10 @@ function CornerText({ children }: { children: string }) {
   )
 }
 
-/** 電量讀不到時是負數（模擬器、或系統沒開監控）。 */
 function batteryPercent(level: number): string | null {
   return level < 0 ? null : `${Math.round(level * 100)}%`
 }
 
-/**
- * HUD 收起時右下角的頁碼、時間與電量，兩個開關各自決定要不要出現。
- * 時鐘自己走、電量跟系統通知走，不讓閱讀頁為此重繪。
- */
 export function ReaderCornerInfo({
   visible,
   showPage,
@@ -73,7 +59,6 @@ export function ReaderCornerInfo({
     state: Device.batteryState,
   }))
 
-  // 對齊整分跳一次；剛打開（或被收起很久才顯示）時先補到現在。
   useEffect(() => {
     if (!showTime) return
     if (Date.now() - now.getTime() > 1000) {
@@ -87,7 +72,6 @@ export function ReaderCornerInfo({
     }
   }, [now, showTime])
 
-  // 電量：只訂閱變化，不輪詢；每次重新顯示也重讀一次（監聽不一定每格都來）。
   useEffect(() => {
     if (!showTime) return
     const sync = () => setBattery({ level: Device.batteryLevel, state: Device.batteryState })
@@ -155,33 +139,24 @@ export interface ReaderHUDProps {
   chapterTitle: string
   settings: ReaderSettings
   onUpdateSettings: (patch: Partial<ReaderSettings>) => void
-  /** 有沒有 Scripting Pro 的超分能力：沒有時開關看得見但按不下去。 */
   canUpscale: boolean
-  /** 這本有沒有自己的閱讀設定（開關狀態）。 */
   perComic: boolean
   onTogglePerComic: (on: boolean) => void
   onDismiss: () => void
   onOpenChapterSheet: () => void
   onToggleHUD: () => void
-  // 收藏（與詳情頁同一顆：寫的是本地書架）
   favorite: boolean
   onToggleFavorite: () => void
-  // 底部進度與換話
   previousChapter?: ChapterSummary
   nextChapter?: ChapterSummary
   chapterIndex: number
   totalChapters: number
   onSelectChapter: (id: string) => void
-  // 頁碼滑桿：只有 ReaderScrubber 訂閱頁碼，HUD 與閱讀器不因翻頁重繪
   pageCount: number
   leadingPage: PageSignal
-  /** 放開拖曳列：目標頁（0 起算）。 */
   onScrubCommit: (page: number) => void
 }
 
-/**
- * 閱讀器 HUD 覆蓋層：包含全螢幕點擊遮罩、頂部工具列（返回、標題、目錄按鈕、閱讀設定面板）與底部工具列（前後話切換、頁碼拖曳 Slider、收藏）。
- */
 export function ReaderHUD({
   hudVisible,
   safeAreaInsets,
@@ -219,7 +194,7 @@ export function ReaderHUD({
       allowsHitTesting={hudVisible.value}
       zIndex={100}
     >
-      {/* 1. 最底層：全螢幕半透明遮罩（點擊收起 HUD） */}
+      {}
       <VStack
         spacing={0}
         frame={{
@@ -234,7 +209,7 @@ export function ReaderHUD({
         zIndex={0}
       />
 
-      {/* 2. Top HUD 定位層 */}
+      {}
       <VStack
         spacing={0}
         frame={{
@@ -255,7 +230,7 @@ export function ReaderHUD({
           opacity={hudVisible.value ? 1 : 0}
           animation={{ animation: HUD_ANIM, value: hudVisible.value }}
         >
-          {/* 頂部內容區塊 */}
+          {}
           <VStack
             spacing={0}
             padding={{
@@ -267,7 +242,7 @@ export function ReaderHUD({
             frame={{ maxWidth: "infinity" }}
           >
             <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
-              {/* 標題居中層：以螢幕物理中心為準嚴格置中，兩側夾 padding 避開按鈕 */}
+              {}
               <VStack alignment="center" spacing={2} padding={{ horizontal: 96 }}>
                 <Text font="headline" fontWeight="bold" foregroundStyle="label" lineLimit={1}>
                   {comicTitle}
@@ -277,7 +252,7 @@ export function ReaderHUD({
                 </Text>
               </VStack>
 
-              {/* 兩側按鈕層：左返回、右選單 */}
+              {}
               <HStack alignment="center" frame={{ maxWidth: "infinity" }}>
                 <Button action={onDismiss} buttonStyle="plain" accessibilityLabel={t("reader.backToDetails")}>
                   <Image systemName="chevron.left" font="body" frame={{ width: 44, height: 44 }} foregroundStyle="label" />
@@ -333,7 +308,7 @@ export function ReaderHUD({
         </VStack>
       </VStack>
 
-      {/* 3. 底部 HUD 定位層 */}
+      {}
       <VStack
         spacing={0}
         frame={{
@@ -354,7 +329,7 @@ export function ReaderHUD({
           opacity={hudVisible.value ? 1 : 0}
           animation={{ animation: HUD_ANIM, value: hudVisible.value }}
         >
-          {/* 主控制區塊（整合頁碼、Slider 與換話列） */}
+          {}
           <VStack
             spacing={12}
             padding={{
@@ -365,7 +340,7 @@ export function ReaderHUD({
             }}
             frame={{ maxWidth: "infinity" }}
           >
-            {/* 換話快捷控制欄 */}
+            {}
             <HStack spacing={8} alignment="center" frame={{ maxWidth: "infinity" }}>
               <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
                 {previousChapter ? (
@@ -405,7 +380,7 @@ export function ReaderHUD({
               </HStack>
             </HStack>
 
-            {/* 拖曳翻頁 Slider（含實時頁碼反饋） */}
+            {}
             <ReaderScrubber
               pageCount={pageCount}
               leadingPage={leadingPage}
@@ -415,7 +390,7 @@ export function ReaderHUD({
             />
           </VStack>
 
-          {/* HUD 底部留白：面板踩在 Home Indicator 上 */}
+          {}
           <VStack frame={{ height: 14, maxWidth: "infinity" }} />
         </VStack>
       </VStack>
@@ -423,9 +398,6 @@ export function ReaderHUD({
   )
 }
 
-/**
- * 拖曳列＋頁碼＋收藏：頁碼與拖曳值都由這一塊自己持有，翻頁時只有它重繪。
- */
 function ReaderScrubber({
   pageCount,
   leadingPage,
@@ -447,12 +419,10 @@ function ReaderScrubber({
   const currentPage = lead !== null ? Math.min(Math.max(lead + 1, 1), Math.max(pageCount, 1)) : 1
   const scrubPage = clampPage(scrubValue.value)
 
-  // 沒在拖的時候滑桿跟著實際位置走。
   useEffect(() => {
     if (!scrubbing) scrubValue.setValue(clampPage(lead ?? 0))
   }, [lead, scrubbing, pageCount])
 
-  // 拖動時每換一頁輕震一下；按下的第一個值只當起點。
   const lastScrubPageRef = useRef<number | null>(null)
   useEffect(() => {
     if (!scrubbing) {
@@ -485,7 +455,7 @@ function ReaderScrubber({
         />
       ) : null}
 
-      {/* 頁碼維持置中（以面板中心為準，跟頂部 HUD 的標題同一個套路），收藏貼齊右緣。 */}
+      {}
       <ZStack alignment="center" frame={{ maxWidth: "infinity" }}>
         {pageCount > 1 ? (
           <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
@@ -506,7 +476,6 @@ function ReaderScrubber({
               systemName={favorite ? "heart.fill" : "heart"}
               font="subheadline"
               fontWeight="medium"
-              // 高度取 32 配合緊湊進度膠囊面板高度
               frame={{ width: 44, height: 32 }}
               foregroundStyle={favorite ? toneText.love : "label"}
             />

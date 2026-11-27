@@ -1,13 +1,3 @@
-// 源搜尋篩選的 UI：上緣那排膠囊與完整的 sheet。Aidoku 與 Mihon 共用（資料在 `app/searchFilters.ts`）。
-//
-// 膠囊照 Aidoku 的 `FilterHeaderView`：最前面 `[☰ 數量]` 開 sheet，其餘每個「可以直接操作」的篩選一顆。
-// 位置**不隨選取改變**（Menu 一換位置就會被收掉，多選就沒辦法連點），改過的用選取色標示。
-// text、header、separator 與單獨的 tristate 只進 sheet。
-//
-// sheet 照 Mihon `SourceFilterDialog` 的結構：header＝分組標題、separator＝分隔線、group＝可展開的
-// 區塊。勾選、三態、下拉是一列一項，相鄰的併進同一張卡；文字、排序、標籤各自一張帶標題的卡。
-// 底部「重設」回到源給的預設。
-
 import {
   Button,
   Divider,
@@ -38,7 +28,6 @@ import { capsule, fill, filterTone, pageInsets, pageSpacing, rowPadding } from "
 import { changedCount, draftOf, isChanged, resetDraft, type FilterControl, type FilterDraft, type FilterEntry, type FilterField, type FilterToken, type Tristate } from "../design/filterEntries"
 import { subscribe as subscribeLocale, t } from "../i18n"
 
-/** 選取狀態的三種顏色：忽略不出現、包含是勾、排除是叉（跟 Aidoku 的 multi 一樣的語彙）。 */
 function StateChip({ label, state, onTap }: { label: string; state: Tristate; onTap?: () => void }) {
   const tone = state === 1 ? filterTone.included : state === 2 ? filterTone.excluded : null
   const background: Color | DynamicShapeStyle = tone ? tone.background : fill.tag
@@ -69,7 +58,6 @@ function StateChip({ label, state, onTap }: { label: string; state: Tristate; on
   )
 }
 
-/** 排序方向的切換鈕（卡片標題右側，無彩色）。 */
 function SortDirectionButton({ ascending, canAscend, onToggle }: { ascending: boolean; canAscend: boolean; onToggle: () => void }): VirtualNode | null {
   if (!canAscend) return null
   return (
@@ -99,7 +87,6 @@ function SortDirectionButton({ ascending, canAscend, onToggle }: { ascending: bo
   )
 }
 
-/** 勾選／三態的一列：名稱在左、狀態在右，點整列切換（三態循環忽略→包含→排除）。 */
 function StateRow({ label, state, onTap }: { label: string; state: Tristate; onTap: () => void }) {
   const tint = useTint()
   const mark =
@@ -129,12 +116,10 @@ function StateRow({ label, state, onTap }: { label: string; state: Tristate; onT
   )
 }
 
-/** 可以當一列放進共用卡片的篩選。 */
 function isInline(control: FilterControl): boolean {
   return control.kind === "check" || control.kind === "tristate" || control.kind === "select"
 }
 
-/** 共用卡片裡的一列。 */
 function InlineRow({ field, control, onChange }: { field: FilterField; control: FilterControl; onChange: (next: FilterControl) => void }) {
   switch (control.kind) {
     case "check":
@@ -161,7 +146,6 @@ function InlineRow({ field, control, onChange }: { field: FilterField; control: 
   }
 }
 
-/** 自己一張卡的篩選（文字、排序、標籤）的內容。 */
 function ControlBody({ control, onChange }: { control: FilterControl; onChange: (next: FilterControl) => void }) {
   switch (control.kind) {
     case "check":
@@ -217,14 +201,11 @@ export function SourceFilterSheet({
   onApply,
 }: {
   entries: FilterEntry[]
-  /** 按「套用」交出草稿（重設也是給一份等於預設的草稿）。 */
   onApply: (draft: FilterDraft) => void
 }) {
   const dismiss = Navigation.useDismiss()
   const [draft, setDraft] = useState<FilterDraft>(() => draftOf(entries))
-  /** 收起來的群組（預設展開，跟 Mihon 的 `FilterGroup` 一樣）。 */
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  // sheet 是獨立的 render 根：語言一換就重繪。
   useSubscription(subscribeLocale)
 
   function update(id: string, control: FilterControl) {
@@ -248,7 +229,6 @@ export function SourceFilterSheet({
     )
   }
 
-  /** 相鄰的勾選／三態／下拉併成一張卡，一列一項。 */
   function inlineCard(fields: FilterField[]): VirtualNode {
     return (
       <CardGroup key={`rows:${fields[0].id}`}>
@@ -351,7 +331,7 @@ export function SourceFilterSheet({
         </Toolbar>
       }
     >
-      {/* sheet 本身是白底：不鋪頁面底色的話，淺色下半透明白卡片看不到邊。 */}
+      {}
       <ScrollView scrollContentBackground="hidden" background={<PageBackground />}>
         <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
           {entriesView(entries)}
@@ -368,9 +348,7 @@ export function SourceFilterSheet({
   )
 }
 
-// ---------------------------------------------------------------- 膠囊列
 
-/** 每顆膠囊的狀態色：跟預設不同就亮起來。 */
 function chipTone(control: FilterControl, initial: FilterControl): boolean {
   return control.kind === initial.kind && JSON.stringify(control) !== JSON.stringify(initial)
 }
@@ -384,10 +362,6 @@ function tokenCycle(control: FilterControl, token: FilterToken): FilterControl {
   }
 }
 
-/**
- * 上緣那一排：`[☰ 數量]` 開 sheet，後面每個可以直接操作的篩選一顆膠囊。
- * `entries` 是整棵樹，群組自己一顆（子項在 Menu 裡連點）。
- */
 export function SourceFilterBar({
   entries,
   onOpenAll,
@@ -429,7 +403,6 @@ export function SourceFilterBar({
           </Menu>
         )
       case "sort": {
-        // 點同一項＝切換升降冪：所以每一項都不關 Menu，方向用箭頭畫在目前那一列。
         const label = control.options[control.index] ?? ""
         return (
           <Menu label={<Chip text={`${field.label}: ${label}`} selected={selected} chevron />}>
@@ -492,7 +465,6 @@ export function SourceFilterBar({
     }
   }
 
-  /** 群組：一顆 Menu，子項 tristate 循環、checkbox 直接切，都不關 Menu。 */
   function groupChip(label: string, children: FilterEntry[]): VirtualNode | null {
     const fields = children.filter((entry): entry is { kind: "field"; field: FilterField } => entry.kind === "field")
     const changed = fields.filter(entry => isChanged(entry.field)).length
@@ -544,7 +516,6 @@ export function SourceFilterBar({
   )
 }
 
-/** 子項的下一個狀態：tristate 循環（忽略→包含→排除），checkbox 直接切。 */
 function nextChildValue(field: FilterField): FilterControl {
   const control = field.control
   switch (control.kind) {

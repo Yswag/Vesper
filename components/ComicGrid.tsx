@@ -1,5 +1,3 @@
-// 三欄海報網格。寬度依實際父容器量測，讓窄版搜尋欄也能自動換欄。
-
 import {
   GeometryReader,
   HStack,
@@ -29,45 +27,28 @@ import { comicGridMetrics, H_PADDING, H_SPACING, V_SPACING } from "./comicGridMe
 import { GRID_EXIT_ANIM, GRID_REGRID_ANIM } from "./gridRemoval"
 
 export interface ComicGridEntry {
-  /** 這張屬於哪個源（導到詳情頁與封面解析都用它）。 */
   sourceKey: string
-  /** 跨源顯示時的來源名稱（`showSource` 才用）。 */
   sourceName?: string
-  /** 來源已被移除：封面下緣掛 danger 角標，下面那行來源名就不再重複。 */
   removed?: boolean
-  /** 封面左下的來源角標（書架同名的收藏才給）；掛在封面上，格子高度不變。 */
   coverSource?: string
-  /** 0–1，這一話讀到哪：封面下方一條進度（跟首頁「繼續閱讀」同一種）。 */
   readFraction?: number
-  /** 未讀章節數：> 0 時封面右上角掛數字膠囊。 */
   unreadCount?: number
-  /** 正在被移出（由 `useGridRemoval` 標記）：原地縮小、往上淡出。 */
   removing?: boolean
   comic: ComicListItem
 }
 
 export interface ComicGridProps {
   entries: ComicGridEntry[]
-  /** 跨源搜尋時顯示來源名稱，單源探索不必。 */
   showSource?: boolean
-  /** 接在網格後面的內容（例如「載入更多」），會一起捲動。 */
   footer?: VirtualNode
-  /** 最後一格出現在畫面上時呼叫（用在「捲到底自動載入下一頁」）。 */
   onLastAppear?: () => void
-  /** 長按一格跳出的選單項目（不給就沒有長按選單）。 */
   menuItems?: (entry: ComicGridEntry) => VirtualNode
 }
 
-/** 一格的身分；跟 `useGridRemoval` 的 key 同一套。 */
 function entryKey(entry: ComicGridEntry): string {
   return `${entry.sourceKey}:${entry.comic.id}`
 }
 
-/**
- * 每格的鍵與「有沒有進度」一次掃完：鍵本來每一格都要用來畫、到處查表，
- * 「有沒有進度」又只是同一次迴圈裡的一個旗標，分兩趟只是白掃一次陣列。
- * 純計算（可直接 import 來量）。
- */
 export function gridSurfaces(entries: readonly ComicGridEntry[]): { keys: string[]; hasProgress: boolean } {
   const keys = new Array<string>(entries.length)
   let hasProgress = false
@@ -79,7 +60,6 @@ export function gridSurfaces(entries: readonly ComicGridEntry[]): { keys: string
   return { keys, hasProgress }
 }
 
-/** 這一輪是不是只少了一格：換篩選、整批換掉都不算，不然會亂飛。 */
 function isSingleRemoval(previous: readonly string[], next: readonly string[]): boolean {
   if (previous.length !== next.length + 1) return false
   const current = new Set(next)
@@ -87,15 +67,6 @@ function isSingleRemoval(previous: readonly string[], next: readonly string[]): 
   return kept.length === next.length && kept.every((key, index) => key === next[index])
 }
 
-/**
- * 每一格「舊位置 − 新位置」的像素位移（沒動的不列）。
- * 格子位置是格子自己算的：第 i 格在 (i % columns, ⌊i / columns⌋) 個欄距／列距上，
- * 少一格之後後面每一格正好遞補前一格的位置。
- *
- * 舊位置一次建表：逐格 `previous.indexOf` 最壞是 O(n²)（位移一大就一路往後找），
- * 換成建表就是固定兩趟。重複的鍵取第一次出現的位置，跟 `indexOf` 的語意一致。
- * 純計算（可逐格比對新舊）。
- */
 export function collapseShift(
   previous: readonly string[],
   next: readonly string[],
@@ -121,7 +92,6 @@ export function collapseShift(
   return shift
 }
 
-/** 網格載入中的骨架：同一套量寬與欄數，資料來了版面不跳。 */
 export function ComicGridSkeleton({ rows = 3 }: { rows?: number }) {
   const [containerWidth, setContainerWidth] = useState(0)
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
@@ -154,24 +124,14 @@ export function ComicGridSkeleton({ rows = 3 }: { rows?: number }) {
   )
 }
 
-/** 只有格子，不含 ScrollView。 */
 export function ComicGridLayout({ entries, showSource = false, onLastAppear, menuItems }: ComicGridProps) {
   const [containerWidth, setContainerWidth] = useState(0)
-  /** 列高（＝一格撐滿的高度）；補位時換列的格子靠它算飛多遠。 */
   const [rowHeight, setRowHeight] = useState(0)
   const { columns, cellWidth, cellHeight } = comicGridMetrics(containerWidth)
   const measured = containerWidth > 0
   const lastIndex = entries.length - 1
-  // 衍生值：欄數／格寬是 O(1) 算術，鍵是一次 O(n)（鍵本來每一格畫的時候就要用）。
-  // 真正貴的只有補位位移表，而它只在「少了一格」時才算：項目沒變時 `isSingleRemoval`
-  // 比個長度就回頭，什麼都不重算。
-  // 不另外做「內容簽名 memo」：`entries` 每次重繪都是新造的陣列（各畫面的事），
-  // 簽名本身就得把整份鍵串起來，成本跟直接算一樣（實測過）。
   const { keys, hasProgress } = gridSurfaces(entries)
 
-  // LazyVGrid 自己不會演「少一格」的補位（版面變化不吃 `withAnimation`，實機是直接跳位）。
-  // 所以位置自己補：先讓還留著的格子畫在舊位置，下一輪再將 offset 收成 0，
-  // 靠 `animation(value:)` 演靠攏——這條路徑跟退場一樣只靠修飾子，不靠交易。
   const previousKeys = useRef<string[]>([])
   const pendingShift = useRef<Record<string, { x: number; y: number }>>({})
   const [settleToken, setSettleToken] = useState(0)
@@ -188,8 +148,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   previousKeys.current = keys
   const shift = pendingShift.current
 
-  // 先讓上面那一輪畫在舊位置，下一輪才收線並出手。
-  // 用 macrotask（16ms 約一個影格）而不是直接設 state：確保「畫在舊位置」這幀真的出現過。
   useEffect(() => {
     if (Object.keys(pendingShift.current).length === 0) return
     const timer = setTimeout(() => {
@@ -233,20 +191,12 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                 <VStack
                   alignment="leading"
                   spacing={6}
-                  // 量第一格的高（每一格都撐滿列高）：補位時換列的格子才算得準。
                   background={index === 0 ? (
                     <GeometryReader>
                       {geometry => <WidthReporter width={geometry.size.height} onWidth={setRowHeight} />}
                     </GeometryReader>
                   ) : undefined}
-                  // 每列的內容高度不一樣（有的源有副標、有的沒有）——LazyVGrid 會把矮的置中，
-                  // 封面就會参差不齊。填滿列高 + 靠上對齊，封面才會排成一直線。
-                  // 寬度要用**已知的 cellWidth 釘死**，不要用 `maxWidth: "infinity"`：
-                  // 那個在本引擎是「抱內容的天然寬」，一格就可能比欄寬還寬，
-                  // 內容比螢幕寬時引擎的命中表會跟畫面錯開（點一格卻開別格）。
-                  // 實測：一排 6 張 765pt 會壞、3 張 378pt 正常。
                   frame={{ width: cellWidth, maxHeight: "infinity", alignment: "top" }}
-                  // 退場的三件套一起換，動畫短到看不出是三個獨立屬性。
                   opacity={entry.removing ? 0 : 1}
                   scaleEffect={entry.removing ? 0.84 : 1}
                   offset={{ x: 0, y: entry.removing ? -10 : 0 }}
@@ -266,14 +216,9 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       height={cellHeight}
                       title={entry.comic.title}
                       lifted
-                      // 預設的 fill 會由 CoverImage 先把圖中心裁成格子比例（裁完再 fit）。
-                      // 不能用 aspectRatio(fill)：橫式封面會被畫成比格子寬很多（1000×395 → 440pt），
-                      // 外溢的區塊會蓋到鄰格、把第一格的點擊搶走（點第一本會開第二本）。
-                      // 實測：aspectRatio fill 壞、fit 正常、先裁好再 fill 正常。
                       cornerRadius={radius.md}
                     />
                     {entry.comic.pageCount ? (
-                      // 頁數放左上：跟右下角的更新時間同排會互相擠，兩邊都只剩「3…」。
                       <HStack
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}
                         offset={{ x: 6, y: 6 }}
@@ -282,7 +227,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       </HStack>
                     ) : null}
                     {entry.removed ? (
-                      // 擺下緣左邊：右下角已經給更新時間，左上角留給頁數。
                       <HStack
                         offset={{ x: 6, y: -6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomLeading" }}
@@ -298,8 +242,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       </HStack>
                     ) : null}
                     {entry.comic.updateTime ? (
-                      // 跟探索頁同一個修法：外層撑滿、內層夾在 `cellWidth - 12` 內。
-                      // `updateTime` 是源的原始字串，不夾的話膠囊會比格子寬（超出封面）。
                       <HStack
                         offset={{ x: -6, y: -6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
@@ -308,7 +250,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                       </HStack>
                     ) : null}
                     {(entry.unreadCount ?? 0) > 0 ? (
-                      // 右上角是唯一空著的角：頁數在左上，來源狀態與更新時間在下緣。
                       <HStack
                         offset={{ x: -6, y: 6 }}
                         frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topTrailing" }}
@@ -321,7 +262,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
                     ) : null}
                   </ZStack>
                   {hasProgress ? (
-                    // 沒進度的格子也佔位（透明），同一排的書名才對得齊。
                     <ProgressView
                       value={entry.readFraction ?? 0}
                       progressViewStyle="linear"
@@ -359,7 +299,6 @@ export function ComicGridLayout({ entries, showSource = false, onLastAppear, men
   )
 }
 
-/** 自帶 ScrollView 的版本（單一列表用，例如搜尋結果）。 */
 export function ComicGrid({ entries, showSource = false, footer, onLastAppear }: ComicGridProps) {
   return (
     <ScrollView scrollDismissesKeyboard="interactively">

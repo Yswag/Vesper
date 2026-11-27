@@ -1,8 +1,3 @@
-// 源的載入指示的浮動視圖（見 app/loadingState.ts）。
-//
-// 一張小卡片，浮在 App 內容上方（掛在 App 的 TabView overlay），不是 modal——
-// 所以不會遮住整個畫面，也不需要處理「present 還沒完成就被取消」那類競態。
-
 import { Button, HStack, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 
 import { GlassSurface } from "../design/GlassSurface"

@@ -1,34 +1,25 @@
-// 瀏覽器登入流程：透過 WebViewController 供使用者互動登入。
-// 支援 cookie 雙向同步、localStorage 憑證儲存與 onLoginSuccess 回調執行。
-
 import type { Cookie } from "../engine/convert-types"
 import { domainMatchesHost, getCookies, hostOf, setCookies } from "../engine/cookies"
 import { writeSourceData } from "../engine/host"
 import { log } from "../engine/log"
 import { t } from "../i18n"
 
-/** 源宣告的 `account.loginWithWebview`。 */
 export interface WebLoginSpec {
   url: string
-  /** 同步判斷「這一頁算不算登入成功」。 */
   checkStatus?: (url: string, title: string) => unknown
   onLoginSuccess?: () => unknown
 }
 
 export interface WebLoginResult {
-  /** success = 源的 checkStatus 成立；manual = 使用者自己關掉後確認要存；cancelled = 什麼都沒寫。 */
   outcome: "success" | "manual" | "cancelled"
   cookies: number
-  /** checkStatus 被問了幾次（診斷用：輪詢有沒有活著）。 */
   checkCalls: number
 }
 
-/** 輪詢間隔。WebViewController 沒有導航事件，只能自己讀。 */
 const POLL_MS = 800
 const LOAD_TIMEOUT_MS = 20000
 const CALLBACK_TIMEOUT_MS = 10000
 
-/** 一次只准一個登入視窗：兩個 controller 會互相覆蓋同一份 jar。 */
 let running = false
 
 export function webLoginRunning(): boolean {
@@ -55,7 +46,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-// ------------------------------------------------------------------ 可獨立呼叫的三件事
 
 function toBrowserCookie(cookie: Cookie) {
   return {
@@ -70,7 +60,6 @@ function toBrowserCookie(cookie: Cookie) {
   }
 }
 
-/** 將來源持久化 cookie 預先同步寫入 WebViewController。 */
 export async function seedCookies(controller: WebViewController, sourceKey: string, url: string): Promise<number> {
   let count = 0
   for (const cookie of getCookies(sourceKey, url)) {
@@ -83,7 +72,6 @@ export async function seedCookies(controller: WebViewController, sourceKey: stri
   return count
 }
 
-/** 提取 WebViewController 中與目標網域匹配的 cookie 清單。 */
 export async function harvestCookies(controller: WebViewController, urls: string[]): Promise<Cookie[]> {
   const hosts = urls.map(hostOf).filter(Boolean)
   const all = await controller.getAllCookies()
@@ -102,13 +90,6 @@ export async function harvestCookies(controller: WebViewController, urls: string
   return out
 }
 
-/**
- * 讀當前頁面的 localStorage 成 `{key: value}`。源的 `onLoginSuccess` 會用
- * `this.loadData("_localStorage")` 拿它（ccc 的 JWT 就是這樣來的）。
- * 讀不到（不同 origin、頁面已導航）就回空的，不拋錯。
- *
- * 給了 `keys` 就只讀那幾個鍵（其他鍵連碰都不碰）。
- */
 export async function dumpLocalStorage(controller: WebViewController, keys?: string[]): Promise<Record<string, string>> {
   try {
     const script =
@@ -127,13 +108,7 @@ export async function dumpLocalStorage(controller: WebViewController, keys?: str
   }
 }
 
-// ------------------------------------------------------------------ 流程
 
-/**
- * 開一個瀏覽器讓使用者登入，成功就自己關掉。
- *
- * 不寫任何登入狀態——那是 registry 的事；這裡只負責「瀏覽器 ⇄ 源的資料」。
- */
 export async function runWebLogin(params: {
   sourceKey: string
   sourceName: string
@@ -154,9 +129,7 @@ export async function runWebLogin(params: {
   let warnedThrow = false
   let warnedNonBool = false
   let result: WebLoginResult | null = null
-  /** 這次實際進到 jar 的 cookie 名字（log 用：出事時不用猜抓到什麼）。 */
   let captured: string[] = []
-  /** 成功路徑的工作；在「關閉」之後我們要等它做完，不能跟它搶著處理同一筆結果。 */
   let successTask: Promise<void> | null = null
 
   function stopPolling() {
@@ -174,7 +147,6 @@ export async function runWebLogin(params: {
     }, POLL_MS)
   }
 
-  /** 只有 `=== true` 算成功；拋錯或回非布林都當未登入，而且每次嘗試只記一行。 */
   function isLoggedIn(url: string, title: string): boolean {
     const fn = spec.checkStatus
     if (typeof fn !== "function") return false
@@ -196,7 +168,6 @@ export async function runWebLogin(params: {
     }
   }
 
-  /** 成功路徑：順序是 localStorage → cookie 併入 jar → onLoginSuccess → 關閉。 */
   async function finishSuccess(url: string) {
     const storage = await dumpLocalStorage(controller)
     if (Object.keys(storage).length > 0) writeSourceData(sourceKey, "_localStorage", storage)
@@ -223,16 +194,13 @@ export async function runWebLogin(params: {
       const value = await controller.evaluateJavaScript<string>("return location.href")
       if (typeof value === "string" && value) url = value
     } catch {
-      // 導航中讀不到是正常的，下一輪再試
     }
     try {
       const value = await controller.evaluateJavaScript<string>("return document.title")
       if (typeof value === "string") title = value
     } catch {
-      // 同上
     }
     if (!polling || handlingSuccess) return
-    // 只在「有變化」時問源，這是 Venera 在 onNavigation / onTitleChange 上驗的等價翻譯。
     if (url && (url !== lastUrl || title !== lastTitle)) {
       lastUrl = url
       lastTitle = title
@@ -256,8 +224,6 @@ export async function runWebLogin(params: {
   try {
     const seeded = await seedCookies(controller, sourceKey, spec.url)
 
-    // 先開 sheet 再載入：使用者看到的是網頁在載，而不是空白。
-    // present() 的 promise 在「關閉」時才 resolve，而且沒有原因——所以我們自己用旗標分辨。
     void controller
       .present({ navigationTitle: t("sources.login.windowTitle", { name: sourceName }) })
       .catch(error => log("warning", "account", "瀏覽器登入視窗異常", error))
@@ -284,8 +250,6 @@ export async function runWebLogin(params: {
     await closed
     stopPolling()
 
-    // 使用者自己關掉，而且 checkStatus 從沒成立過：不假裝成功。
-    // （若成功路徑正在跑——例如使用者在 onLoginSuccess 期間把視窗滑掉——等它做完，由它決定結果。）
     if (successTask) {
       await successTask
     } else {
@@ -323,7 +287,6 @@ export async function runWebLogin(params: {
     try {
       controller.dispose()
     } catch {
-      // 已經壞掉的 controller 就算了
     }
   }
 }

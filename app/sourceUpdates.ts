@@ -1,9 +1,3 @@
-// 漫畫源的檢查更新：已安裝的源跟「自己的來源倉庫」的索引快取比版本。
-//
-// 可更新清單不另存：每次都由 repositories.json 的索引快取 × 已安裝版本算出來，
-// 源或倉庫一有變動就作廢重算。檢查＝重抓相關倉庫的索引（24 小時 TTL），只提示不自動裝。
-// 手動加入的源（origin 為 null）沒有可比對的索引；沒有 Pro 時 Aidoku 源整個略過。
-
 import { createEmitter } from "../engine/emitter"
 import { log } from "../engine/log"
 import { hasPro } from "../engine/pro"
@@ -22,16 +16,13 @@ import {
 import { listRepositories, repositoryKey, subscribeRepositories, type StoredRepository } from "../sources/repository"
 import { offline } from "./updates"
 
-/** 倉庫索引多久重抓一次。 */
 export const SOURCE_CHECK_TTL = 24 * 60 * 60 * 1000
 
 export interface SourceUpdate {
   source: InstalledSource
   repository: StoredRepository
   entry: CatalogEntry
-  /** 已安裝的版本。 */
   from: string
-  /** 倉庫裡的版本。 */
   to: string
 }
 
@@ -39,7 +30,6 @@ function installedVersion(source: InstalledSource): string {
   return source.meta?.version ?? source.stored.version
 }
 
-/** 參與檢查的源：有來源倉庫，且（沒 Pro 時）不是要靠 HttpServer 的引擎。 */
 function trackedSources(pro: boolean): InstalledSource[] {
   return allSources().filter(source => {
     if (!source.stored.origin) return false
@@ -47,13 +37,11 @@ function trackedSources(pro: boolean): InstalledSource[] {
   })
 }
 
-/** 這個已安裝的源在倉庫索引裡的那一筆（Mihon 一個擴充多個子源，全部對到同一個條目）。 */
 function entryFor(source: InstalledSource, entries: CatalogEntry[]): CatalogEntry | undefined {
   const key = isMihonKey(source.stored.key) ? packageKeyOf(source.stored.key) : source.stored.key
   return entries.find(item => item.key === key)
 }
 
-// ---------------------------------------------------------------- 可更新清單
 
 const bus = createEmitter({
   onListenerError: error => log("error", "sources", "源更新訂閱者拋錯", error),
@@ -69,20 +57,16 @@ function invalidate() {
 subscribeSources(invalidate)
 subscribeRepositories(invalidate)
 
-/** 可更新清單有變動時通知（源或倉庫變了）。 */
 export const subscribeSourceUpdates = bus.subscribe
 
-/** 可更新的源，依已安裝清單的順序。`pro` 只給回歸驗証注入。 */
 export function availableSourceUpdates(pro: boolean = hasPro()): SourceUpdate[] {
   if (cache && cache.pro === pro) return cache.updates
   const repositories = new Map(listRepositories().map(repository => [repositoryKey(repository.url), repository]))
   const updates: SourceUpdate[] = []
-  // 同一個 Mihon 擴充的多個子源共用一個 apk：只報一次，更新也是整個擴充一起換。
   const reported = new Set<string>()
   for (const source of trackedSources(pro)) {
     const repository = repositories.get(repositoryKey(source.stored.origin!))
     if (!repository) continue
-    // 同一倉庫裡同 key 有多筆時以第一筆為準（跟 installRepositoryEntry 一致）。
     const entry = entryFor(source, repository.entries)
     if (!entry) continue
     const extensionKey = isMihonKey(entry.key) ? entry.key : source.stored.key
@@ -100,31 +84,22 @@ export function sourceUpdateCount(): number {
   return availableSourceUpdates().length
 }
 
-// ---------------------------------------------------------------- 檢查
 
 export interface SourceCheckResult {
-  /** 這次實際重抓的倉庫數。 */
   checked: number
   failed: { repository: StoredRepository; message: string }[]
-  /** 沒有連線，整批略過。 */
   offline: boolean
 }
 
 let inFlight: Promise<SourceCheckResult> | null = null
 
 export interface SourceCheckOptions {
-  /** 無視 TTL（手動檢查）。 */
   force?: boolean
   now?: number
   pro?: boolean
-  /** 只查這些倉庫（回歸驗証靠這個不碰真倉庫）；不給就是全部。 */
   repositories?: string[]
 }
 
-/**
- * 重抓「有已安裝源指向它」的倉庫索引。失敗的原因由 refreshRepository 寫進倉庫，
- * 舊快取留著。同時只跑一輪。
- */
 export function checkSourceUpdates(options: SourceCheckOptions = {}): Promise<SourceCheckResult> {
   if (inFlight) return inFlight
   inFlight = runCheck(options).finally(() => {
@@ -154,17 +129,11 @@ async function runCheck({ force = false, now = Date.now(), pro = hasPro(), repos
   return { checked: targets.length, failed, offline: false }
 }
 
-// ---------------------------------------------------------------- 更新
 
-/** 從來源倉庫更新單一源。 */
 export function updateSource(update: SourceUpdate): Promise<InstallResult> {
   return installRepositoryEntry(update.repository.url, update.entry.key)
 }
 
-/**
- * 依序更新（Aidoku 安裝會重置宿主，平行跑會互相踩到）。中途失敗不中斷；
- * 回傳失敗的 key → 原因。`onStart` 讓畫面標出正在跑的那一列。
- */
 export async function updateSources(
   updates: SourceUpdate[],
   onStart?: (key: string) => void,

@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   chapterFallback: "第 {n} 话",
 
@@ -48,9 +46,7 @@ export default {
   prefetch: "图片预加载",
   prefetchPages: { one: "{n} 页", other: "{n} 页" },
   prefetchOff: "关闭",
-  /** 滑到这一章底部就自动接上下一章，接着往下滑就行。 */
   seamlessNext: "无缝接续下一话",
-  /** 默认跟随源宣告的阅读方式（没有就退全局）；打开就存成这部的独立设置。 */
   perComic: "记住这部的设置",
 
   noChapters: "这部作品目前没有章节",

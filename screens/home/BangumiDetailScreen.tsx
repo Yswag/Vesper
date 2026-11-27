@@ -1,7 +1,3 @@
-// Bangumi 條目作品詳情頁面
-// 提供與漫畫詳情一致的全螢幕導航體驗：高畫質封面、評分徽章、詳細簡介，
-// 以及即時跨已啟用漫畫源搜尋並聚合可閱讀章節。
-
 import {
   AbortController,
   Button,
@@ -61,11 +57,9 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
   const [searchProgress, setSearchProgress] = useState({ done: 0, total: 0 })
   const [descExpanded, setDescExpanded] = useState(false)
   const [showNavTitle, setShowNavTitle] = useState(false)
-  // hero 與「可用漫畫來源」carousel 的尺寸都依量到的容器寬算（不看 Device.screen）。
   const [heroContainerWidth, setHeroContainerWidth] = useState(0)
   const [sourceCarouselWidth, setSourceCarouselWidth] = useState(0)
 
-  // 語言一換，這一頁的字要立刻跟著變。
   useSubscription(subscribeLocale)
 
   const title = subject.name_cn || subject.name
@@ -83,7 +77,6 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
     let alive = true
     const controller = new AbortController()
 
-    // 跨已啟用源搜尋，帶每個源宣告的預設篩選值（使用者沒改過）。
     void library.search(
       {
         keyword: searchKeyword,
@@ -112,7 +105,6 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
     }
   }, [searchKeyword])
 
-  // 整理有搜尋到該作品的源列表，並根據標題相關度評分過濾與排序
   const candidateList: { source: ComicSourceInfo; comic: any; score: number }[] = []
   for (const res of searchResults) {
     if (res.comics.length === 0) continue
@@ -120,14 +112,12 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
     if (!source) continue
     for (const comic of res.comics) {
       const score = matchComicTitleScore(comic.title || "", subject.name_cn || "", subject.name || "")
-      // 閾值過濾：只保留高相關度結果（>= 55 分，排除完全沾邊/湊熱鬧的無關漫畫）
       if (score >= 55) {
         candidateList.push({ source, comic, score })
       }
     }
   }
 
-  // 照匹配度高低排序（最精確的排前面）
   candidateList.sort((a, b) => b.score - a.score)
   const matchedSources = candidateList.map(item => ({ source: item.source, comic: item.comic }))
 
@@ -136,7 +126,6 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
 
   const cleanSummary = (subject.summary || "").trim()
   const isLongSummary = cleanSummary.length > 60 || cleanSummary.split("\n").length > 2
-  // 氛圍圖的網址先抓成本地常數：在下面的 callback 裡 subject.image 的窄化會失效。
   const ambientUrl = subject.image
 
   return (
@@ -153,8 +142,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
     >
       <PageBackground />
 
-      {/* 頂部封面 Ambient Glow 氛圍漫射光暈（寬一定要量：`maxWidth: "infinity"` 會讓橫式封面
-          用自己的寬高比當理想寬度，變成整頁寬度把版面推歪）。 */}
+      {}
       {ambientUrl ? (
         <GeometryReader>
           {geometry => (
@@ -209,7 +197,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
             scrollTargetLayout={true}
             frame={{ maxWidth: "infinity" }}
           >
-            {/* 1. Hero 頂部海報與元資訊 */}
+            {}
             <HStack
               key="hero-title"
               spacing={16}
@@ -254,7 +242,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                   </Text>
                 ) : null}
 
-                {/* 評分與榜單徽章 */}
+                {}
                 <HStack spacing={6}>
                   {subject.score ? (
                     <Tag icon="star.fill" tone="warning" text={subject.score.toFixed(1)} />
@@ -289,7 +277,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
               </VStack>
             </HStack>
 
-            {/* 2. 標籤群 */}
+            {}
             {subject.tags.length > 0 ? (
               <ScrollView axes="horizontal" scrollIndicator="hidden" frame={{ maxWidth: "infinity" }}>
                 <HStack spacing={8}>
@@ -300,7 +288,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
               </ScrollView>
             ) : null}
 
-            {/* 3. 劇情簡介（長文本自然漸隱淡出，短文本完整清晰不模糊） */}
+            {}
             {cleanSummary ? (
               <VStack alignment="leading" spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" }}>
                 <HStack>
@@ -349,7 +337,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
 
             <Divider />
 
-            {/* 4. 可閱讀漫畫來源列表 */}
+            {}
             <VStack spacing={14} alignment="leading">
               <HStack>
                 <Text font="title3" fontWeight="bold">
@@ -379,7 +367,6 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                 <ScrollView
                   axes="horizontal"
                   scrollIndicator="hidden"
-                  // 卡片都在橫向捲動列裡，量的是捲動視窗自己的寬。
                   background={
                     <GeometryReader>
                       {geometry => (
@@ -408,7 +395,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                           spacing={6}
                           frame={{ width: sourceCard.width }}
                         >
-                          {/* 封面與來源名稱標籤 */}
+                          {}
                           <ZStack alignment="bottomTrailing" frame={{ width: sourceCard.width, height: sourceCard.height }}>
                             <CoverImage
                               sourceKey={source.key}
@@ -422,7 +409,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                             </HStack>
                           </ZStack>
 
-                          {/* 固定兩行對齊標題 */}
+                          {}
                           <ZStack alignment="topLeading" frame={{ width: sourceCard.width }}>
                             <Text
                               font="caption"
@@ -443,7 +430,7 @@ export function BangumiDetailScreen({ subject, zoomTransition }: BangumiDetailSc
                             </Text>
                           </ZStack>
 
-                          {/* 更新時間或作者 */}
+                          {}
                           {comic.updateTime ? (
                             <Text font="caption2" foregroundStyle="tertiaryLabel" lineLimit={1}>
                               {comic.updateTime}

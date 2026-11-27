@@ -1,8 +1,3 @@
-// Mini Hub 管理：長按拖曳排序；拖過「停用」分隔列就停用，拖回上面就啟用。
-//
-// 系統拖曳只能在同一個 ForEach 裡移動，所以兩區是同一串資料，中間夾一列「停用」分隔列。
-// 分隔列不加 moveDisabled（實機上它旁邊放不下去），放手後依它的位置切兩區。
-
 import {
   Divider, ForEach, List, Rectangle, Section, UnevenRoundedRectangle, VStack, ZStack, useEffect, useObservable,
 } from "scripting"
@@ -68,12 +63,10 @@ export function MiniHubSettingsScreen() {
   const rows = useObservable<MiniHubRow[]>(() => toRows(getMiniHubLayout()))
 
   useEffect(() => {
-    // 順序不同才重設，避免跟 persist 無限互觸。
     const refresh = () => {
       const next = toRows(getMiniHubLayout())
       if (next.map(row => row.id).join() !== rows.value.map(row => row.id).join()) rows.setValue(next)
     }
-    // 系統拖曳放手後 ForEach 直接改寫 rows。重排延到下一拍，不在系統寫回的途中改資料。
     const persist = (next: MiniHubRow[]) => {
       setMiniHubLayout(toLayout(next))
       setTimeout(refresh, 0)
@@ -89,10 +82,6 @@ export function MiniHubSettingsScreen() {
   return <MiniHubSettingsView rows={rows} />
 }
 
-/**
- * 兩區共用一個 Section，系統只會把整串裁成一張卡；所以卡片底自己畫，區頭區尾才有圓角。
- * 仍用 insetGroup：列本身就內縮，長按拿起的預覽才不會拉到螢幕邊。
- */
 function cardRowBackground(first: boolean, last: boolean) {
   return (
     <UnevenRoundedRectangle
@@ -107,7 +96,6 @@ function cardRowBackground(first: boolean, last: boolean) {
 
 const clearRowBackground = <Rectangle fill="clear" />
 
-/** 「停用」分隔列：長得像 Section 的標題。 */
 const dividerRow = {
   listRowBackground: clearRowBackground,
   listRowInsets: { top: pageSpacing, bottom: cardGap, leading: 0, trailing: 0 },
@@ -167,7 +155,7 @@ export function MiniHubSettingsView({ rows }: { rows: Observable<MiniHubRow[]> }
               )
             }}
           />
-          {/* 讓 Section 的尾巴落在透明列上：系統的卡片圓角裁不到最後一張卡。 */}
+          {}
           <Rectangle
             fill="clear"
             frame={{ height: 1 }}

@@ -1,6 +1,3 @@
-// 導覽列左側的「離開」按鈕；首頁模式下不畫（那裡沒有東西好離開）。
-// 實際退出走 `app/lifecycle` 的 `exitApp`（會先過下載中的關卡）。
-
 import { Button, Image, Script } from "scripting"
 
 import { exitApp } from "../app/lifecycle"

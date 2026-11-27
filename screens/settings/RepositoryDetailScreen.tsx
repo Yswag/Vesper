@@ -1,6 +1,3 @@
-// 單一倉庫：列出索引裡的源，逐筆安裝 / 更新；導覽列可重新整理索引，搜尋與篩選只在本地做。
-// 清單只讀本地快取，重新整理才會連網。
-
 import {
   Button, Divider, HStack, Image, LazyVStack, Menu, Navigation, ProgressView, Spacer, Text, VStack, ZStack, useEffect, useState,
 } from "scripting"
@@ -50,9 +47,7 @@ export function RepositoryDetailScreen({
   initialFilter,
 }: {
   repositoryUrl: string
-  /** 預覽用：一進頁就帶搜尋字串（正式頁面不給）。 */
   initialQuery?: string
-  /** 預覽用：一進頁就套用的篩選（正式頁面不給）。 */
   initialFilter?: Partial<RepositoryFilter>
 }) {
   useSubscription(subscribeLocale, subscribeContentLanguages)
@@ -64,7 +59,6 @@ export function RepositoryDetailScreen({
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [status, setStatus] = useState<StatusNotice | null>(null)
   const [loaded, setLoaded] = useState(false)
-  // 長按網址複製：toast 由這一列自己管。
   const [copied, setCopied] = useState(false)
   const [searchText, setSearchText] = useState(initialQuery)
   const [query, setQuery] = useState(initialQuery)
@@ -160,7 +154,6 @@ export function RepositoryDetailScreen({
     }
   }
 
-  /** 一鍵安裝：只作用在篩選後的結果；掃描衝突、彈窗確認、裝至多 3 條並發。 */
   async function installAll() {
     if (visibleEntries.length === 0 || busy || busyKey !== null || batchProgress !== null) return
     if (!repository || (await blockedByPro(repository))) return
@@ -198,7 +191,6 @@ export function RepositoryDetailScreen({
         ],
       })
 
-      // 嚴格判斷：非 0 且非 1 均視為取消
       if (actionIndex !== 0 && actionIndex !== 1) return
 
       if (actionIndex === 0) {
@@ -330,7 +322,6 @@ export function RepositoryDetailScreen({
   }
 
   return (
-    // toast 不能傳進 PageScroll：modifier prop 跨元件邊界會被渲染兩次（同 PageScroll 的 toolbar 註解）。
     <ZStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       toast={{
@@ -530,14 +521,12 @@ function FilterMenu({
   )
 }
 
-/** 倉庫類型的中文名（倉庫頁與條目共用）。 */
 function repositoryKindLabel(kind: RepositoryKind): string {
   if (kind === "aidoku-index") return t("settings.shared.kindAidoku")
   if (kind === "mihon-index") return t("settings.shared.kindMihon")
   return t("settings.shared.kindVenera")
 }
 
-/** Aidoku／Mihon 源要靠本機 HTTP 伺服器（Scripting Pro），沒有 Pro 就當場說清楚，不要等它壞在宿主。 */
 async function blockedByPro(repository: StoredRepository): Promise<boolean> {
   const kind = kindOf(repository)
   if (kind === "venera" || hasPro()) return false
@@ -549,7 +538,6 @@ async function blockedByPro(repository: StoredRepository): Promise<boolean> {
   return true
 }
 
-/** 單筆安裝前的關卡：Pro 限制、不支援的擴充、從別處裝的要確認取代。回 false 就不裝。 */
 export async function confirmInstall(repository: StoredRepository, item: RepositoryEntryStatus): Promise<boolean> {
   if (entryUnsupportedReason(item.entry)) return false
   if (await blockedByPro(repository)) return false
@@ -569,7 +557,6 @@ export function actionLabel(status: RepositoryEntryStatus): string {
   return t("settings.shared.reinstall")
 }
 
-/** 已安裝那份的來源：已加入的倉庫用它的名稱，沒加入的從網址推，手動貼上的另寫。 */
 function originName(origin: string | null): string {
   if (!origin) return t("settings.repo.manualOrigin")
   return listRepositories().find(repository => isFromRepository(origin, repository.url))?.name ?? repositoryNameFor(origin)
@@ -585,7 +572,6 @@ export function EntryRow({
   status: RepositoryEntryStatus
   busy: boolean
   label: string
-  /** 清單已按語言分組時不重複顯示語言。 */
   hideLanguages?: boolean
   onInstall: () => void
 }) {
@@ -594,7 +580,6 @@ export function EntryRow({
   const isInstalled = Boolean(status.installed) && !status.updateAvailable
   const languages = hideLanguages ? [] : (status.entry.languages?.filter(Boolean) ?? [])
   const unsupported = entryUnsupportedReason(status.entry)
-  // Mihon 的多語擴充動輒上百種語言：只列前三種，其餘數字帶過（一行放得下）。
   const languageLine =
     languages.length > 3 ? `${languages.slice(0, 3).join(" / ")} +${languages.length - 3}` : languages.join(" / ")
   const metaLine = [
@@ -672,7 +657,6 @@ export function EntryRow({
   )
 }
 
-/** 這一頁的時間戳記目前是固定格式（`YYYY/MM/DD HH:MM`）；語言化的日期留給以後的票。 */
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp)
   const pad = (value: number) => String(value).padStart(2, "0")

@@ -1,6 +1,3 @@
-// 閱讀器的章節目錄（原生 Bottom Sheet 的內容）：分組、目前話置中、鎖住的不能點。
-// 開關由 `ReaderScreen` 控制；這裡只管清單與滑到目前話。
-
 import {
   Button,
   Divider,
@@ -30,7 +27,6 @@ export interface ChapterItem {
   id: string
   title: string
   group?: string
-  /** 源標為鎖定：目錄看得到，不能點。 */
   locked?: boolean
 }
 
@@ -39,17 +35,11 @@ export interface ChapterDrawerProps {
   chapters: ChapterItem[]
   chapterGroups?: ChapterGroup<ChapterItem>[]
   isGrouped: boolean
-  /** 這一話在不在手機上（目錄用它標示哪些話離線也讀得到）。 */
   isDownloaded?: (epId: string) => boolean
   onSelectChapter: (id: string) => void
   onClose: () => void
 }
 
-/**
- * 章節目錄抽屜：生命週期獨立組件。
- * 抽屜打開時 mount，以 LazyVStack + ScrollViewReader 只排看得到的列並執行一次無損定位；
- * 抽屜關閉時 unmount，不消耗主閱讀器任何狀態或幀率。
- */
 export function ChapterDrawer({
   currentEpId,
   chapters,
@@ -60,7 +50,6 @@ export function ChapterDrawer({
   onClose,
 }: ChapterDrawerProps) {
   const tint = useTint()
-  // 分組選取：預設為包含當前話的分組
   const initialGroup = useMemo(() => {
     if (!isGrouped) return ""
     const g = chapterGroups.find((grp: ChapterGroup<ChapterItem>) => grp.chapters.some((c: ChapterItem) => c.id === currentEpId))
@@ -68,18 +57,14 @@ export function ChapterDrawer({
   }, [isGrouped, chapterGroups, currentEpId])
 
   const [activeGroup, setActiveGroup] = useState(initialGroup)
-  // 目錄排序：預設正序
   const [reversed, setReversed] = useState(false)
 
-  // 當前選取分組展示的章節
   const displayChapters = useMemo(() => {
     if (!isGrouped) return chapters
     const g = chapterGroups.find((grp: ChapterGroup<ChapterItem>) => grp.name === activeGroup)
     return g ? g.chapters : chapters
   }, [isGrouped, chapterGroups, activeGroup, chapters])
 
-  // 下載標記：對清單算一次 Set（逐列問一次會變成幾百次同步檔案查詢）。
-  // 以整份清單算，切分組時不必重算；分組本身是它的子集，標記結果不變。
   const downloadedIds = useMemo(() => {
     const set = new Set<string>()
     if (!isDownloaded) return set
@@ -87,7 +72,6 @@ export function ChapterDrawer({
     return set
   }, [chapters, isDownloaded])
 
-  // 保存當前 ScrollViewProxy 參照，供快速定位按鈕使用
   const scrollProxyRef = useRef<ScrollViewProxy | null>(null)
 
   return (
@@ -103,7 +87,7 @@ export function ChapterDrawer({
       presentationDragIndicator="visible"
       presentationCornerRadius={24}
     >
-      {/* 標題列 */}
+      {}
       <HStack alignment="center" padding={{ top: 18, horizontal: 20, bottom: 12 }}>
         <VStack alignment="leading" spacing={2}>
           <Text font="headline" fontWeight="bold" foregroundStyle="label">
@@ -116,7 +100,7 @@ export function ChapterDrawer({
           </Text>
         </VStack>
         <Spacer />
-        {/* 定位到當前話按鈕 */}
+        {}
         <Button
           buttonStyle="plain"
           accessibilityLabel={t("reader.locateCurrent")}
@@ -137,7 +121,7 @@ export function ChapterDrawer({
           </HStack>
         </Button>
         <Spacer frame={{ width: 10 }} />
-        {/* 正序／倒序切換 */}
+        {}
         <Button
           buttonStyle="plain"
           accessibilityLabel={reversed ? t("reader.sortAscending") : t("reader.sortDescending")}
@@ -156,7 +140,7 @@ export function ChapterDrawer({
           </HStack>
         </Button>
         <Spacer frame={{ width: 10 }} />
-        {/* 關閉按鈕 */}
+        {}
         <Button
           buttonStyle="plain"
           accessibilityLabel={t("reader.closeChapters")}
@@ -175,7 +159,7 @@ export function ChapterDrawer({
 
       <Divider />
 
-      {/* 分組標籤列 */}
+      {}
       {isGrouped ? (
         <VStack spacing={0}>
           <ScrollView axes="horizontal">
@@ -220,7 +204,7 @@ export function ChapterDrawer({
         </VStack>
       ) : null}
 
-      {/* 章節清單：LazyVStack 只排看得到的列（幾百話也不一次建完），由頂部「定位」按鈕一鍵跳轉 */}
+      {}
       <ScrollView>
         <ScrollViewReader>
           {proxy => {

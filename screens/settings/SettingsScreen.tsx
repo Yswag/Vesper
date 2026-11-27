@@ -1,5 +1,3 @@
-// 設定：外觀主題、源管理、縮圖快取、日誌，以及唯一的退出出口。
-
 import { Button, Device, Divider, NavigationLink, useEffect, useState } from "scripting"
 
 import { ExitToolbar } from "../../components/ExitToolbar"
@@ -38,8 +36,6 @@ import { ContentLanguageScreen } from "./ContentLanguageScreen"
 import scriptJson from "../../script.json"
 
 export function SettingsScreen() {
-  // 源清單（匯入／刪除／啟用）與下載狀態變動都要重繪這一頁。
-  // 語言也在這裡：`applyLocaleSetting` 走 i18n 自己的訂閱通知，這一頁要跟著重繪才看得到新文字。
   const refresh = useSubscription(subscribeSources, subscribeSourceUpdates, subscribeDownloads, subscribeLocale, subscribeContentLanguages)
   const choice = useThemeChoice()
   const comp = findComposition(choice.composition)
@@ -47,7 +43,6 @@ export function SettingsScreen() {
   const [cacheStats, setCacheStats] = useState<{ count: number; totalBytes: number } | null>(null)
   const [pageStats, setPageStats] = useState<{ chapters: number; bytes: number } | null>(null)
 
-  // 進這一頁先從盤上重載一次源，並非同步取得兩個快取池的統計。
   useEffect(() => {
     reloadRegistry()
     refresh()
@@ -58,7 +53,6 @@ export function SettingsScreen() {
   const installed = allSources().length
   const localeSetting = getLocaleSetting()
 
-  // 下載進行中、取消、刪除都會讓「下載」那一列的數量與大小跟著動。
   const downloads = listDownloads()
   const downloadDetail =
     downloads.length > 0
@@ -129,7 +123,7 @@ export function SettingsScreen() {
       </CardGroup>
 
       <CardGroup title={t("settings.root.groupAbout")}>
-        {/* 選項用語言自稱；「跟隨系統」跟著介面語言走，所以兩個字串都要在 render 時求值。 */}
+        {}
         <SelectRow
           icon="globe"
           title={t("settings.language")}

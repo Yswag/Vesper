@@ -1,6 +1,3 @@
-// SourceRunner：漫畫源執行封裝層。
-// 提供統一的 SourceHandle 門面，封裝探索、分區列表、詳情、章節與留言操作。
-
 import type { ComicListPage, JumpTarget, SectionPage } from "../engine/adapt"
 import type { HostUI } from "../engine/globals"
 import { createHostContext } from "../engine/host"
@@ -57,7 +54,6 @@ export type {
   SourceScope,
 }
 
-/** 源看到的宿主。production 由 composition root 給（settings/loggedIn/ui＝app/hostUI）。 */
 export interface SourceHost {
   key: string
   settings?: Record<string, unknown>
@@ -67,14 +63,9 @@ export interface SourceHost {
 }
 
 export interface RunnerDeps {
-  /** 登入過期時的重登；預設是 registry 的憑證重登。 */
   auth?: Relogin
 }
 
-/**
- * 清單目標：探索的某個區塊、首頁帶回來的 listing、viewMore 跳過去的分類頁，
- * 或首頁「filters」捷徑的搜尋（空關鍵字＋源給的篩選描述子，一樣是分頁清單）。
- */
 export type ListTarget =
   | { kind: "explore"; index: number }
   | { kind: "listing"; listing: HomeListing }
@@ -83,7 +74,6 @@ export type ListTarget =
 
 export type Cursor = { page: number } | { next: string }
 
-/** 這一頁的源是哪一種；畫面用它顯示來源類型，不碰 `stored.kind`。 */
 export type SourceKind = "venera" | "aidoku" | "mihon"
 
 export interface SourceHandle {
@@ -93,24 +83,17 @@ export interface SourceHandle {
   readonly capabilities: SourceCapabilities | undefined
   readonly settingsSpecs: SettingSpec[]
   readonly settings: Readonly<Record<string, unknown>>
-  /** 載入失敗的原因（成功時 undefined）。 */
   readonly error: string | undefined
-  /** 執行來源非同步 init() 初始化（按需觸發，共用 Promise 不重複發起）。 */
   ready(): Promise<void>
   explore(): ExploreEntry[]
-  /** 源有沒有首頁（Aidoku 的 `get_home`）；Venera 一律沒有。載入後才會變 true。 */
   hasHome(): boolean
-  /** 首頁；`reload` 強制重讀（下拉刷新）。 */
   home(opts?: { reload?: boolean }): Promise<SourceHome>
-  /** 排行榜（平舖清單，形狀與 SectionPage 不同，所以不塞進 list）。 */
   ranking(option: string, page: number, scope?: SourceScope): Promise<ComicListPage>
   rankingOptions(): RankingOption[]
   hasRanking(): boolean
   list(target: ListTarget, cursor: Cursor, scope?: SourceScope): Promise<SectionPage>
   detail(comicId: string, scope?: SourceScope): Promise<ComicDetail>
-  /** 章節的頁面清單：離線優先（已下載的章不必連網）。 */
   chapter(comicId: string, epId: string, scope?: SourceScope): Promise<string[]>
-  /** 磁碟上存下的圖片鍵還算數嗎。沒這個方法＝鍵就是網址，永遠算數；Mihon 的鍵有格式版本。 */
   acceptsImageKeys?(keys: string[]): boolean
   comments(
     comicId: string,
@@ -128,17 +111,12 @@ export interface SourceHandle {
     scope?: SourceScope
   ): Promise<void>
   loggedIn(): boolean
-  /** 重登：**不能取消**（它本來就是為了救回被登入過期擋下的呼叫）。 */
   relogin(): Promise<ReloginOutcome>
-  /** 圖片解析（onImageLoad）要用的重試：登入過期就重登一次再試。`scope` 讓那一次的網路呼叫可取消。 */
   imageRetry(scope?: SourceScope): SourceCallRetry
-  /** 正文取圖要問的模組（`engine/images.ts` 的 `onImageLoad`）：Venera 是源的 comic 區塊。 */
   readonly comicModule: any
-  /** 縮圖要怎麼抓（Venera 同步；Aidoku 要問源，所以可能是 Promise）。 */
   thumbnailRequest(url: string): ImageRequest | Promise<ImageRequest>
 }
 
-/** 把一份源碼載進沙箱（純本地、不跑 init()）。 */
 export function loadSource(code: string, host: SourceHost): LoadedSource {
   return loadSourceCode(
     code,
@@ -161,17 +139,14 @@ async function loadList(
     case "explore":
       return loadExploreSections(source, target.index, cursor, scope)
     case "listing":
-      // Venera 沒有首頁，這種目標只會從 Aidoku 首頁的 listing 來。
       throw new Error(t("sources.unsupported.explore", { title: target.listing.name }))
     case "search":
-      // 篩選捷徑同理：只有 Aidoku 首頁會產生這種目標。
       throw new Error(t("sources.unsupported.search"))
     case "category":
       return loadCategorySections(source, target.target, "page" in cursor ? cursor : { page: 1 }, scope)
   }
 }
 
-/** 把已載入的源包成 handle。operation 一律 delegate 給現有實作。 */
 export function openSource(source: InstalledSource, deps: RunnerDeps = {}): SourceHandle {
   if (aidoku.isAidoku(source)) return aidokuHandle(source)
   if (mihon.isMihon(source)) return mihonHandle(source)
@@ -205,7 +180,6 @@ export function openSource(source: InstalledSource, deps: RunnerDeps = {}): Sour
   }
 }
 
-/** Aidoku 源：四段查詢走 `sources/aidoku.ts`，登入狀態在 registry、這裡不轉發；沒有排行、留言與離線。 */
 function aidokuHandle(source: InstalledSource): SourceHandle {
   return {
     key: source.stored.key,
@@ -229,7 +203,6 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
     canPostComment: () => false,
     postComment: () => Promise.reject(new Error(t("sources.unsupported.sendComment"))),
     loggedIn: () => false,
-    // handle 不回報登入狀態：重登永遠是「沒有憑證」，圖片重試就是直接再跑一次。
     relogin: () => Promise.resolve("no-credentials"),
     imageRetry: () => call => Promise.resolve(call()),
     comicModule: aidoku.comicModule(source),
@@ -237,11 +210,6 @@ function aidokuHandle(source: InstalledSource): SourceHandle {
   }
 }
 
-/**
- * Mihon 子源：清單（熱門／最新）走 dexvm 的 popular／latest，搜尋併進聚合搜尋；
- * 詳情與章節走 `sources/operations.ts` 的共用入口（快取與背景優先級都在那裡）。
- * 沒有首頁、排行、留言與登入。
- */
 function mihonHandle(source: InstalledSource): SourceHandle {
   return {
     key: source.stored.key,
@@ -273,7 +241,6 @@ function mihonHandle(source: InstalledSource): SourceHandle {
   }
 }
 
-/** Mihon 的「瀏覽」：探索頁的熱門／最新，加上搜尋（沒有分類頁）。 */
 function mihonList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
   if (target.kind === "category" || target.kind === "listing") {
     return Promise.reject(new Error(t("sources.unsupported.category")))
@@ -290,7 +257,6 @@ function mihonList(source: InstalledSource, target: ListTarget, cursor: Cursor):
   return result.then(list => ({ sections: [{ title: "", comics: list.comics }], maxPage: list.maxPage }))
 }
 
-/** Aidoku 的「瀏覽」只有 listings 與搜尋（沒有分類頁）。 */
 function aidokuList(source: InstalledSource, target: ListTarget, cursor: Cursor): Promise<SectionPage> {
   if (target.kind === "category") return Promise.reject(new Error(t("sources.unsupported.category")))
   const page = "page" in cursor ? cursor.page : 1
@@ -304,10 +270,6 @@ function aidokuList(source: InstalledSource, target: ListTarget, cursor: Cursor)
   }))
 }
 
-/**
- * 依 key 取得 handle（UI 與其他呼叫端只用這一個入口，不碰 `InstalledSource`）。
- * 找不到或沒載入成功就拋——訊息與 UI 以前自己判斷時看到的一致。
- */
 export function sourceHandle(key: string): SourceHandle {
   const source = findSource(key)
   if (!source) throw new Error(t("sources.notFound", { key }))

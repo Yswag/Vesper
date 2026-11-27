@@ -1,10 +1,3 @@
-// 留言頁：從詳情頁進來，看留言（頭像、名字、時間、內容）並在底部輸入框送出。
-//
-// 四條規則：① 留言不落地、不快取——每次進來都重新讀；② 只有源給了可用的 `maxPage`
-// 才出現「載入更多」；③ 送出失敗照源的原話顯示（`nhentai` 的 stub 就是這樣被抓到的）；
-// ④ 輸入框是 ScrollView 的 `safeAreaInset`（不是疊在下面的另一層），留言才不會被它蓋住、
-// 也不會為了閃它而留一段假的高度。
-
 import {
   Button,
   Divider,
@@ -51,19 +44,16 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 送出時本機回音的那一則：使用者打的是純文字，先把 HTML 字元跳脫掉再交給渲染層。 */
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
-/** 頭像抓不到時顯示的首字母。用 Array.from 才不會把 emoji 拆成半個。 */
 function firstGlyph(name: string): string {
   const trimmed = name.trim()
   if (!trimmed) return "?"
   return Array.from(trimmed)[0].toUpperCase()
 }
 
-/** 圓形頭像：抓不到（或源根本沒給）就退回名字首字母，不畫破圖。 */
 export function CommentAvatar({ sourceKey, url, name }: { sourceKey: string; url?: string; name: string }) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [failed, setFailed] = useState(false)
@@ -76,7 +66,6 @@ export function CommentAvatar({ sourceKey, url, name }: { sourceKey: string; url
       setFailed(true)
       return
     }
-    // 縮圖管線（源的 onThumbnailLoad）；頭像多半需要 Referer。
     void (async () => {
       try {
         const path = await comicLibrary().thumbnailPath(sourceKey, url)
@@ -168,7 +157,6 @@ export function CommentRow({
   )
 }
 
-/** 留言載入中：跟 `CommentRow` 同一組內距與頭像尺寸。 */
 function CommentSkeleton() {
   return (
     <Card>
@@ -188,12 +176,6 @@ function CommentSkeleton() {
   )
 }
 
-/**
- * 未登入時引導登入的橫幅（未登入也看得到留言，只是送不出去）。
- *
- * 內距、間距、圖示格子都跟 `CommentRow` 同一組：圖示佔一格頭像的寬度，
- * 這樣圖示的中心跟頭像同一條線、文字也跟留言的文字同一條線。
- */
 export function LoginBanner({ sourceKey }: { sourceKey: string }) {
   const tint = useTint()
   return (
@@ -210,7 +192,7 @@ export function LoginBanner({ sourceKey }: { sourceKey: string }) {
         <ZStack alignment="center" frame={{ width: avatarSize, height: avatarSize }}>
           <Image systemName="person.crop.circle.badge.exclamationmark" font="title3" foregroundStyle={tint.tint} />
         </ZStack>
-        {/* frame 的 alignment 不給就是中心——文字會被丟到中間去，一定要寫 leading */}
+        {}
         <VStack alignment="leading" spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <Text font="subheadline" fontWeight="semibold" foregroundStyle={tint.tint}>
             {t("comments.notLoggedIn")}
@@ -230,10 +212,6 @@ export function LoginBanner({ sourceKey }: { sourceKey: string }) {
   )
 }
 
-/**
- * 懸浮液態玻璃輸入列。掛在 ScrollView 的 `safeAreaInset(bottom)` 上，
- * 無外層通欄背景，懸浮在列表上方，原生 Liquid Glass 質感。
- */
 export function CommentComposer({
   draft,
   sending,
@@ -289,11 +267,6 @@ export function CommentComposer({
   )
 }
 
-/**
- * 有狀態的輸入列：草稿、送出中、送出結果都留在這裡。
- *
- * 打字只重繪這一支，留言清單不動；送出成功才清草稿，失敗留著讓使用者重試。
- */
 function CommentComposerHost({ onPost }: { onPost: (content: string) => Promise<void> }) {
   const [draft, setDraft] = useState("")
   const [sending, setSending] = useState(false)
@@ -344,14 +317,10 @@ export function CommentScreen({
   const [page, setPage] = useState(0)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
-  // 這一頁的訊息狀態：`status` 是讀取失敗的原因（null＝沒話要說，不是空字串）。
-  // 送出那一則（送出中／成功／失敗）在輸入列自己身上，打字不重繪這一頁。
   const [status, setStatus] = useState<string | null>(null)
 
-  // 語言一換就重繪：`t()` 讀的是模組層級的當前語言，畫面得自己訂閱。
   useSubscription(subscribeLocale)
 
-  // 離開頁面後不要再 setState（使用者可能已經退回詳情頁）。
   const alive = useRef(true)
   useEffect(() => {
     alive.current = true
@@ -377,21 +346,17 @@ export function CommentScreen({
   }
 
   useEffect(() => {
-    // 留言不落地：每次進來都重新讀第一頁。
     void fetchPage(1, true)
   }, [sourceKey, comicId])
 
-  /** 送出留言；失敗就丟回去讓輸入列照源的原話顯示。成功才清草稿、把本機回音放在最前面。 */
   async function postComment(content: string) {
     await library.postComment({ sourceKey, comicId, subId }, content)
     if (!alive.current) return
-    // 源的排序不假設：直接把剛送出的那一則放在最前面（內容與帳號名稱都是我們確定的）。
     setComments(previous => [
       {
         id: `sent:${Date.now()}`,
         userName: info?.accountName ?? t("comments.me"),
         content: escapeHtml(content),
-        // 時間記「現在」這個時間戳，不寫「剛剛」——那是顯示字，由 commentTime 算。
         time: new Date().toISOString(),
       },
       ...previous,
@@ -448,8 +413,6 @@ export function CommentScreen({
                 ) : null}
 
                 {comments.length > 0 ? (
-                  // 卡片底留給 Card，惰性交给 LazyVStack（跟設定頁的長清單同一套）：
-                  // 留言再多也只建畫面上的那幾列。
                   <Card>
                     <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
                       {comments.map((comment, index) => (

@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   keyword: "关键字",
 
@@ -16,7 +14,6 @@ export default {
   filterMulti: "可多选",
   filterSelect: "选择",
   filterNone: "不指定",
-  /** 排序篩選的遞增開關。 */
   filterAscending: "递增",
   filterDescending: "递减",
   filterIgnore: "忽略",

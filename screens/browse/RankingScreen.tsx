@@ -1,7 +1,3 @@
-// 源的排行榜（`categoryComics.ranking`）：上面一排選項（日 / 週 / 月…），下面大網格。
-//
-// 選項由源宣告（`"值-顯示名"`），翻頁一律用頁碼 —— 33 個源都沒有用到 `loadWithNext`。
-
 import { ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
 
 import { type RankingOption } from "../../app/comic"
@@ -18,7 +14,6 @@ import { PageBackground } from "../../app/theme"
 
 export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   const library = comicLibrary()
-  // 畫面自己訂閱語言：下面的狀態字與按鈕都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
   const [options, setOptions] = useState<RankingOption[]>([])
   const [optionsLoaded, setOptionsLoaded] = useState(false)
@@ -32,7 +27,6 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   const [errorText, setErrorText] = useState("")
 
   useEffect(() => {
-    // 源還沒載好時 `rankingOptions` 會丟錯；當成「沒有選項」處理，不要讓畫面一直停在載入中。
     let next: RankingOption[] = []
     try {
       next = library.rankingOptions(sourceKey)
@@ -94,11 +88,9 @@ export function RankingScreen({ sourceKey }: { sourceKey: string }) {
   return (
     <ZStack>
       <PageBackground />
-      {/* maxHeight infinity 只是「摸滿」，內容短時還是會被置中——載入中那塊要有
-          alignment top 才會貼頂。 */}
+      {}
       <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "top" }}>
-      {/* chip 列當捲動區頂部的 bar：貼在導覽列下面，內容從它後面捲過去；
-          頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。 */}
+      {}
       <ScrollView
         scrollContentBackground="hidden"
         {...scrollTopBar(

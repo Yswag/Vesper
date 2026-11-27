@@ -1,7 +1,3 @@
-// 快取設定子頁：縮圖與正文兩個池分開顯示。
-// 共用的是淘汰機制（pagecache / imagecache 各自的 sweep），不共用容量：正文一張比縮圖大一個量級，
-// 混在一池的話讀完一話就會把封面擠掉。
-
 import { Divider, useEffect, useState } from "scripting"
 
 import {
@@ -46,7 +42,6 @@ export function ImageCacheSettingsScreen() {
     void refreshStats()
   }, [])
 
-  /** 改了上限就立刻套用，不必等下一次開章。 */
   function applyPageLimits() {
     void sweepPageCache(null, { chapters: getPageCacheChapters(), bytes: getPageCacheMb() * 1024 * 1024 }).then(
       refreshStats
@@ -116,7 +111,7 @@ export function ImageCacheSettingsScreen() {
 
   return (
     <PageScroll title={t("settings.root.cache")}>
-      {/* 1. 縮圖：狀態、手動清除、淘汰規則 */}
+      {}
       <CardGroup title={t("settings.cache.thumbsGroup")}>
         <IconRow icon="photo" title={t("settings.cache.thumbsUsageTitle")} detail={thumbDetail} />
         <Divider padding={{ leading: rowSeparatorInset }} />
@@ -153,7 +148,7 @@ export function ImageCacheSettingsScreen() {
         />
       </CardGroup>
 
-      {/* 2. 正文：以「話」為單位保留，讀過的重開不必重新下載 */}
+      {}
       <CardGroup title={t("settings.cache.pageGroup")}>
         <IconRow icon="book" title={t("settings.cache.pageUsageTitle")} detail={pageDetail} />
         <Divider padding={{ leading: rowSeparatorInset }} />

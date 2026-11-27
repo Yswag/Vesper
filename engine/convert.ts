@@ -1,7 +1,3 @@
-// Convert 模組：提供來源沙箱所需之雜湊（MD5/SHA/HMAC）、對稱加密（AES 四種模式）與編碼轉換。
-// 雜湊與 HMAC 走全域 Crypto（原生 CommonCrypto）；AES 走 node:crypto 的 createCipheriv，
-// 兩者都是同步呼叫，符合源端的用法。
-
 import { Buffer } from "node:buffer"
 import { createCipheriv, createDecipheriv } from "node:crypto"
 
@@ -21,7 +17,6 @@ function toBytes(value: any): Bytes {
   throw new TypeError("Convert: 不支援的輸入型別")
 }
 
-/** 只複製必要區段：呼叫端可能傳進來的是大 buffer 的切片。 */
 function toData(bytes: Bytes): Data {
   const buffer = (
     bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength ? bytes.buffer : bytes.slice().buffer
@@ -33,11 +28,6 @@ function fromData(data: Data): Bytes {
   return new Uint8Array(data.toArrayBuffer())
 }
 
-/**
- * 執行期是否真的把 `Buffer.from(arrayBuffer, byteOffset, byteLength)` 當成 view：載入時用
- * 一個小樣本自檢偏移有沒有被吃掉（`node:buffer` 的宣告比執行期少，只能實測）。
- * 不成立就退回一次複製——結果一樣，只是慢一點。
- */
 const bufferFromIsView = (() => {
   try {
     const source = new Uint8Array([1, 2, 3, 4])
@@ -49,11 +39,6 @@ const bufferFromIsView = (() => {
   }
 })()
 
-/**
- * node:crypto / node:buffer 的宣告只吃 ArrayBuffer-backed 的緩衝區，型別上對不起來；
- * 執行期只需要一份位元組，所以這裡統一轉一份並把型別放寬。
- * 能 view 就不複製：呼叫端傳進來的可能是大緩衝區中間的一段。
- */
 function toBuffer(bytes: Bytes): any {
   if (bufferFromIsView) return (Buffer as any).from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   return (Buffer as any).from(bytes)
@@ -78,7 +63,6 @@ function utf8Encode(str: string): Bytes {
   return new Uint8Array(out)
 }
 
-// 逐位元組解 UTF-8，遇到無效序列以 U+FFFD 取代，避免解密資料觸發 URIError 導致中斷。
 function utf8Decode(bytes: Bytes): string {
   let out = ""
   let invalid = 0
@@ -142,7 +126,6 @@ function utf8Decode(bytes: Bytes): string {
 
 const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-/** 字元 → 值：舊寫法每次 `indexOf` 都要掃一遍字串，改成 128 格的陣列。 */
 const B64_DECODE = (() => {
   const table: number[] = new Array(128).fill(-1)
   for (let i = 0; i < B64.length; i++) table[B64.charCodeAt(i)] = i
@@ -154,7 +137,6 @@ function b64Value(ch: string): number {
   return code < 128 ? B64_DECODE[code] : -1
 }
 
-/** 容錯的 base64 解碼：接受 URL-safe（-_）與空白/換行，忽略填字。 */
 function base64Decode(value: string): Bytes {
   const clean = String(value ?? "")
     .replace(/-/g, "+")
@@ -225,17 +207,12 @@ function hmacOf(name: HashName, key: any, value: any): Bytes {
 
 type CipherMode = "ecb" | "cbc" | "cfb" | "ofb"
 
-/**
- * AES **裸塊**運算：與 Venera 的 pointycastle 實作一致（`CBCBlockCipher.processBlock` 逐塊跑），也就是加密不加 padding、解密不剝 padding。
- * 源會自己補／自己剝（ccc 就是這樣），所以 `setAutoPadding(false)` 是必須的。
- */
 function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: any): Bytes {
   if (mode !== "ecb" && iv == null) throw new Error(`Convert: AES-${mode.toUpperCase()} 需要 iv`)
   const keyBytes = toBytes(key)
   if (keyBytes.length !== 16 && keyBytes.length !== 24 && keyBytes.length !== 32) {
     throw new Error(`Convert: AES 金鑰長度必須是 16/24/32 bytes（收到 ${keyBytes.length}）`)
   }
-  // ECB 的實作會讀 iv.length，而且只接受 0 長度（null 與 16 bytes 都會拋）。
   const ivBuf = mode === "ecb" ? Buffer.alloc(0) : toBuffer(toBytes(iv))
   const cipher = (encrypt ? createCipheriv : createDecipheriv)(
     `aes-${keyBytes.length * 8}-${mode}`,
@@ -245,9 +222,7 @@ function aesRun(encrypt: boolean, mode: CipherMode, value: any, key: any, iv?: a
   cipher.setAutoPadding(false)
   const head = cipher.update(toBuffer(toBytes(value)))
   const tail = cipher.final()
-  // 沒有 auto padding 時 final() 幾乎都是空的：空的就省掉 Buffer.concat 的那一次複製。
   const out = tail.length === 0 ? head : Buffer.concat([head, tail])
-  // 一定要複製成獨立的 Uint8Array：Buffer 可能來自共用池，view 出去會被之後的配置覆寫。
   return new Uint8Array(out)
 }
 
@@ -260,7 +235,6 @@ function normalizeHash(name: string): HashName {
 export const Convert = {
   encodeUtf8: (str: string) => utf8Encode(str),
   decodeUtf8: (value: any) => utf8Decode(toBytes(value)),
-  // 這兩個在 catalog 裡沒有任何源使用。與其靜默回傳壞字串，不如明確報錯。
   encodeGbk: (_str: string): Bytes => {
     throw new Error("Convert.encodeGbk: 本環境不支援（請回報是哪個源需要）")
   },
@@ -281,8 +255,6 @@ export const Convert = {
   decryptAesCbc: (value: any, key: any, iv: any) => aesRun(false, "cbc", value, key, iv),
   encryptAesCfb: (value: any, key: any, iv: any) => aesRun(true, "cfb", value, key, iv),
   decryptAesCfb: (value: any, key: any, iv: any) => aesRun(false, "cfb", value, key, iv),
-  // OFB 在上游沒有 iv 參數（`OFBBlockCipher(AESEngine(), blockSize)`），這裡也因此取不到 iv：
-  // 保留原簽名，用了就明確報錯，不要靜默把 blockSize 當 iv。
   encryptAesOfb: (value: any, key: any, _blockSize?: number) => aesRun(true, "ofb", value, key),
   decryptAesOfb: (value: any, key: any, _blockSize?: number) => aesRun(false, "ofb", value, key),
   decryptRsa: (_value: any, _key: any): Bytes => {

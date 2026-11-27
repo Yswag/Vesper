@@ -1,6 +1,3 @@
-// 詳情頁章節區的頭部與選取模式底部操作列。
-// 進出選取不插拔元件：都常駐、只改字與 opacity／offset，才演得出位移（插入會讓兄弟元件被當成新的而瞬移）。
-
 import { Button, HStack, Image, Menu, Spacer, Text, VStack, useEffect, useState } from "scripting"
 
 import { useTint } from "../../app/theme"
@@ -10,25 +7,18 @@ import { GlassToolbar } from "../../design/GlassToolbar"
 import { capsule } from "../../design/tokens"
 import { t } from "../../i18n"
 
-/** 進出選取模式的動畫（頭部、圓點、底部列共用）。 */
 export const selectionAnimation = Animation.snappy({ duration: 0.3 })
 
-/** 退出選取後等多久（毫秒）放 tab bar 回來：錯開半拍，兩塊玻璃才不會半透明疊在一起。 */
 export const selectionBarExitMs = 100
 
-/** 底部列進場：等 tab bar 淡出一半再淡入，理由同上。 */
 const barEnterAnimation = Animation.snappy({ duration: 0.3 }).delay(0.1)
 
-/** 頭部圖示膠囊收起時每顆往右推的距離：一顆 compact 圖示 Chip 寬＋間距，收到選取鈕底下。 */
 const headerCollapseStep = 39
 
-/** 頭部膠囊收合的動畫：比 `selectionAnimation` 慢，玻璃融合只發生在最後幾 pt，太快看不到。 */
 const headerCollapseAnimation = Animation.bouncy({ duration: 0.6 })
 
-/** 底部列離螢幕底緣（及左右上限）的距離：跟浮動 tab bar 同一條底線（實機量約 21pt）。寬度依內容、置中，不假裝成 tab bar。不跟安全區走，tab bar 藏起／回來時才不會被頂著跳。 */
 const barEdgeInset = 21
 
-/** 選取模式時列表尾端要讓出的高度，最後一話才不會被底部列蓋住。 */
 export const selectionBarClearance = 72
 
 export function ChapterListHeader({
@@ -45,7 +35,6 @@ export function ChapterListHeader({
 }: {
   selecting: boolean
   selectedCount: number
-  /** 一般模式標題旁的章節數。 */
   countText: string
   reverseOrder: boolean
   canMarkAllRead: boolean
@@ -128,10 +117,6 @@ export function ChapterListHeader({
   )
 }
 
-/**
- * 選取時藏起 tab bar，退出時等底部列收到一半再放回來。
- * 做成獨立的零尺寸元件：計時到時只重繪它自己，不會在動畫中途重算整頁詳情。
- */
 export function SelectionTabBarHider({ selecting }: { selecting: boolean }) {
   const [hidden, setHidden] = useState(selecting)
   useEffect(() => {
@@ -147,7 +132,6 @@ export function SelectionTabBarHider({ selecting }: { selecting: boolean }) {
   return <VStack frame={{ width: 0, height: 0 }} tabBarVisibility={hidden ? "hidden" : "automatic"} />
 }
 
-/** 選取模式的底部浮動列：常駐，跟 tab bar 同位置交叉淡化，收起時擋掉點擊。 */
 export function ChapterSelectionBar({
   visible,
   allSelected,
@@ -159,7 +143,6 @@ export function ChapterSelectionBar({
 }: {
   visible: boolean
   allSelected: boolean
-  /** 勾選中還沒下載的話數（已下載的不重送）。 */
   downloadCount: number
   readCount: number
   onToggleAll: () => void
@@ -167,7 +150,6 @@ export function ChapterSelectionBar({
   onMarkRead: () => void
 }) {
   return (
-    // 外層無視底部安全區、內層自己留距：兩層分開寫，不靠修飾的套用順序。
     <VStack spacing={0} ignoresSafeArea={{ regions: "container", edges: "bottom" }}>
       <VStack
         padding={{ horizontal: barEdgeInset, bottom: barEdgeInset }}
@@ -175,7 +157,7 @@ export function ChapterSelectionBar({
         allowsHitTesting={visible}
         animation={{ animation: visible ? barEnterAnimation : selectionAnimation, value: visible }}
       >
-        {/* 字變長變短（全選↔全不選、下載話數）時膠囊寬度用動畫伸縮 */}
+        {}
         <VStack animation={{ animation: selectionAnimation, value: `${allSelected}|${downloadCount}` }}>
           <GlassSurface shape={capsule("continuous")}>
             <HStack spacing={0} padding={{ horizontal: 6 }}>

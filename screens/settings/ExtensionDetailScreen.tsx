@@ -1,6 +1,3 @@
-// 一個 Mihon 擴充的詳情：擴充層的版本、來源、更新與移除，加上子源（語言）開關。
-// 子源的源設定（票 05）還沒做，列上留了 onOpenSettings 的接縫。
-
 import {
   Button,
   Divider,
@@ -158,7 +155,6 @@ export function ExtensionDetailView({
   group: SourceGroup
   extensionLib?: string
   originName: string
-  /** 有可更新版本時給目標版號；沒有就只顯示「檢查更新」。 */
   updateVersion?: string
   busy: "check" | "update" | "remove" | null
   message: { kind: "ready" | "error"; text: string } | null
@@ -347,7 +343,6 @@ function ChildRow({
   extensionName: string
   enabled: boolean
   onChanged: (enabled: boolean) => void
-  /** 票 05 的源設定頁接縫：給了才會讓左半邊可點。 */
   onOpenSettings?: () => void
 }) {
   const tint = useTint()

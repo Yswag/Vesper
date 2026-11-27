@@ -1,9 +1,3 @@
-// 搜尋篩選 sheet 的內容：單一源的 `search.optionList`。
-//
-// 每列照 `type` 畫不同的控制項：select / multi-select 用 settings 那種勾選列，
-// dropdown 用系統的 menu picker（ccc 的出版社有 55 項，chip 排不下）。
-// 外殼跟源篩選的 sheet 一樣（`components/SourceFilterSheet.tsx`）：導覽列左 ✕ 右 ✓、底部重設；草稿放在這裡，按 ✓ 才交出去。
-
 import { Button, Divider, HStack, Image, Navigation, ScrollView, Toolbar, ToolbarItem, VStack, useState } from "scripting"
 
 import { Chip } from "../../design/chip"
@@ -15,7 +9,6 @@ import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { SearchOptionRow, SearchOptionValue } from "../../sources/searchOptions"
 
-/** dropdown 的「不指定」用的哨兵（源的選項值不會長這樣）。 */
 const NONE = "\u0000none"
 
 function isChecked(row: SearchOptionRow, value: SearchOptionValue | undefined, option: string): boolean {
@@ -32,13 +25,11 @@ export function SearchFilterSheet({
   rows: SearchOptionRow[]
   values: SearchOptionValue[]
   defaults: SearchOptionValue[]
-  /** 按「套用」交出草稿。 */
   onApply: (values: SearchOptionValue[]) => void
 }) {
   const tint = useTint()
   const dismiss = Navigation.useDismiss()
   const [draft, setDraft] = useState<SearchOptionValue[]>(() => [...values])
-  // sheet 是獨立的 render 根：語言一換就重繪。
   useSubscription(subscribeLocale)
 
   function onChanged(index: number, value: SearchOptionValue) {
@@ -72,7 +63,7 @@ export function SearchFilterSheet({
         </Toolbar>
       }
     >
-      {/* sheet 本身是白底：不鋪頁面底色的話，淺色下半透明白卡片看不到邊。 */}
+      {}
       <ScrollView scrollContentBackground="hidden" background={<PageBackground />}>
         <VStack alignment="leading" spacing={pageSpacing} padding={pageInsets}>
           {rows.map((row, index) => {

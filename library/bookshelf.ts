@@ -1,6 +1,3 @@
-// 書架收藏與閱讀進度（存於 library.json）：落盤管線（去抖、KV 退守、通知）與各操作的語意都在這支，
-// 寫入一律走 `mutate()`，呼叫端只講「這次要不要通知」。
-
 import { createEmitter } from "../engine/emitter"
 import { appDataRoot, join, readText, writeText } from "../engine/fs"
 import { kv } from "../engine/storage"
@@ -21,41 +18,25 @@ export interface Progress {
   cover?: string
   epId: string
   epTitle: string
-  /** 上次閱讀到的領先可見頁（0 起算）。 */
   page?: number
-  /** 當前章節總頁數。 */
   pageCount?: number
-  /** 是否於離線模式下閱讀。 */
   offline?: boolean
-  /**
-   * 已讀過的章節 ID（去重、保留標記順序；沒有已讀就是 undefined）。
-   * 只標過已讀、還沒開過閱讀器的漫畫也有一筆沒有 `epId` 的紀錄放這個欄位——那不是閱讀歷史。
-   */
   readEpIds?: string[]
   updatedAt: number
 }
 
-/**
- * 一部作品的追更快取：上一次檢查時源給的最新一話。
- * `checkedAt` 是 TTL 的唯一依據；`status`／`updateTime` 用來決定 TTL 有多長。
- */
 export interface ComicUpdateRecord {
   sourceKey: string
   comicId: string
   latestEpId: string
   latestEpTitle: string
   chapterCount: number
-  /**
-   * 讀者上次碰這部（收藏、閱讀、標已讀）時的章數；之後多出來的才算新話。
-   * 寫入時由 `setComicUpdate` 補上，呼叫端不必給。
-   */
   seenChapterCount?: number
   checkedAt: number
   status?: ComicStatus
   updateTime?: string
 }
 
-/** 一天裡讀過的一部作品：當天碰過的話名（去重、依先後）。 */
 export interface DayComic {
   sourceKey: string
   comicId: string
@@ -64,7 +45,6 @@ export interface DayComic {
   epTitles: string[]
 }
 
-/** 一天的閱讀量：讀完幾話、翻了幾頁；`comics` 最後碰的在後（功能上線前的日子沒有）。 */
 export interface DayActivity {
   chapters: number
   pages: number
@@ -76,15 +56,11 @@ interface Library {
   favorites: Favorite[]
   progress: Record<string, Progress>
   updates: Record<string, ComicUpdateRecord>
-  /** 以本地日期 `YYYY-MM-DD` 為鍵。 */
   activity: Record<string, DayActivity>
 }
 
 const VERSION = 1
 
-/**
- * 讀進來的東西一律過這裡：缺欄位補預設，壞掉的追更紀錄整筆丟掉（壞一筆不該擋住整份書架）。
- */
 function normalize(raw: unknown): Library {
   const parsed = (raw && typeof raw === "object" ? raw : {}) as Partial<Library>
   return {
@@ -96,24 +72,20 @@ function normalize(raw: unknown): Library {
   }
 }
 
-/** 沒有檔案授權時的備援位置（不讓書架默默不落盤）。 */
 const KV_KEY = "venera:library"
 const FLUSH_DELAY = 500
 
 let cache: Library | null = null
 let timer: ReturnType<typeof setTimeout> | null = null
 
-/** 每次真的寫入或重讀磁碟就加一；排序快取靠它失效。 */
 let revision = 0
 let favoritesCache: { revision: number; items: Favorite[] } | null = null
 let progressCache: { revision: number; items: Progress[] } | null = null
 
-/** 書庫的版本號（寫入當下就前進，不等去抖的通知）：從書庫算出來的東西靠它判定失效。 */
 export function libraryRevision(): number {
   return revision
 }
 
-/** 變更通知匯流排（去抖 250ms 合併頻繁的滑動進度更新）。 */
 const bus = createEmitter({ debounceMs: 250 })
 
 export const subscribeLibrary = bus.subscribe
@@ -125,21 +97,18 @@ function libraryPath(): string {
 function load(): Library {
   if (cache) return cache
 
-  // 優先直接讀檔（系統已有權限時不必等 ensureFileAccess 非同步返回）；讀不到才退 KV。
   const raw = readText(libraryPath()) ?? stringifyKv()
   if (raw) {
     try {
       cache = normalize(JSON.parse(raw))
       return cache
     } catch {
-      // 壞檔就從空的開始，不擋啟動
     }
   }
   cache = { version: VERSION, favorites: [], progress: {}, updates: {}, activity: {} }
   return cache
 }
 
-/** 當權限確認後，重新同步並載入磁碟上的 library.json（防止剛啟動時權限未結算導致載入空資料） */
 export function reloadLibraryFromDisk(): void {
   const raw = readText(libraryPath())
   if (!raw) return
@@ -148,12 +117,10 @@ export function reloadLibraryFromDisk(): void {
     revision++
     bus.emitDebounced()
   } catch {
-    // 忽略格式錯誤
   }
 }
 
 function schedule() {
-  // ⚠️ 比 `null`，不能只寫 `if (timer)`：Scripting 的 setTimeout 回傳 number，第一個是 `0`（falsy）。
   if (timer !== null) clearTimeout(timer)
   timer = setTimeout(() => {
     timer = null
@@ -161,7 +128,6 @@ function schedule() {
   }, FLUSH_DELAY)
 }
 
-/** 立即落盤（退出前呼叫）。 */
 export function flushLibrary(): void {
   if (!cache) return
   if (timer !== null) {
@@ -169,7 +135,6 @@ export function flushLibrary(): void {
     timer = null
   }
   const payload = JSON.stringify(cache)
-  // 能寫檔案就寫檔案，寫不進去才存 KV。
   if (!writeText(libraryPath(), payload)) kv.set(KV_KEY, payload)
 }
 
@@ -178,13 +143,8 @@ function stringifyKv(): string | null {
   return typeof raw === "string" ? raw : null
 }
 
-/** 變更通知的時機：now＝立刻（手動操作）、debounced＝合併（高頻進度）、none＝只落盤。 */
 type NotifyMode = "now" | "debounced" | "none"
 
-/**
- * 讀-改-寫：`fn` 回 `false` 表示沒有變更（不落盤、也不通知）。
- * 所有寫入都走這裡，呼叫端只講「這次要不要通知」。
- */
 function mutate(fn: (library: Library) => boolean | void, notify: NotifyMode = "debounced"): void {
   if (fn(load()) === false) return
   revision++
@@ -201,7 +161,6 @@ function keyOf(sourceKey: string, comicId: string): string {
   return `${sourceKey}:${comicId}`
 }
 
-/** 追更快取只收真的認得的紀錄：沒有 sourceKey／comicId 的整筆丟掉，其餘缺欄位補中性值。 */
 function cleanUpdates(raw: unknown): Record<string, ComicUpdateRecord> {
   const updates: Record<string, ComicUpdateRecord> = {}
   if (!raw || typeof raw !== "object") return updates
@@ -249,22 +208,16 @@ function cleanActivity(raw: unknown): Record<string, DayActivity> {
   return activity
 }
 
-/** 去重（保留原順序）、丟掉空字串；沒有就回 undefined，空陣列不進 library.json。 */
 function cleanIds(ids: readonly string[] | undefined): string[] | undefined {
   const unique = new Set<string>()
   for (const id of ids ?? []) if (id) unique.add(id)
   return unique.size > 0 ? [...unique] : undefined
 }
 
-/** 呼叫端傳進來的已讀清單都已經清過（或沿用上一筆的同一個陣列），這裡不再重配一份。 */
 function withReadIds(entry: Progress, ids: string[] | undefined): Progress {
   return { ...entry, readEpIds: ids && ids.length > 0 ? ids : undefined }
 }
 
-/**
- * 一部漫畫的紀錄。只標已讀、還沒讀過的話先立一筆沒有 `epId` 的殼：
- * 已讀清單要有地方放，但這種殼不算閱讀歷史（`listProgress` 會濾掉）。
- */
 function recordFor(library: Library, sourceKey: string, comicId: string): Progress {
   const key = keyOf(sourceKey, comicId)
   const existing = library.progress[key]
@@ -274,13 +227,11 @@ function recordFor(library: Library, sourceKey: string, comicId: string): Progre
   return record
 }
 
-// ------------------------------------------------------------------ 收藏
 
 export function listFavorites(): Favorite[] {
   if (favoritesCache?.revision !== revision) {
     favoritesCache = { revision, items: [...load().favorites].sort((a, b) => b.addedAt - a.addedAt) }
   }
-  // 回拷貝：呼叫端拿去排序、splice 都不會動到快取。
   return [...favoritesCache.items]
 }
 
@@ -313,16 +264,11 @@ export function removeFavorite(sourceKey: string, comicId: string) {
   }, "now")
 }
 
-// ------------------------------------------------------------------ 進度
 
 export function getProgress(sourceKey: string, comicId: string): Progress | undefined {
   return load().progress[keyOf(sourceKey, comicId)]
 }
 
-/**
- * 最近閱讀，新的在前。首頁與書架的「繼續閱讀」都用這個。
- * 沒有 `epId` 的紀錄只是已讀清單的殼，不是閱讀歷史，不列出來。
- */
 export function listProgress(): Progress[] {
   if (progressCache?.revision !== revision) {
     progressCache = {
@@ -335,11 +281,6 @@ export function listProgress(): Progress[] {
   return [...progressCache.items]
 }
 
-/**
- * 儲存閱讀進度。翻到最後一頁時順手把這一話結算成已讀。
- * `notify: false`＝只落盤不通知：閱讀中逐頁寫進度用，離開時再 `notifyLibrary()` 一次，
- * 否則每跨一頁背景的書架／首頁／詳情頁都會跟著重繪。
- */
 export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notify?: boolean } = {}) {
   mutate(library => {
     const key = keyOf(entry.sourceKey, entry.comicId)
@@ -349,8 +290,6 @@ export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notif
       entry.pageCount !== undefined &&
       entry.pageCount > 0 &&
       entry.page === entry.pageCount - 1
-    // 換話／開啟章節時呼叫端不一定帶已讀清單：要求沒帶就沿用上一筆的同一個陣列，
-    // 只換頁碼的寫入不必重配一份已讀清單（也不必每次去重）。
     const base = entry.readEpIds !== undefined ? cleanIds(entry.readEpIds) : previous?.readEpIds
     const readEpIds = base && base.length > 0 ? base : undefined
     const turnedPage =
@@ -365,19 +304,13 @@ export function setProgress(entry: Omit<Progress, "updatedAt">, options: { notif
   }, options.notify === false ? "none" : "debounced")
 }
 
-/** 補送一次變更通知（搭配 `setProgress(…, { notify: false })`）。 */
 export function notifyLibrary(): void {
   bus.emitDebounced()
 }
 
-/**
- * 標記／取消標記已讀（可一次多話）。沒有實際變更就不落盤、也不通知。
- * 已讀清單清空、而且那筆紀錄本來就只是殼時，整筆一起收掉。
- */
 export function markChapterRead(sourceKey: string, comicId: string, epIds: string[], isRead: boolean): void {
   const ids = cleanIds(epIds)
   if (!ids) return
-  // 手動標記要立刻反映在畫面上，不等 250ms 的滑動進度去抖。
   mutate(library => {
     const key = keyOf(sourceKey, comicId)
     const existing = library.progress[key]
@@ -396,21 +329,14 @@ export function markChapterRead(sourceKey: string, comicId: string, epIds: strin
   }, "now")
 }
 
-/** 一鍵全部已讀（原有已讀清單保留）。 */
 export function markAllChaptersRead(sourceKey: string, comicId: string, allEpIds: string[]): void {
   markChapterRead(sourceKey, comicId, allEpIds, true)
 }
 
-/** 沒有紀錄時共用一份空集合，不必每次配一個新的。 */
 const NO_READ_IDS: ReadonlySet<string> = new Set()
 
-/**
- * 已讀章節集合依進度紀錄的物件參考快取：所有寫入都換新紀錄（`withReadIds` 展開），
- * 紀錄一換這個快取就自然失效。
- */
 const readIdsCache = new WeakMap<Progress, ReadonlySet<string>>()
 
-/** 已讀章節集合（呼叫端要算未讀數／比對目錄時用；不要改它）。 */
 export function readChapterIds(sourceKey: string, comicId: string): ReadonlySet<string> {
   const record = getProgress(sourceKey, comicId)
   if (!record) return NO_READ_IDS
@@ -425,10 +351,6 @@ export function isChapterRead(sourceKey: string, comicId: string, epId: string):
   return readChapterIds(sourceKey, comicId).has(epId)
 }
 
-/**
- * 清掉閱讀歷史。已讀清單是另一件事：刪歷史不該讓看過的章節變回未讀，
- * 所以只把閱讀位置（`epId`／頁碼）抹掉，已讀清單原樣留著。
- */
 export function clearProgress(sourceKey: string, comicId: string) {
   mutate(library => {
     const key = keyOf(sourceKey, comicId)
@@ -451,12 +373,9 @@ export function clearProgress(sourceKey: string, comicId: string) {
   })
 }
 
-// ------------------------------------------------------------------ 閱讀活動
 
-/** 保留天數（熱力圖只看最近幾個月，多留一點給之後的統計）。 */
 const ACTIVITY_KEEP_DAYS = 400
 
-/** 本地日期鍵 `YYYY-MM-DD`。 */
 export function dayKey(time: number): string {
   const date = new Date(time)
   const pad = (value: number): string => String(value).padStart(2, "0")
@@ -472,11 +391,9 @@ function recordActivity(
   const today = dayKey(now)
   const current = library.activity[today]
   if (!current) {
-    // 只在跨日時修剪一次：日期鍵可直接比字串大小。
     const cutoff = dayKey(now - ACTIVITY_KEEP_DAYS * 24 * 60 * 60 * 1000)
     for (const day of Object.keys(library.activity)) if (day < cutoff) delete library.activity[day]
   }
-  // 同一部移到最後，話名續接在舊的後面；作品名／封面以最新一次為準。
   const comics = (current?.comics ?? []).filter(
     comic => !(comic.sourceKey === entry.sourceKey && comic.comicId === entry.comicId)
   )
@@ -498,40 +415,31 @@ function recordActivity(
   }
 }
 
-/** 每日閱讀量（拷貝）。 */
 export function readingActivity(): Record<string, DayActivity> {
   return { ...load().activity }
 }
 
-// ------------------------------------------------------------------ 追更快取
 
 export function getComicUpdate(sourceKey: string, comicId: string): ComicUpdateRecord | undefined {
   return load().updates[keyOf(sourceKey, comicId)]
 }
 
-/** 一筆紀錄的基準章數；還沒有基準的舊紀錄以它當時的章數為準。 */
 function seenCountOf(record: ComicUpdateRecord | undefined): number | undefined {
   if (!record) return undefined
   return record.seenChapterCount ?? (record.chapterCount > 0 ? record.chapterCount : undefined)
 }
 
-/**
- * 寫入一部作品的最新一話（同作品覆寫）。基準章數沿用上一筆，第一次寫入就是當下的章數；
- * 源把章節收掉時基準跟著降，之後補回來的才算得到。
- */
 export function setComicUpdate(record: ComicUpdateRecord): void {
   mutate(library => {
     const key = keyOf(record.sourceKey, record.comicId)
     const seen = record.seenChapterCount ?? seenCountOf(library.updates[key]) ?? record.chapterCount
     library.updates[key] = {
       ...record,
-      // 章數 0 多半是源一時沒給清單，不拿它壓基準。
       seenChapterCount: record.chapterCount > 0 ? Math.min(seen, record.chapterCount) : seen,
     }
   })
 }
 
-/** 讀者碰過這部了：現有的章數都算看過。還沒有追更紀錄就等第一次檢查建立基準。 */
 function markSeen(library: Library, sourceKey: string, comicId: string): void {
   const key = keyOf(sourceKey, comicId)
   const record = library.updates[key]
@@ -539,7 +447,6 @@ function markSeen(library: Library, sourceKey: string, comicId: string): void {
   library.updates[key] = { ...record, seenChapterCount: record.chapterCount }
 }
 
-/** 整份追更快取（拷貝；呼叫端排序／篩選不會改到 cache）。 */
 export function allComicUpdates(): Record<string, ComicUpdateRecord> {
   return { ...load().updates }
 }

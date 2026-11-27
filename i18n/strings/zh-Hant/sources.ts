@@ -1,10 +1,4 @@
-// 源層自己寫、會被使用者看到的訊息：`sources/**`、`engine/cloudflare.ts`、`app/comic.ts`、離線 session。
-//
-// 來源回傳的資料（標題、標籤、選項名）與 `log()` 診斷不進字典（見 spec 跨票規則 1）：
-// 那些是資料與開發訊息，收了只會讓字典變成雜物間。
-
 export default {
-  /** 源的宣告缺某個能力；畫面用「失敗：{message}」把它顯示出來。 */
   unsupported: {
     search: "這個源不支援搜尋",
     searchPaging: "這個源的搜尋不支援翻頁",
@@ -17,40 +11,29 @@ export default {
     account: "這個源不支援帳密登入",
     cookie: "這個源不支援 Cookie 登入",
     browser: "這個源不支援瀏覽器登入",
-    /** 探索分類宣告了卻沒有載入函式；`{title}` 是那一條的標題。 */
     explore: "「{title}」目前無法載入（這個源沒有提供載入函式）",
-    /** `{n}` 是探索分類的序號（1 起算）。 */
     exploreIndex: "這個源沒有第 {n} 個探索分類",
     home: "這個源沒有首頁",
   },
 
-  /** 源找不到、或載不進沙箱。 */
   notLoaded: "{name} 沒有載入成功",
   notLoadedShort: "源沒有載入",
   notFound: "找不到來源 {key}",
   codeMissing: "找不到源碼",
 
-  /** 源沒給名字時畫面用的替代字（`{n}` 是序號，1 起算）。 */
   exploreFallback: "探索 {n}",
   categoryFallback: "分類 {n}",
-  /** 詳情沒有標題時的替代字。 */
   untitled: "(無標題)",
   emptyImage: "源回了空的圖片",
-  /** 這一章一張圖都拿不到。 */
   emptyChapter: "這一章沒有可用的圖片",
   commentEmpty: "留言內容不能只有空白",
 
-  /** 離線閱讀：manifest 裡沒有這一章、或這一頁的檔案不見了。 */
   notOffline: "這一章不在離線儲存裡",
-  /** `{n}` 是頁碼（1 起算）。 */
   pageUnreadable: "第 {n} 頁讀不到（檔案不存在或已損壞）",
 
-  /** Cloudflare 過盾視窗的標題；`{name}` 是來源名稱。 */
   verificationTitle: "請完成安全驗證 ({name})",
-  /** 過盾自己超過等待時間；`{seconds}` 是等了幾秒。 */
   verificationTimeout: "驗證逾時（{seconds} 秒）",
 
-  /** Aidoku（WASM）源。`{message}` 是源自己或宿主給的原因。 */
   aidoku: {
     failed: "源出錯：{message}",
     missing: "源的檔案不見了（請重新安裝這個源）",
@@ -59,72 +42,52 @@ export default {
     invalidPackage: "這不是有效的 Aidoku 源檔（.aix）",
     chapter: "第 {n} 話",
     volume: "第 {n} 卷",
-    /** 源被判定不可用；`{reason}` 是最後一次的失敗原因。 */
     unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
 
-    /** 本機 HTTP 伺服器是 Scripting Pro 的功能；沒有它 Aidoku 源跑不起來。 */
     requiresPro: "Aidoku 源需要 Scripting Pro",
     requiresProDetail: "Aidoku 源要靠本機 HTTP 伺服器執行源的 WebAssembly。升級 Scripting Pro 後再回來安裝。",
 
-    /** 倉庫索引（community／zh-sources 兩種 schema）。 */
     indexInvalid: "Aidoku 索引格式不對（要 { sources: [...] } 或 JSON 陣列）",
-    /** `{id}` 是索引條目裡的源 id。 */
     indexBadId: "源 id 不合法：{id}",
     indexBadEntry: "索引條目缺 name、version 或下載路徑",
   },
 
-  /** Mihon（keiyoushi）擴充。`{message}` 是擴充自己或宿主給的原因。 */
   mihon: {
     failed: "源出錯：{message}",
     timeout: "源回應逾時",
     initFailed: "源初始化失敗",
-    /** 重試後仍失敗被標成不可用；`{reason}` 是最後一次的失敗原因。 */
     unavailable: "這個源暫時不可用（{reason}），到來源設定關掉再開就會重新嘗試",
-    /** Cloudflare 過盾沒過；`{reason}` 是 WebView 給的原因。不是源的錯，源不會被標成不可用。 */
     verification: "這個源被 Cloudflare 擋住，安全驗證沒完成（{reason}）",
-    /** 探索頁的兩個清單。 */
     popular: "熱門",
     latest: "最新",
     missing: "擴充的檔案不見了（請重新安裝這個擴充）",
     invalidPackage: "這不是有效的 Mihon 擴充（apk）",
     noSources: "這個擴充沒有可用的源",
-    /** `{version}` 是索引宣告的 ext-lib 版本。 */
     unsupportedLib: "這個擴充的 ext-lib {version} 目前不支援（支援 1.4、1.6）",
 
-    /** 同樣要靠本機 HTTP 伺服器（dexvm 在宿主的 worker 裡跑）。 */
     requiresPro: "Mihon 源需要 Scripting Pro",
     requiresProDetail: "Mihon 源要靠本機 HTTP 伺服器在 WebView 裡執行 dexvm。升級 Scripting Pro 後再回來安裝。",
 
-    /** 倉庫索引（`extensionList.extensions`、`index.pb` 或舊式陣列）。 */
     indexInvalid: "Mihon 索引格式不對（要 extensionList.extensions、index.pb 或舊式陣列）",
     indexBadEntry: "索引條目缺套件名稱、版本或名稱",
     indexNoApk: "索引條目沒有 apk 網址",
-    /** 舊式格式只認這個檔名，Mihon 也是直接看網址結尾。 */
     legacyUrl: "舊式索引網址必須以 /index.min.json 結尾",
-    /** `{url}` 是索引指向的位址、`{reason}` 是下載失敗的原因。 */
     followFailed: "讀不到索引指向的網址 {url}（{reason}）",
   },
 
-  /** 登入（帳密 / cookie / 瀏覽器）。 */
   login: {
     expired: "登入已過期，請重新登入",
     cancelled: "已取消登入",
     done: "已登入",
-    /** `{count}` 是瀏覽器登入收下的 cookie 數。 */
     cookiesSaved: { one: "已存下 {count} 個 cookie", other: "已存下 {count} 個 cookie" },
-    /** 瀏覽器登入成功後記在源上的帳號名稱（這條路本來就沒有帳號）。 */
     webAccount: "WebView 登入",
-    /** 登入視窗的標題；`{name}` 是來源名稱。 */
     windowTitle: "登入 {name}",
     windowBusy: "已經有一個登入視窗開著",
-    /** 逾時訊息的主詞（`timeout` 的 `{subject}`）。 */
     pageLoading: "網頁載入",
     pageLoadFailed: "網頁載入失敗：{message}",
     callback: "源的 onLoginSuccess()",
-    /** `{subject}` 逾時；`{seconds}` 是秒數。 */
     timeout: "{subject}逾時（{seconds} 秒）",
     validateFailed: "驗證失敗，請檢查輸入內容",
-    /** 使用者自己關掉登入視窗、但抓到了 cookie 時的確認框。 */
     incompleteTitle: "登入未完成",
     incompleteMessage: {
       one: "這次沒有偵測到登入成功。要把剛才取得的 {count} 個 cookie 存下來嗎？",
@@ -133,7 +96,6 @@ export default {
     saveCookies: "存下",
   },
 
-  /** 倉庫索引的解析與匯入。 */
   catalog: {
     notArray: "索引不是 JSON 陣列",
     notObject: "不是物件",
@@ -141,10 +103,8 @@ export default {
     badKey: "key 不合法：{key}",
     badVersion: "version 不合法：{version}",
     noTarget: "url 與 fileName 至少要有一個",
-    /** 一條都裝不了；`{reason}` 是第一個被跳過的原因。 */
     empty: "索引裡沒有可用的源",
     emptyWithReason: "索引裡沒有可用的源（{reason}）",
-    /** 索引裡被跳過的條目，在報告裡的名字。 */
     entryLabel: "(索引條目)",
     singleObject: "這是單一 JSON 物件，不是源也不是索引",
     isRepository: "這是倉庫索引，請改用「源倉庫」加入",
@@ -155,13 +115,11 @@ export default {
     downloadFailed: "下載失敗：HTTP {status}",
   },
 
-  /** 源倉庫清單頁的操作。 */
   repository: {
     urlRequired: "請輸入倉庫網址",
     notFound: "找不到這個倉庫",
     entryNotFound: "倉庫裡沒有這個源",
   },
 
-  /** 源宣告的 `type: "callback"` 設定項沒有可呼叫的函式。 */
   settingNoAction: "這個設定沒有可執行的動作",
 }

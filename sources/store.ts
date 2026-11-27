@@ -1,6 +1,3 @@
-// 漫畫來源本地儲存模組：儲存 index.json 與各源獨立 .js 原始檔。
-// 若未獲檔案系統授權則自動退守 Storage KV 備援機制。
-
 import { appDataRoot, ensureDir, exists, fileAccess, hasFileAccess, join, readText, remove, writeText } from "../engine/fs"
 import { kv } from "../engine/storage"
 
@@ -10,26 +7,17 @@ const KV_ENABLED_PREFIX = "venera:sourceEnabled:"
 
 export interface StoredSource {
   key: string
-  /** 源類型；沒寫就是 Venera（舊資料不必遷移）。Aidoku 源的檔案在 `sources/aidoku/<id>/`、Mihon 的在 `sources/mihon/<packageId>/`，都不這裡。 */
   kind?: "venera" | "aidoku" | "mihon"
   name: string
   version: string
   minAppVersion: string
-  /** 源自己宣告的網站網址。 */
   homeUrl: string
-  /** 顯示用的圖示：本機解出來的檔案路徑，或倉庫索引的網址（可沒有）。 */
   iconUrl?: string
-  /** 安裝來源（倉庫 URL 或 null 表示手動貼上）。 */
   origin: string | null
   installedAt: number
   updatedAt: number
   enabled: boolean
-  /**
-   * 設定值。Venera：預設值＋使用者值（存 `index.json`）；Aidoku：只放使用者改過的 key
-   * （唯讀欄位，檔案在 `sources/aidoku/<id>/installed.json`）。
-   */
   settings?: Record<string, unknown>
-  /** 登入狀態（憑證本體在 Keychain）。 */
   loggedIn?: boolean
   accountName?: string
 }
@@ -53,12 +41,10 @@ function codePath(key: string): string {
   return join(sourcesDir(), `${safeFileName(key)}.js`)
 }
 
-/** key 的合法字元集是 `^\w+$`，但仍防一手避免路徑跳脫。 */
 function safeFileName(key: string): string {
   return key.replace(/[^\w.-]/g, "_")
 }
 
-// ---------------------------------------------------------------- 檔案後端
 
 function readIndex(): StoredSource[] {
   const raw = readText(indexPath())
@@ -77,7 +63,6 @@ function writeIndex(list: StoredSource[]) {
   writeText(indexPath(), JSON.stringify(payload, null, 2))
 }
 
-/** 獲得檔案授權時將 KV 舊資料單向遷移至磁碟檔案（一次性）。 */
 function migrateFromKvIfNeeded() {
   if (exists(indexPath())) return
   const legacy = kv.get(KV_META_KEY)
@@ -95,7 +80,6 @@ function migrateFromKvIfNeeded() {
   writeIndex(list)
 }
 
-// ---------------------------------------------------------------- KV 後端（無授權時的備援）
 
 function kvReadIndex(): StoredSource[] {
   const raw = kv.get(KV_META_KEY)
@@ -123,7 +107,6 @@ export function storageMode(): "files" | "kv" | "unknown" {
   return access ? "files" : "kv"
 }
 
-// ---------------------------------------------------------------- 對外 API
 
 export function listSources(): StoredSource[] {
   if (!useFiles()) return kvReadIndex()
@@ -208,7 +191,6 @@ export function setAccount(key: string, account: { loggedIn: boolean; accountNam
   writeIndexOrKv(list)
 }
 
-/** 只改設定值（不重寫源碼）。 */
 export function updateSettings(key: string, settings: Record<string, unknown>) {
   const list = listSources()
   const index = list.findIndex(entry => entry.key === key)
@@ -225,13 +207,6 @@ export function setEnabled(key: string, enabled: boolean) {
   writeIndexOrKv(list)
 }
 
-/**
- * 依 `keys` 的順序重排 index.json（拖曳排序的落點）。目前**沒有任何 order 欄位**——
- * 清單順序就是這份陣列的順序，所以只改陣列本身。
- *
- * 防禦：沒提到的鍵保持原本的相對順序接在後面（呼叫端給的清單不完整時不會弄丟源）；
- * 鍵集對不上、或順序真的沒變就回 false 不寫盤。
- */
 export function reorderSources(keys: string[]): boolean {
   const list = listSources()
   const byKey = new Map(list.map(entry => [entry.key, entry]))

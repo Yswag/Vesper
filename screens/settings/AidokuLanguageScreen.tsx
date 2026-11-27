@@ -1,8 +1,3 @@
-// Aidoku 源的語言選擇（manifest 的 `languages`）：照 Aidoku 的來源設定。
-// 只有一種語言時整個入口不出現；`languageSelectType: "single"` 只能選一個。
-//
-// 值寫在 `installed.json` 的 `settings.languages`（陣列），源用 `defaults.get("languages")` 讀。
-
 import { Divider, VStack, useEffect, useState } from "scripting"
 
 import { languageName } from "../../app/languageNames"
@@ -14,7 +9,6 @@ import { findSource, reloadRegistry, updateAidokuSetting, type InstalledSource }
 
 export function AidokuLanguageScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
-  // 語言名稱照介面語言顯示；這個頁面是獨立的 render 根。
   useSubscription(subscribeLocale)
 
   useEffect(() => {
@@ -35,7 +29,6 @@ export function AidokuLanguageScreen({ sourceKey }: { sourceKey: string }) {
       updateAidokuSetting(sourceKey, "languages", [code])
     } else {
       const next = has ? selected.filter(value => value !== code) : [...selected, code]
-      // 順序照 manifest，不照點擊順序：源比對陣列時比較穩。
       updateAidokuSetting(
         sourceKey,
         "languages",

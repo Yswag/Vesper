@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**（由 zh-Hant 草稿轉寫，key 集合完全相同）。
-
 export default {
   language: "语言",
   followSystem: "跟随系统",
@@ -51,14 +49,12 @@ export default {
     homeData: "首页热门与数据",
   },
 
-  /** Mini Hub 管理页。 */
   miniHub: {
     title: "Mini Hub",
     enabledGroup: "启用",
     disabledGroup: "停用",
   },
 
-  /** 缓存配置页（缩略图与正文两个池）。 */
   cache: {
     thumbsGroup: "缩略图",
     thumbsUsageTitle: "已缓存",
@@ -222,7 +218,6 @@ export default {
     restoreDefault: "恢复默认值",
   },
 
-  /** Aidoku 源自己的设置页（`settings.json` 的 schema）。 */
   aidokuSettings: {
     title: "源设置",
     languageGroup: "语言",
@@ -252,7 +247,6 @@ export default {
     selected: { one: "已选 {n} 项", other: "已选 {n} 项" },
   },
 
-  /** Mihon 扩展的设置（`preferences` op）。 */
   mihonSettings: {
     title: "源设置",
     empty: "这个源没有可调整的设置",

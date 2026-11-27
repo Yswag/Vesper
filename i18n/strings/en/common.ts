@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   working: "Working…",
   input: "Enter text",
@@ -15,7 +13,6 @@ export default {
   exitAnyway: "Quit anyway",
   allShown: "— End of list —",
   loadFailed: "Couldn't load: {message}",
-  /** Plain-language versions of technical error strings (see `engine/errors.ts`). */
   problem: {
     server: "Server error ({status})",
     request: "Request refused ({status})",

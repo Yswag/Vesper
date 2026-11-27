@@ -1,10 +1,3 @@
-// 離線漫畫：從書架的離線分頁推入，只列真的在手機上的章節。
-//
-// 順序由 ComicLibrary 給（有章節清單快取就照源原本的順序；沒有就退回下載時間正序）。
-//
-// 繼續閱讀：有進度且那一章下載完 → 從那一章那一頁開；否則開第一個下載完的章。
-// 下載中的章也刪得掉：左滑（先確認）交給資料層取消任務、等它收尾再刪檔；長按選單另有「取消」。
-
 import { Button, Group, HStack, Image, LazyVStack, ProgressView, Spacer, Text, VStack } from "scripting"
 
 import { isActive, type OfflineChapterRow } from "../../app/comic"
@@ -23,7 +16,6 @@ import { HERO_ASPECT } from "../shared/comicMetrics"
 import { presentReader } from "../shared/ResumeReaderScreen"
 import type { ChapterRef } from "../shared/ReaderScreen"
 
-/** 縮小版 hero：詳情頁封面 124 寬，這裡小一號。 */
 const HERO_COVER = { width: 96, height: Math.round(96 * HERO_ASPECT) }
 
 export function OfflineComicScreen({
@@ -35,14 +27,11 @@ export function OfflineComicScreen({
 }: {
   sourceKey: string
   comicId: string
-  /** 推入時手上有（清單算好的）就用，沒有才從 manifest 找。 */
   title?: string
   cover?: string
-  /** 從書架列的封面 zoom 進來。 */
   zoomFrom?: { sourceID: string; namespace: NamespaceID }
 }) {
   const library = comicLibrary()
-  // 下載進度、刪除、書架進度都會讓這裡重繪（`onChange` 已含離線層）；語言也是訂閱源。
   useSubscription(library.onChange, subscribeLocale)
 
   const ref = { sourceKey, comicId }
@@ -61,7 +50,6 @@ export function OfflineComicScreen({
   const target = resumeRow ?? rows.find(row => row.state.state === "done")
   const targetPage = resume && resumeRow ? resume.page : undefined
 
-  /** 這一部的章節清單（本機快取合併已下載的章）：開閱讀器、換話都用它。 */
   const readerChapters = () => library.offline.readerChapters(ref)
 
   async function deleteChapter(row: OfflineChapterRow) {
@@ -74,7 +62,6 @@ export function OfflineComicScreen({
     if (confirmed) await library.offline.deleteChapter(row.ref)
   }
 
-  // 刪光了就留在這一頁說清楚（沒有可用的 pop；回上一頁是使用者的手勢）。
   if (rows.length === 0) {
     return (
       <PageScroll title={comicTitle} zoomFrom={zoomFrom}>
@@ -157,7 +144,7 @@ export function OfflineComicScreen({
         <PrimaryAction label={t("bookshelf.noDownloadedChapter")} disabled={true} />
       )}
 
-      {/* 左滑要外層容器（見 design/layout 的 `swipeActionsContainer`）。 */}
+      {}
       <LazyVStack spacing={cardGap} frame={{ maxWidth: "infinity" }} swipeActionsContainer={true}>
         {rows.map(row => (
           <ChapterRow
@@ -178,7 +165,6 @@ export function OfflineComicScreen({
   )
 }
 
-/** 主要動作的底：實心 tint（停用時中性底），字一律 onTint。 */
 function PrimaryAction({ label, detail, disabled = false }: { label: string; detail?: string; disabled?: boolean }) {
   const tint = useTint()
   const textColor = disabled ? "secondaryLabel" : tint.onTint
@@ -208,7 +194,6 @@ function PrimaryAction({ label, detail, disabled = false }: { label: string; det
   )
 }
 
-/** 一章：下載完的點進閱讀器；其餘只顯示佇列／進行中的狀態，不給點。 */
 function ChapterRow({
   row,
   resumePage,
@@ -226,7 +211,6 @@ function ChapterRow({
   comicId: string
   comicTitle: string
   comicCover?: string
-  /** 這一部的章節清單（開閱讀器時要一起給）。 */
   readerChapters: () => ChapterRef[]
   onDelete: () => void
   onCancel: () => void
@@ -308,11 +292,9 @@ function ChapterRow({
   )
 
   return (
-    // 外層也裁成卡片形狀：滑動容器會在列的矩形範圍畫一層底，圓角外會露出方角。
     <VStack
       spacing={0}
       clipShape={cardShape}
-      // 下載中也刪得掉（先確認）；只想停下載的人走長按選單。
       trailingSwipeActions={{
         allowsFullSwipe: false,
         actions: [

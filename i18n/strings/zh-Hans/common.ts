@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   working: "处理中…",
   input: "输入",
@@ -14,7 +12,6 @@ export default {
   exitAnyway: "仍要退出",
   allShown: "— 已显示全部内容 —",
   loadFailed: "加载失败：{message}",
-  /** 技术错误字符串的人话版（见 `engine/errors.ts`）。 */
   problem: {
     server: "服务器错误（{status}）",
     request: "请求被拒绝（{status}）",

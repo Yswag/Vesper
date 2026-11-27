@@ -1,6 +1,3 @@
-// 內容語言：全 App 一份，決定瀏覽／搜尋看得到哪些 Mihon 子源、倉庫預設篩選與子源排序。
-// 值放 Storage KV（`venera:*` 前綴），變更用 emitter 廣播；registry 收到後只重建 Mihon 子源。
-
 import { createEmitter } from "../engine/emitter"
 import { kv } from "../engine/storage"
 import { getLocale, t } from "../i18n"
@@ -27,10 +24,6 @@ export function repositoryLanguages(): string[] {
   return [...seen]
 }
 
-/**
- * 上游的預設：`all`、`en`、App 語言，再加上所有以 App 語言開頭的子語言
- * （zh 介面 → zh-Hans／zh-Hant／zh-TW／zh-CN／zh-HK／zh-tw…）。
- */
 export function contentLanguageDefaults(languages: string[] = repositoryLanguages()): string[] {
   const base = appLanguageCode()
   const codes = ["all", "en", base]
@@ -75,10 +68,6 @@ export function toggleContentLanguage(code: string): boolean {
   return setContentLanguages(has ? current.filter(value => value !== code) : [...current, code])
 }
 
-/**
- * 使用者還沒改過內容語言時，把倉庫裡的子語言一次加進來（上游在第一次拿到擴充清單時做）。
- * 寫入後就算「改過」，之後不再自動擴充。
- */
 export function ensureContentLanguagesFromRepositories(): void {
   if (kv.get(CONTENT_LANGUAGES_KEY) !== undefined) return
   const defaults = contentLanguageDefaults()

@@ -1,8 +1,3 @@
-// Aidoku 源的 `editable-list` 設定：一串字串，增刪直接寫回 `installed.json`。
-//
-// `inline: true` 的源（照 Aidoku 的鏡像清單）把同樣的列攤在設定頁裡；
-// 其餘走這一頁。值沒改過時是 schema 的 `default`。
-
 import { Button, Divider, HStack, Image, Spacer, Text, VStack, useEffect, useState } from "scripting"
 
 import { useSubscription } from "../../app/useSubscription"
@@ -13,13 +8,11 @@ import { subscribe as subscribeLocale, t } from "../../i18n"
 import type { AidokuSettingItem } from "../../sources/aidoku"
 import { findSource, reloadRegistry, updateAidokuSetting, type InstalledSource } from "../../sources/registry"
 
-/** 清單的目前值：存過的陣列優先，沒存過就是 schema 的預設。 */
 export function listValuesOf(item: AidokuSettingItem, overrides: Record<string, unknown>): string[] {
   const raw = item.key && item.key in overrides ? overrides[item.key] : item.default
   return Array.isArray(raw) ? raw.map(value => String(value ?? "")) : []
 }
 
-/** 增刪的列：inline 與子頁共用，只把新陣列交出去。 */
 export function AidokuEditableList({
   item,
   values,

@@ -1,21 +1,3 @@
-// ACNet 超分的 Core ML + Metal 版（實驗路徑）。
-// 由 `upscale.ts` 的 USE_CORE_ML 開關決定用這條還是原本的 wasm 路徑；
-// 兩條路的輸入輸出契約相同：吃原始圖片位元組，回 JPEG 位元組。
-//
-// 資料流（每帶）：
-//   裁一條（多帶 PAD 列）→ 上傳 GPU → extract 算整帶 Y → 讀回 Y
-//   → 逐塊組 544² 輸入 → Core ML（fp16 輸出寫進預配的 PixelBuffer）→ gather 從貼圖視圖收進槽
-//   → 一次 compose 掃完整帶（2x）→ 需要縮小就再一次 downscale → 分段讀回 → ffmpeg 編 JPEG
-//
-// 不用 copyToTypedArray／copyToData／UIImage.fromRGBA：這個執行期裡它們每次都留下整份資料不回收。
-//
-// 三個硬限制：
-//   1. Metal 只能在 app 前景工作，背景會以 BackgroundExecutionNotPermitted 拒絕。
-//   2. 單一 Metal buffer 64MiB。
-//   3. 單次 typed array 搬運約 19MB 上限（39MB 會拋 copy budget），讀寫一律分段。
-//
-// 輸出超過 64MB RGBA 的頁直接回 null，交給 wasm 路徑（那種多半是長條 webtoon）。
-
 import { Script } from "scripting"
 
 import { join } from "../engine/fs"
@@ -26,11 +8,10 @@ import type { UpscaleTarget } from "./upscale"
 
 const TILE = 512
 const PAD = 16
-const SIDE = TILE + PAD * 2 // 544：模型唯一接受的輸入邊長
-const OUT = SIDE * 2 // 1088
+const SIDE = TILE + PAD * 2
+const OUT = SIDE * 2
 const MODEL = "ACNet-ane.mlpackage"
 const CHUNK = 4 * 1024 * 1024
-/** 整張輸出的 RGBA 上限；超過就回 null 讓 wasm 接手。 */
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024
 
 const SOURCE = `
@@ -206,8 +187,6 @@ interface Scratch {
 let core: Core | null = null
 let buffers: Buffers | null = null
 let engineInitFailed = false
-// 引擎整個常駐：這個執行期裡，交給過原生 API 的大塊記憶體（typed array、Metal buffer、貼圖視圖）
-// 釋放後不會真的還，閱讀器每開關一次就漏一份。所以只增不拆，只有出錯才整個丟。
 let scratch: Scratch | null = null
 const tilePool: TileOutput[] = []
 
@@ -243,7 +222,6 @@ function u32(values: number[]): Uint32Array {
   return new Uint32Array(values)
 }
 
-/** Core ML 與 Metal 都在（beta 版才有 CoreML；背景執行時 Metal 會晚一步失敗）。 */
 export function coreMLAvailable(): boolean {
   try {
     return typeof CoreML !== "undefined" && typeof CoreML.Model?.load === "function" && jpegEncoderAvailable()
@@ -353,10 +331,6 @@ function gcdRound(value: number): number {
   return Math.max(TILE, Math.floor(value / TILE) * TILE)
 }
 
-/**
- * 跑完一張的 Core ML 超分。回 null 表示「這條路不適用」（太大、被取消），
- * 例外表示真的壞了（呼叫端會退回 wasm 路徑）。
- */
 export async function upscaleWithCoreML(
   sourceData: Data,
   target: UpscaleTarget | undefined,
@@ -378,7 +352,6 @@ export async function upscaleWithCoreML(
   const scaling = outW !== twoW || outH !== twoH
   const tilesPerRow = Math.ceil(rect.width / TILE)
 
-  // 帶高：三個 buffer 的預算取最小
   const rowByte = rect.width * 4
   const carsBySrc = Math.floor((12 * 1048576) / (rowByte * 1))
   const byWide = Math.floor((48 * 1048576) / (twoW * 2 * 4))
@@ -411,7 +384,6 @@ export async function upscaleWithCoreML(
       const srcY0 = Math.max(0, ry0 - PAD)
       const srcRows = Math.min(rect.height, ry0 + bandRows + PAD) - srcY0
 
-      // 1. 裁這一帶（座標都是相對 sourceRect）
       const bandImage = page.croppedTo({ x: rect.x, y: rect.y + srcY0, width: rect.width, height: srcRows })
       const bandPixels = bandImage?.getPixelData()
       if (!bandPixels) throw new Error(`第 ${bands} 帶裁切失敗`)
@@ -420,7 +392,6 @@ export async function upscaleWithCoreML(
         await built.source.write(bandPx.subarray(off, Math.min(off + CHUNK, bandPx.byteLength)), { offset: off })
       }
 
-      // 2. 整帶的 Y
       await built.extract.dispatch({
         threadgroups: { width: Math.ceil(rect.width / 16), height: Math.ceil(srcRows / 16) },
         threadsPerThreadgroup: { width: 16, height: 16 },
@@ -435,7 +406,6 @@ export async function upscaleWithCoreML(
         new Uint8Array(yPlane.buffer, yPlane.byteOffset + off, length).set(piece.subarray(0, length))
       }
 
-      // 3. 逐塊推論
       let slot = 0
       for (let ty = ry0; ty < ry0 + bandRows; ty += TILE) {
         if (isCancelled && isCancelled()) return null
@@ -468,7 +438,6 @@ export async function upscaleWithCoreML(
         }
       }
 
-      // 4. 模型輸出直接從 PixelBuffer 收進槽（不經 JS 拷貝）
       for (let s = 0; s < slot; s++) {
         await built.gather.dispatch({
           threadgroups: { width: OUT / 16, height: OUT / 16 },
@@ -479,7 +448,6 @@ export async function upscaleWithCoreML(
         })
       }
 
-      // 5. 2x 重構
       await built.compose.dispatch({
         threadgroups: { width: Math.ceil(twoW / 16), height: Math.ceil((bandRows * 2) / 16) },
         threadsPerThreadgroup: { width: 16, height: 16 },
@@ -498,7 +466,6 @@ export async function upscaleWithCoreML(
         ],
       })
 
-      // 6. 搬到輸出（必要時先縮）
       if (!scaling) {
         const rowBytes = twoW * 4
         const bandTwoRows = bandRows * 2
@@ -542,7 +509,6 @@ export async function upscaleWithCoreML(
       bands++
     }
 
-    // 7. 編碼
     const jpeg = await encodeRGBAToJPEG(outW, outH, out)
     if (!jpeg) return null
     const ms = Date.now() - started

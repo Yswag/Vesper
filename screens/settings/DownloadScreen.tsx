@@ -1,8 +1,3 @@
-// 下載管理：進行中的任務（可取消）、未完成／失敗的章節、已完成的章節（依漫畫收納折疊、可離線閱讀、左滑刪除），以及離線總佔用。
-//
-// 狀態全部來自 ComicLibrary（底下的下載管理員與離線層都是 app 層、不綁畫面）；
-// 這一頁不自己記任何東西，只把狀態轉成結構化卡片與 design/ 的列。
-
 import {
   Button,
   Divider,
@@ -37,10 +32,8 @@ import {
 
 export function DownloadScreen() {
   const library = comicLibrary()
-  // 下載、取消、刪除都會讓這裡重繪（去抖在管理員那邊）；背景開關也可能從別的地方被改（或還原）。
   useSubscription(library.onChange, subscribeBackgroundDownloads, subscribeLocale)
 
-  // 背景續傳是 Scripting Pro 的功能；沒有 Pro 時開關看得見但按不下去。
   const canUseBackground = hasPro()
 
   return (
@@ -57,7 +50,6 @@ export function DownloadScreen() {
   )
 }
 
-/** 依漫畫分組的已下載紀錄。 */
 interface ComicDownloadGroup {
   groupKey: string
   sourceKey: string
@@ -68,7 +60,6 @@ interface ComicDownloadGroup {
   totalBytes: number
 }
 
-/** 把已完成的章節依漫畫分組。 */
 function groupDownloadsByComic(records: DownloadRecord[]): ComicDownloadGroup[] {
   const map = new Map<string, ComicDownloadGroup>()
   for (const record of records) {
@@ -95,10 +86,6 @@ function groupDownloadsByComic(records: DownloadRecord[]): ComicDownloadGroup[] 
   return Array.from(map.values())
 }
 
-/**
- * 版面本體。資料與動作都用參數進來（預覽可以餵假資料看版面），
- * 所以在預覽裡也不會碰到磁碟。
- */
 export function DownloadSections({
   records,
   used,
@@ -116,7 +103,6 @@ export function DownloadSections({
   onToggleBackground: (value: boolean) => void
   onCancel: (ref: ChapterRef) => void
   onDelete: (ref: ChapterRef) => void
-  /** 這一部的閱讀器章節清單（本機快取合併已下載的章）；預覽餵假的就好。 */
   readerChapters: (ref: ComicRef) => ReaderChapter[]
 }) {
   const active = records.filter(record => isActive(record.state))
@@ -124,7 +110,6 @@ export function DownloadSections({
   const done = records.filter(record => record.state === "done")
   const comicGroups = groupDownloadsByComic(done)
 
-  // 預設收起全部漫畫分組；使用者點擊哪本展開哪本
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({})
 
   function toggleExpand(groupKey: string) {
@@ -147,7 +132,7 @@ export function DownloadSections({
         />
       ) : null}
 
-      {/* 1. 頂部：進行中的任務 */}
+      {}
       {active.length > 0 ? (
         <CardGroup title={t("settings.downloads.active", { n: active.length })} swipeActionsContainer={true}>
           {active.map((record, index) => (
@@ -173,7 +158,7 @@ export function DownloadSections({
         </CardGroup>
       ) : null}
 
-      {/* 2. 未完成／失敗的任務 */}
+      {}
       {pending.length > 0 ? (
         <CardGroup
           title={t("settings.downloads.pending", { n: pending.length })}
@@ -229,7 +214,7 @@ export function DownloadSections({
         </CardGroup>
       ) : null}
 
-      {/* 3. 已完成：依漫畫收納的卡片列表 */}
+      {}
       {comicGroups.length > 0 ? (
         <VStack spacing={14} alignment="leading">
           <GroupHeader title={t("settings.downloads.doneGroup", { n: done.length })} />
@@ -249,7 +234,7 @@ export function DownloadSections({
         </VStack>
       ) : null}
 
-      {/* 4. 儲存空間統計 */}
+      {}
       {records.length > 0 ? (
         <CardGroup
           title={t("settings.downloads.storage")}
@@ -264,7 +249,7 @@ export function DownloadSections({
         </CardGroup>
       ) : null}
 
-      {/* 5. 背景續傳設定 */}
+      {}
       <CardGroup
         title={t("settings.downloads.background")}
         footnote={
@@ -292,7 +277,6 @@ export function DownloadSections({
   )
 }
 
-/** 進行中的下載項目：帶進度資訊與取消按鈕。 */
 function ActiveDownloadRow({
   record,
   onCancel,
@@ -336,12 +320,6 @@ function ActiveDownloadRow({
   )
 }
 
-/**
- * 依漫畫收納的摺疊卡片：
- * - Header：漫畫封面（40×56）、漫畫名稱、已下載章數與總容量、展開/收合 chevron。
- * - 支援整部左滑刪除確認。
- * - 展開後展示各章節，章節支援左滑單獨刪除。
- */
 function ComicGroupCard({
   group,
   isExpanded,
@@ -370,7 +348,7 @@ function ComicGroupCard({
 
   return (
     <Card swipeActionsContainer={true}>
-      {/* 漫畫總覽列：點擊展開／收起，左滑可整部刪除 */}
+      {}
       <VStack
         spacing={0}
         frame={{ maxWidth: "infinity" }}
@@ -404,7 +382,7 @@ function ComicGroupCard({
         />
       </VStack>
 
-      {/* 展開後的章節子列表 */}
+      {}
       {isExpanded ? (
         <VStack spacing={0} background={fill.tag}>
           {group.records.map((record) => (
@@ -466,18 +444,15 @@ function ComicGroupCard({
   )
 }
 
-/** 清單每一筆的 React key（章的識別三元組本來就唯一）。 */
 function recordId(record: DownloadRecord): string {
   return `${record.key.sourceKey}/${record.key.comicId}/${record.key.epId}`
 }
 
-/** 「漫畫 · 章節」；沒有漫畫名就只顯示章節。 */
 function nameOf(record: DownloadRecord): string {
   const episode = record.epTitle || record.key.epId
   return record.comicTitle ? `${record.comicTitle} · ${episode}` : episode
 }
 
-/** 未完成的原因：有抓到幾張就誠實說幾張，加上失敗的原因。 */
 function reasonOf(record: DownloadRecord): string {
   if (record.state === "failed") {
     return record.error ? `${t("bookshelf.downloadFailed")} · ${record.error}` : t("bookshelf.downloadFailed")

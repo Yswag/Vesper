@@ -1,10 +1,3 @@
-// 源登入：三種形狀都支援 —— 帳密（`account.login`）、Cookie 欄位（`loginWithCookies`）、
-// 瀏覽器（`loginWithWebview`：真的開一個瀏覽器，Cloudflare 過盾與 localStorage 型憑證都在這條）。
-//
-// 版面全走 design/（頁面殼 · 卡片 · 列 · 狀態橫幅），跟設定分頁其他頁面同一套語言。
-//
-// 注意：Scripting 的 TextField 沒有遮蔽輸入的選項，所以密碼欄位是可見的。
-
 import { Divider, HStack, Image, ProgressView, Text, VStack, useEffect, useState } from "scripting"
 import { CardGroup, PageScroll } from "../../design/layout"
 import { ActionRow, FormInputRow, InfoRow, TextInputRow, rowSeparatorInset } from "../../design/rows"
@@ -38,13 +31,11 @@ export function SourceAccountScreen({ sourceKey }: { sourceKey: string }) {
     setLoaded(true)
   }, [sourceKey])
 
-  /** `label` 是動作本身（`settings.shared.login`…）：狀態與對話框標題都用它。 */
   async function run(label: string, task: () => Promise<string | void>) {
     setBusy(true)
     setStatus({ kind: "loading", text: t("common.inProgress", { label }) })
     try {
       const message = await task()
-      // 源沒有回訊息就沒有橫幅（訊息是資料，不是狀態）。
       setStatus(message ? { kind: "ready", text: message } : null)
       setSource(findSource(sourceKey))
     } catch (error) {

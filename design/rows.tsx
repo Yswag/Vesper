@@ -1,7 +1,3 @@
-// 通用清單與設定項目列元件庫。
-// 點擊事件一律採 onTapGesture 與全寬容器，保持整列觸控範圍。
-// ⚠️ 有 onTapGesture 的列要配 `contentShape="rect"`，不然 Spacer 那段不算內容、點不到。
-
 import {
   Button,
   HStack,
@@ -24,15 +20,10 @@ import { useTint, type Tint } from "../app/theme"
 import { badgeOff, badgeShape, badgeSize, capsule, rowPadding, toneText } from "./tokens"
 import { t } from "../i18n"
 
-/** 列上的顏色可以給固定色（`Color`）或跟主題的 `DynamicShapeStyle`。 */
 export type RowColor = Color | DynamicShapeStyle
 
-/** 卡內分隔線的縮排：對齊文字起點（padding 16 + 圖示 24 + 間距 12）。 */
 export const rowSeparatorInset = 52
 
-/**
- * 圖示徽章：支援單色透明風格或傳入 background 之微透光膠囊背景。
- */
 export function IconBadge({
   icon,
   color = "secondaryLabel",
@@ -66,7 +57,6 @@ export function IconBadge({
   )
 }
 
-/** 系統紅的數字角標（跟 tab 角標同色）：最小 16pt 的圓，數字多就橫向撐成膠囊，超過 99 顯示 99+。 */
 export function CountBadge({ count }: { count: number }) {
   return (
     <Text
@@ -75,7 +65,6 @@ export function CountBadge({ count }: { count: number }) {
       foregroundStyle="white"
       monospacedDigit
       lineLimit={1}
-      // overlay 只給圖示那麼寬（24pt）；不抱內容寬，兩位數就被截成「…」。
       fixedSize={{ horizontal: true, vertical: false }}
       padding={{ horizontal: 5 }}
       frame={{ minWidth: 16, minHeight: 16 }}
@@ -86,12 +75,10 @@ export function CountBadge({ count }: { count: number }) {
   )
 }
 
-/** 列表右側的箭頭。只在「會進下一頁」時用。 */
 export function Chevron() {
   return <Image systemName="chevron.right" font="caption" fontWeight="semibold" foregroundStyle="tertiaryLabel" />
 }
 
-/** 有圖示的一列。color 預設為 secondaryLabel（相容深淺色模式），onTap 不給就是純資訊列。 */
 export function IconRow({
   icon,
   iconColor = "secondaryLabel",
@@ -112,7 +99,6 @@ export function IconRow({
   detail?: string
   detailColor?: RowColor
   chevron?: boolean
-  /** 圖示右上角的紅色數字；0 不畫。 */
   badge?: number
   onTap?: () => void
 }) {
@@ -130,7 +116,6 @@ export function IconRow({
           badge > 0
             ? {
                 alignment: "topTrailing",
-                // 圓心對齊圖示右上角。
                 content: (
                   <VStack offset={{ x: 8, y: -8 }}>
                     <CountBadge count={badge} />
@@ -156,7 +141,6 @@ export function IconRow({
   )
 }
 
-/** label / value 的資訊列（沒有圖示、沒有動作）。 */
 export function InfoRow({
   label,
   value,
@@ -179,7 +163,6 @@ export function InfoRow({
   )
 }
 
-/** 單選列。選中的那一列同時有 tint 色與勾號，不是只靠顏色。 */
 export function OptionRow({
   title,
   subtitle,
@@ -219,12 +202,10 @@ export function OptionRow({
   )
 }
 
-/** 開關的軌道色：中性盤（石墨、灰階）的 tint 是白色，圓鈕會淹在軌道裡 → 用系統預設綠。 */
 export function toggleTint(tint: Tint): RowColor {
   return tint.neutral ? "systemGreen" : tint.tint
 }
 
-/** 開關列。`subtitle` 是標題下方的一句說明（來源的 `subtitle`）。 */
 export function ToggleRow({
   icon,
   iconColor = "secondaryLabel",
@@ -260,7 +241,6 @@ export function ToggleRow({
   )
 }
 
-/** 輸入列（設定值、帳號欄位…）。 */
 export function FieldRow({
   icon,
   iconColor = "secondaryLabel",
@@ -282,7 +262,6 @@ export function FieldRow({
   )
 }
 
-/** 帶有獨立頂部標籤的文字輸入列（適合較長字串如 URL 或多行原始碼）。 */
 export function TextInputRow({
   icon,
   iconColor,
@@ -303,7 +282,6 @@ export function TextInputRow({
   value: string
   multiline?: boolean
   lines?: number
-  /** 遮蔽輸入（來源的 `secure: true`）。`SecureField` 沒有多行，所以 multiline 會失效。 */
   secure?: boolean
   keyboardType?: KeyboardType
   onChanged: (value: string) => void
@@ -345,7 +323,6 @@ export function TextInputRow({
   )
 }
 
-/** 下拉選單列。左側圖示與標題，右側顯示當前值（低調無彩色次要標籤，點擊彈出 Menu；選中項打勾）。 */
 export function SelectRow({
   icon,
   iconColor = "secondaryLabel",
@@ -354,7 +331,6 @@ export function SelectRow({
   options,
   onChanged,
 }: {
-  /** 不給就不畫圖示（整張卡都是純文字列的時候）。 */
   icon?: string
   iconColor?: RowColor
   title: string
@@ -401,9 +377,6 @@ export function SelectRow({
 
 export type ActionTone = "default" | "destructive"
 
-/**
- * 操作動作列（支援 busy 等候與 destructive 危險樣式）。
- */
 export function ActionRow({
   icon,
   iconColor,
@@ -439,10 +412,6 @@ export function ActionRow({
   )
 }
 
-/**
- * 水平單列式表單輸入（iOS 標準風格）：
- * 左側為 IconBadge 與標籤（寬度適中），右側為佔滿的 TextField。
- */
 export function FormInputRow({
   icon,
   iconColor = "secondaryLabel",

@@ -1,7 +1,3 @@
-// 源倉庫：加入與管理。加入只保存索引（index.json），**不會**自動安裝任何源；
-// 要裝哪個源進去倉庫裡逐筆挑（RepositoryDetailScreen）。
-// 放大鏡搜所有倉庫的本地索引快取（不連網），結果依倉庫分組、在列上直接安裝。
-
 import {
   Button,
   Divider,
@@ -44,12 +40,9 @@ import {
 } from "../../sources/repository"
 import { actionLabel, confirmInstall, EntryRow, RepositoryDetailScreen } from "./RepositoryDetailScreen"
 
-/** `initialQuery`：從瀏覽頁「到源倉庫找」帶過來的關鍵字，一進頁就搜。 */
 export function RepositoryListScreen({ initialQuery = "" }: { initialQuery?: string } = {}) {
-  // 源一裝好，搜尋結果的安裝狀態要跟著變。
   useSubscription(subscribeLocale, subscribeSources)
   const search = useToolbarSearch(t("settings.repos.searchPrompt"), initialQuery)
-  /** 搜尋結果裡正在裝的那一列：`倉庫網址\nkey`。 */
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [repositories, setRepositories] = useState<StoredRepository[]>([])
   const [busy, setBusy] = useState(false)
@@ -283,7 +276,7 @@ export function RepositoryListScreen({ initialQuery = "" }: { initialQuery?: str
                       alignment="center"
                       frame={{ maxWidth: "infinity" }}
                     >
-                      {/* 純色線條圖示 */}
+                      {}
                       <Image
                         systemName={hasError ? "exclamationmark.triangle" : "shippingbox"}
                         font="title3"
@@ -323,7 +316,6 @@ export function RepositoryListScreen({ initialQuery = "" }: { initialQuery?: str
   )
 }
 
-/** 自動產生的「擁有者/倉庫」拆成標題＋擁有者；其他名稱照原樣，第二行放自動產生的名字。 */
 function repositoryLabel(repository: StoredRepository): { title: string; owner: string } {
   const derived = repositoryNameFor(repository.url)
   const slash = repository.name.indexOf("/")

@@ -1,7 +1,3 @@
-// 頁面底色主題系統：構圖（COMPOSITIONS）與色盤（PALETTES）兩軸正交組合。
-// 構圖採 4×4 均勻 MeshGradient 控制點，外圍錨定於 0/1 避免邊緣扭曲。
-// 文本採 i18n key 宣告，於畫面渲染時動態求值。
-
 import {
   Circle,
   NavigationStack,
@@ -23,7 +19,6 @@ const KEY = "venera:theme"
 const CUSTOM_COLOR_KEY = "venera:theme:customColor"
 const APPEARANCE_KEY = "venera:appearance"
 
-/** 一個色盤的三個角色：底色、過渡、光。 */
 export interface Tone {
   base: Color
   mid: Color
@@ -32,7 +27,6 @@ export interface Tone {
 
 export interface Palette {
   id: string
-  /** 顯示名稱的 key（`t()` 在畫面 render 時才求值；這裡是模組層常數，不能先算好）。 */
   nameKey: MessageKey
   dark: Tone
   light: Tone
@@ -42,13 +36,9 @@ export interface Composition {
   id: string
   nameKey: MessageKey
   noteKey: MessageKey
-  /** 把一組色排成 mesh（外圈點固定在 0/1）。 */
   build: (tone: Tone) => MeshGradient
 }
 
-/**
- * 4×4 均勻正交格線控制點（所有構圖共享相同幾何拓撲，切換時僅插值顏色）。
- */
 const grid4: MeshGradient["points"] = [
   [0, 0], [0.333, 0], [0.667, 0], [1, 0],
   [0, 0.333], [0.333, 0.333], [0.667, 0.333], [1, 0.333],
@@ -83,7 +73,6 @@ export const COMPOSITIONS: Composition[] = [
     id: "long",
     nameKey: "settings.theme.composition.long.name",
     noteKey: "settings.theme.composition.long.note",
-    // 上緣光拉長：過渡色延到中段才收成底色。
     build: tone =>
       mesh4([
         tone.accent, tone.accent, tone.accent, tone.accent,
@@ -96,7 +85,6 @@ export const COMPOSITIONS: Composition[] = [
     id: "dusk",
     nameKey: "settings.theme.composition.dusk.name",
     noteKey: "settings.theme.composition.dusk.note",
-    // 光從底部升起（藏在 tab bar 後面），頂部留一層淡色。整列同色，格線才不會拉出斜向接縫。
     build: tone =>
       mesh4([
         tone.mid, tone.mid, tone.mid, tone.mid,
@@ -109,7 +97,6 @@ export const COMPOSITIONS: Composition[] = [
     id: "twin",
     nameKey: "settings.theme.composition.twin.name",
     noteKey: "settings.theme.composition.twin.note",
-    // 只留右上一角：光在導覽列右側，內容區與左下角都是安靜的底色。
     build: tone =>
       mesh4([
         tone.base, tone.mid, tone.mid, tone.accent,
@@ -120,8 +107,6 @@ export const COMPOSITIONS: Composition[] = [
   },
 ]
 
-// 8 個色盤的 accent 都在同一條 OKLCH 帶（深 L .44 / C .09，淺 L .86 / C .05），只差色相；
-// 色域較窄的色相（青）彩度會被壓低，但亮度一致——所以換色盤時「光的強弱」不會跟著變。
 export const PALETTES: Palette[] = [
   {
     id: "blue",
@@ -168,7 +153,6 @@ export const PALETTES: Palette[] = [
   {
     id: "aurora",
     nameKey: "settings.theme.palette.aurora",
-    // 雙色相：過渡帶青、光帶紫，才不會跟藍、紫兩盤撞。
     dark: { base: "#0e1828", mid: "#0d2021", accent: "#654274" },
     light: { base: "#e8edf2", mid: "#d9e7e8", accent: "#dec8e8" },
   },
@@ -181,7 +165,6 @@ export interface ThemeChoice {
 
 const DEFAULT_CHOICE: ThemeChoice = { composition: "edge", palette: "blue" }
 
-/** 舊版（單一主題 id）→ 新版的兩軸組合，讓既有使用者的選擇不會被重置。 */
 const LEGACY: Record<string, ThemeChoice> = {
   aurora: { composition: "edge", palette: "aurora" },
   glow: { composition: "edge", palette: "blue" },
@@ -196,7 +179,6 @@ const LEGACY: Record<string, ThemeChoice> = {
   "mesh-dusk": { composition: "edge", palette: "amber" },
 }
 
-/** 改過 id 的構圖：舊 id → 新 id（色盤保留）。 */
 const RENAMED_COMPOSITIONS: Record<string, string> = { spot: "dusk" }
 
 export function findComposition(id: string): Composition {
@@ -226,12 +208,10 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${toHex(r)}${toHex(g)}${toHex(b)}`
 }
 
-/** 色盤 accent 的目標帶（OKLCH）：換色盤時光的強弱不會跟著變。 */
 const ACCENT_BAND: Record<"light" | "dark", { lightness: number; chroma: number }> = {
   dark: { lightness: 0.44, chroma: 0.09 },
   light: { lightness: 0.86, chroma: 0.05 },
 }
-/** 低於這個彩度就當成沒有色相：自訂色選了黑、白、灰不要被硬塞顏色。 */
 const ACHROMATIC_BELOW_CHROMA = 0.02
 
 function toOklab(hex: string): [number, number, number] {
@@ -246,7 +226,6 @@ function toOklab(hex: string): [number, number, number] {
   ]
 }
 
-/** OKLCH → hex；超出色域就把彩度往下壓（青、綠在同樣亮度下到不了那麼艷）。 */
 function oklchToHex(lightness: number, chroma: number, hue: number): string {
   const radians = (hue * Math.PI) / 180
   const encode = (amount: number): [number, number, number] => {
@@ -274,7 +253,6 @@ function oklchToHex(lightness: number, chroma: number, hue: number): string {
   return rgbToHex(toChannel(linear[0]) * 255, toChannel(linear[1]) * 255, toChannel(linear[2]) * 255)
 }
 
-/** 把任意色碼的光色放進內建色盤同一條帶：亮度固定、彩度對齊；中性色維持中性。 */
 function bandAccent(hex: string, mode: "light" | "dark"): string {
   const [, a, b] = toOklab(hex)
   const chroma = Math.hypot(a, b)
@@ -285,12 +263,10 @@ function bandAccent(hex: string, mode: "light" | "dark"): string {
 
 export function buildCustomPalette(accentHex: string): Palette {
   const [r, g, b] = parseHex(accentHex)
-  // 暗色模式：底色是微弱原色（乘 0.18），過渡色乘 0.35，光色由 bandAccent 算
   const darkBase = rgbToHex(r * 0.16 + 5, g * 0.16 + 7, b * 0.16 + 10)
   const darkMid = rgbToHex(r * 0.32 + 8, g * 0.32 + 12, b * 0.32 + 16)
   const darkAccent = bandAccent(accentHex, "dark")
 
-  // 淺色模式：底色近白帶原色調（245+），過渡色（230+），光色由 bandAccent 算
   const lightBase = rgbToHex(245 + r * 0.03, 246 + g * 0.03, 248 + b * 0.03)
   const lightMid = rgbToHex(232 + r * 0.07, 235 + g * 0.07, 240 + b * 0.07)
   const lightAccent = bandAccent(accentHex, "light")
@@ -308,8 +284,6 @@ export function getCustomColor(): Color {
   return (typeof saved === "string" && saved ? saved : "#0A84FF") as Color
 }
 
-// 自訂色只存在 Storage，但底色每次重繪都會問一次。讀一次就夠了，所以把「色碼 + 算好的色盤」
-// 留在記憶體：色盤給 findPalette("custom") 用，色碼則當圖層快取的鍵（見 themeLayers，換色＝換鍵）。
 let customCache: { hex: string; palette: Palette } | null = null
 
 function loadCustomPalette(): { hex: string; palette: Palette } {
@@ -322,7 +296,6 @@ function loadCustomPalette(): { hex: string; palette: Palette } {
 
 export function setCustomColor(hex: string): void {
   kv.set(CUSTOM_COLOR_KEY, hex)
-  // 先換快取再通知：訂閱者（PageBackground）收到通知重繪時要拿到新色，不是舊的。
   customCache = { hex, palette: buildCustomPalette(hex) }
   save({ ...current, palette: "custom" })
 }
@@ -332,29 +305,16 @@ export function findPalette(id: string): Palette {
   return PALETTES.find(item => item.id === id) ?? PALETTES[0]
 }
 
-// ── 互動色（tint）──────────────────────────────────────────────
-// 背景由色盤決定，互動色就跟著色盤推導：取 accent 的色相，把亮度夾到「當文字也讀得到」的區間。
-// 驗收標準是對比度，不是特定數值。
 
-/** 一個色盤推導出來的互動色角色，每個都是 light/dark 兩份。 */
 export interface Tint {
-  /** 中性色盤（石墨、灰階）：tint 是黑白，系統控制項要改用預設色才看得出狀態。 */
   neutral: boolean
-  /** 主強調色：連結文字、勾選、選中文字、實心主要按鈕的底。 */
   tint: DynamicShapeStyle
-  /** 放在實心 `tint` 上的文字／圖示（亮底配深字）。 */
   onTint: DynamicShapeStyle
-  /** 可選取項目的底（chip、膠囊）。 */
   selected: DynamicShapeStyle
-  /** 選中的整列（面積大，比 chip 輕）。 */
   selectedRow: DynamicShapeStyle
-  /** 選中的項目（閱讀器目錄列）。 */
   highlight: DynamicShapeStyle
-  /** 選中項目的描邊。 */
   highlightBorder: DynamicShapeStyle
-  /** 榜單徽章底。 */
   rank: DynamicShapeStyle
-  /** 資訊橫幅底（登入提示那類 tint 洗色）。 */
   info: DynamicShapeStyle
 }
 
@@ -362,19 +322,12 @@ type RGB = [number, number, number]
 
 type Mode = "light" | "dark"
 
-/** 有色 tint 從「暗」往上（深色）或從「亮」往下（淺色）找到剛好夠讀的亮度。
- *  對比是亮度的函數，這樣每個色盤的 tint 亮度就會一致，不會一個霓虹、一個暗暗的。 */
 const TINT_SCAN: Record<Mode, { from: number; to: number }> = { dark: { from: 0.28, to: 0.96 }, light: { from: 0.88, to: 0.1 } }
-/** 中性色（石墨、灰）的亮點：深色模式近白，淺色模式近黑。 */
 const NEUTRAL_LIGHTNESS: Record<Mode, number> = { dark: 0.94, light: 0.16 }
-/** 色相從 accent 來，但飽和度要夾住：太灰讀不出顏色，太艷（新的 accent 帶彩度高）會變霓虹。 */
 const TINT_SATURATION = { min: 0.4, max: 0.65, neutral: 0.03 }
-/** 低於這個飽和度就當作沒有色相（不偷塞顏色）。 */
 const NEUTRAL_BELOW_SATURATION = 0.15
 const MIN_TINT_CONTRAST = 4.5
-/** 推導時留一點餘裕，驗收門檻才是 4.5。 */
 const TARGET_TINT_CONTRAST = 4.6
-/** 透明度階梯沿用原本系統藍那一組數值，只是基色換成 tint。 */
 const LADDER_ALPHA = { selected: 0.22, selectedRow: 0.14, highlight: 0.15, highlightBorder: 0.75, rank: 0.15, info: 0.12 }
 
 function linearize(value: number): number {
@@ -386,7 +339,6 @@ function luminance([r, g, b]: RGB): number {
   return 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
 }
 
-/** WCAG 對比（1–21）。 */
 function contrastRatio(a: RGB, b: RGB): number {
   const high = Math.max(luminance(a), luminance(b))
   const low = Math.min(luminance(a), luminance(b))
@@ -405,7 +357,6 @@ function rgbToHsl([r, g, b]: RGB): { hue: number; saturation: number; lightness:
   return { hue: raw * 60, saturation, lightness }
 }
 
-/** HSL → hex（每個色相只取一個亮度，交給對比度迴圈調）。 */
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const h = ((hue % 360) + 360) % 360
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
@@ -420,7 +371,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
   return rgbToHex((r + base) * 255, (g + base) * 255, (b + base) * 255)
 }
 
-/** 一個模式的 tint：中性色固定近白／近黑；有色色相找到剛好與底拉開對比度的亮度。 */
 function deriveModeHex(hue: number, saturation: number, mode: Mode, base: string, neutral: boolean): string {
   const backdrop = parseHex(base)
   if (neutral) return hslToHex(hue, saturation, NEUTRAL_LIGHTNESS[mode])
@@ -433,12 +383,10 @@ function deriveModeHex(hue: number, saturation: number, mode: Mode, base: string
     lightness += step
     hex = hslToHex(hue, saturation, lightness)
   }
-  // 極暗／極亮的自訂底：掃到極限還不夠就直接給純黑／純白。
   if (contrastRatio(parseHex(hex), backdrop) < MIN_TINT_CONTRAST) return mode === "dark" ? "#ffffff" : "#000000"
   return hex
 }
 
-/** 放在實心 tint 上的字：亮底配深字、暗底配亮字，取對比高的那邊，不夠再往極值推。 */
 function deriveOnTintHex(tintHex: string, hue: number): string {
   const tint = parseHex(tintHex)
   const ink = hslToHex(hue, 0.2, 0.06)
@@ -453,22 +401,17 @@ function deriveOnTintHex(tintHex: string, hue: number): string {
   return hex
 }
 
-/** tint 加透明度（格式不帶空格：Color 的 rgba 字面值就是這樣寫）。 */
 function tintAlpha(hex: string, alpha: number): Color {
   const [r, g, b] = parseHex(hex)
   return `rgba(${r},${g},${b},${alpha})` as Color
 }
 
-/** 推導出來的是執行期字串，型別上就是 Color。 */
 function asColor(hex: string): Color {
   return hex as Color
 }
 
-// 同一個色盤只推導一次：每個畫面都會問（chip、列、按鈕都各問一次），而推導含對比度迴圈。
-// 自訂色盤的內容取決於色碼，所以鍵把 accent 帶上：換色即換鍵，自然變成新的一組。
 const tintCache = new Map<string, Tint>()
 
-/** 從色盤推導互動色（純函式，結果快取）。 */
 export function deriveTint(palette: Palette): Tint {
   const accent = String(palette.dark.accent)
   const key = `${palette.id}:${accent}`
@@ -476,7 +419,6 @@ export function deriveTint(palette: Palette): Tint {
   if (cached) return cached
 
   const { hue, saturation } = rgbToHsl(parseHex(accent))
-  // 石墨與低飽和的自訂色走中性：硬塞色相就會變成「另一種藍」。
   const neutral = saturation < NEUTRAL_BELOW_SATURATION
   const chroma = neutral
     ? TINT_SATURATION.neutral
@@ -500,7 +442,6 @@ export function deriveTint(palette: Palette): Tint {
   return tint
 }
 
-/** 目前主題的 tint（非 hook：事件處理或純邏輯裡要用時）。 */
 export function currentTint(): Tint {
   return deriveTint(findPalette(themeChoice().palette))
 }
@@ -509,7 +450,6 @@ let current: ThemeChoice = readStoredChoice()
 
 const bus = createEmitter()
 
-/** 把 Storage 裡的原始值解成兩軸。舊版是單一主題 id 的字串（走 LEGACY 映射），壞值退回預設。 */
 export function parseChoice(raw: unknown): ThemeChoice {
   if (typeof raw === "string") return LEGACY[raw] ?? DEFAULT_CHOICE
   if (raw && typeof raw === "object") {
@@ -550,7 +490,6 @@ export function setPalette(id: string): void {
 
 export const subscribeTheme = bus.subscribe
 
-/** 重讀 Storage 裡的主題設定：Mini Hub 跟完整 App 是兩個實例，對方改的值要靠這個跟上。 */
 export function reloadThemeFromStorage(): void {
   current = readStoredChoice()
   appearance = parseAppearance(kv.get(APPEARANCE_KEY))
@@ -558,26 +497,20 @@ export function reloadThemeFromStorage(): void {
   bus.emit()
 }
 
-/** 目前的組合（換構圖或顏色都會重新渲染）。 */
 export function useThemeChoice(): ThemeChoice {
   useSubscription(subscribeTheme)
   return themeChoice()
 }
 
-/** 目前的 tint（跟 `useThemeChoice` 同一條訂閱：切換主題時與背景一起換）。 */
 export function useTint(): Tint {
   return deriveTint(findPalette(useThemeChoice().palette))
 }
 
-// ── 深淺模式 ──────────────────────────────────────────────────────
-// 根層用覆蓋值強制深淺；算顏色的地方用 `useResolvedColorScheme`。
-// `useColorScheme()` 只跟系統外觀、讀不到 App 自己的覆蓋，強制深色時會拿到淺色。
 
 export type Appearance = "system" | "light" | "dark"
 
 export const APPEARANCES: Appearance[] = ["system", "light", "dark"]
 
-/** 壞值與舊版（沒存過）都當跟隨系統。 */
 export function parseAppearance(raw: unknown): Appearance {
   return raw === "light" || raw === "dark" ? raw : "system"
 }
@@ -595,13 +528,11 @@ export function setAppearance(next: Appearance): void {
   bus.emit()
 }
 
-/** 根層要強制的深淺；跟隨系統回 `undefined`（不覆蓋）。 */
 export function useAppearanceOverride(): Mode | undefined {
   useSubscription(subscribeTheme)
   return appearance === "system" ? undefined : appearance
 }
 
-/** `Navigation.present` 出來的頁面不繼承根層深淺：呈現的根一律用這個代替 `NavigationStack`。 */
 export function ThemedNavigationStack({ children }: { children: JSX.Element }) {
   const scheme = useAppearanceOverride()
   return (
@@ -611,19 +542,14 @@ export function ThemedNavigationStack({ children }: { children: JSX.Element }) {
   )
 }
 
-/** 實際生效的深淺：要把雙值顏色解成單一 `Color` 的地方一律用這個。 */
 export function useResolvedColorScheme(): Mode {
   const system = useColorScheme()
   useSubscription(subscribeTheme)
   return appearance === "system" ? system : appearance
 }
 
-// 同一個「構圖 × 色盤」只算一次。每次 build 都要排 16 個控制點的 mesh，而每個頁面都掛一顆
-// PageBackground（每次重繪都問一次），回同一份物件才能真的省下來。
-// 自訂色盤的內容取決於色碼，所以鍵要把色碼帶上：換色即換鍵，自然變成新圖層（舊的留在這，最多幾筆）。
 const layerCache = new Map<string, DynamicShapeStyle[]>()
 
-/** 某個組合的圖層（只有一層 mesh；保留陣列是為了以後要疊第二層時不用改介面）。 */
 export function themeLayers(choice: ThemeChoice): DynamicShapeStyle[] {
   const paletteKey = choice.palette === "custom" ? `custom:${loadCustomPalette().hex}` : choice.palette
   const key = `${choice.composition}:${paletteKey}`
@@ -639,12 +565,10 @@ export function themeLayers(choice: ThemeChoice): DynamicShapeStyle[] {
   return layers
 }
 
-/** 設定頁的縮圖：用某個構圖 × 某個色盤畫一小塊。 */
 export function ThemeSwatch({ composition, palette }: { composition: string; palette: string }) {
   return <Rectangle fill={themeLayers({ composition, palette })[0]} allowsHitTesting={false} />
 }
 
-/** 色盤圓點：從底色過渡到光色，跟真正的底色同一個色系。 */
 export function PaletteDot({ palette, size = 30 }: { palette: Palette; size?: number }) {
   const fill: DynamicShapeStyle = {
     dark: {
@@ -661,7 +585,6 @@ export function PaletteDot({ palette, size = 30 }: { palette: Palette; size?: nu
   return <Circle fill={fill} frame={{ width: size, height: size }} allowsHitTesting={false} />
 }
 
-/** 全域鋪底：貫穿所有分頁與導航欄。 */
 export function PageBackground() {
   const choice = useThemeChoice()
   const key = `${choice.composition}:${choice.palette}`

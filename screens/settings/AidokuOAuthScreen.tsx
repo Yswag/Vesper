@@ -1,6 +1,3 @@
-// Aidoku 的 oauth 登入頁：開真的授權頁，攔到自訂 scheme 的 callback 後換 token。
-// token 原文（或 callback URL）寫進源設定，`<key>.codeVerifier` 留給源自己刷新用。
-
 import { Button, Navigation, ProgressView, Spacer, Text, VStack, WebView, ZStack, useEffect, useRef, useState } from "scripting"
 
 import { useSubscription } from "../../app/useSubscription"
@@ -78,7 +75,6 @@ export function AidokuOAuthScreen({ sourceKey, item }: { sourceKey: string; item
         if (item.pkce) {
           verifierRef.current = randomVerifier()
           url = withPkce(authUrl, verifierRef.current)
-          // 源刷新 token 時會讀這個 key。
           updateAidokuSetting(sourceKey, `${item.key}.codeVerifier`, verifierRef.current)
         }
         authUrlRef.current = url
@@ -111,7 +107,6 @@ export function AidokuOAuthScreen({ sourceKey, item }: { sourceKey: string; item
       try {
         controller.dispose()
       } catch {
-        // 已經壞掉的 controller 就算了
       }
     }
   }, [])

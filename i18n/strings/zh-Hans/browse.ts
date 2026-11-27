@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   title: "浏览",
   manageSources: "漫画来源管理",
@@ -19,7 +17,6 @@ export default {
   viewLabel: "来源查看：{label}",
 
   noResults: "没有结果",
-  /** 源没有声明任何排行榜选项。 */
   noRankingOptions: "这个来源没有排行榜",
   refresh: "重新整理",
   reload: "重新载入",

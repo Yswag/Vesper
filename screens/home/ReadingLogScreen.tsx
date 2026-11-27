@@ -1,6 +1,3 @@
-// 閱讀紀錄：從 Mini Hub 的熱力圖推進來。依日期分組（新的在上），標題右側是當天讀完的話數；
-// 一部作品一張卡，點進詳情。
-
 import { HStack, LazyVStack, NavigationLink, ScrollView, Spacer, Text, VStack, ZStack } from "scripting"
 
 import { comicLibrary } from "../../app/services"
@@ -19,12 +16,10 @@ const DAY_MS = 24 * 60 * 60 * 1000
 
 export interface LogDay {
   day: string
-  /** 當天讀完的話數。 */
   chapters: number
   comics: DayComic[]
 }
 
-/** 有作品清單的日子，新的在前；每天裡最後讀的在前。 */
 function logDays(): LogDay[] {
   return Object.entries(readingActivity())
     .filter(([, activity]) => (activity.comics?.length ?? 0) > 0)
@@ -32,19 +27,16 @@ function logDays(): LogDay[] {
     .map(([day, activity]) => ({ day, chapters: activity.chapters, comics: [...(activity.comics ?? [])].reverse() }))
 }
 
-/** 只碰一話就顯示話名；好幾話顯示話數與最後讀的那話（話名格式各源不一，排不出範圍）。 */
 function episodeSummary(epTitles: string[]): string | null {
   if (epTitles.length <= 1) return epTitles[0] || null
   return t("home.miniHub.episodes", { n: epTitles.length, last: epTitles[epTitles.length - 1] })
 }
 
-/** 今天／昨天走 `Intl.RelativeTimeFormat`，其他日子顯示月日與星期。 */
 function formatDay(day: string): string {
   const locale = getLocale()
   const now = Date.now()
   const offset = day === dayKey(now) ? 0 : day === dayKey(now - DAY_MS) ? -1 : null
   if (offset !== null) {
-    // 英文給的是小寫「today」，當標題要首字大寫。
     const label = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(offset, "day")
     return label.charAt(0).toLocaleUpperCase(locale) + label.slice(1)
   }
@@ -64,7 +56,6 @@ export function ReadingLogScreen() {
   return <ReadingLogView days={logDays()} />
 }
 
-/** 只排版（預覽可以直接餵假資料）。 */
 export function ReadingLogView({ days }: { days: LogDay[] }) {
   return (
     <ZStack>

@@ -1,6 +1,3 @@
-// 倉庫條目的篩選與分組：搜尋字串、語言集合、只看已安裝／可更新、隱藏不支援 ext-lib、隱藏 R18。
-// 純函式，畫面只拿結果排版；每個條目只會落在一組（組筆數加起來就是篩選後的總數）。
-
 import { getLocale } from "../i18n"
 
 import { entryUnsupportedReason, type RepositoryEntryStatus } from "./registry"

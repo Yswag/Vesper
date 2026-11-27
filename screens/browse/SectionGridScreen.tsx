@@ -1,14 +1,3 @@
-// 單一列表的完整大網格頁：分類 chip 與探索區塊的「查看全部 ›」都導到這裡。
-//
-// 三種進來的方式：
-//   entry   ：從探索的某個區塊進來，往後翻頁靠 `loadExploreSections`。
-//   target  ：從分類 chip 進來，帶著一個 `categoryComics.load` 的目標；
-//             掛載時手上還沒有內容，先自動載第一頁再繼續。
-//   search  ：首頁「filters」捷徑進來，空關鍵字＋源給的篩選描述子，分頁同樣走源的 search。
-//
-// target 進來時上面多一排源宣告的篩選列（`categoryComics.optionList`／`optionLoader`）：
-// 列順序就是 `load` 的 options 順序，預設選每列第一項，換選項就從第一頁重載。
-
 import { HStack, ScrollView, VStack, ZStack, useEffect, useState } from "scripting"
 
 import type { ComicListItem, ComicSection, JumpTarget, SectionPage } from "../../engine/adapt"
@@ -48,16 +37,11 @@ const EMPTY_SECTION: ComicSection = { title: "", comics: [] }
 
 export interface SectionGridScreenProps {
   sourceKey: string
-  /** 探索分類；從分類頁（chips）進來時沒有，翻頁只靠 `section.more`。 */
   entry?: ExploreEntry
-  /** 初始區塊；分類頁進來時是空的，掛載後自動載第一頁。 */
   section?: ComicSection
   initialMore?: MoreSource
-  /** 首頁元件帶回來的 listing：整頁就是那條 listing 的網格（掛載後自動載第一頁）。 */
   listing?: HomeListing
-  /** 首頁篩選捷徑：空關鍵字＋源給的篩選描述子，整頁就是這個搜尋的分頁。 */
   search?: { keyword: string; filters: unknown[] }
-  /** 導覽列標題；listing／search 進來時由呼叫端給名稱（同一個目標的元件可能標題不同）。 */
   title?: string
 }
 
@@ -71,7 +55,6 @@ export function SectionGridScreen({
   title,
 }: SectionGridScreenProps) {
   const library = comicLibrary()
-  // 畫面自己訂閱語言：導覽列標題與下面的字在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
   const categoryTarget = initialMore.kind === "target" ? initialMore.target : undefined
   const [section, setSection] = useState<ComicSection>(initialSection)
@@ -85,7 +68,6 @@ export function SectionGridScreen({
   const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState("")
 
-  /** 篩選列的選項要跟著目標走，不然翻到第 2 頁就會退回源的預設值。 */
   function withOptions(base: JumpTarget): JumpTarget {
     if (rows.length === 0 || selected.length !== rows.length) return base
     return { ...base, attributes: { ...base.attributes, options: selected } }
@@ -99,7 +81,6 @@ export function SectionGridScreen({
     if (entryPaging.kind === "entry") return entry ? entryPaging : NO_MORE
     const base = entryPaging.kind === "target" ? target : section.more
     if (!base) return NO_MORE
-    // target 的頁碼存在 state 裡：直接回 entryPaging 的話永遠停在同一頁。
     return targetPage < 0 ? NO_MORE : { kind: "target", target: withOptions(base), page: targetPage }
   }
 
@@ -112,18 +93,14 @@ export function SectionGridScreen({
       return
     }
     if (categoryTarget) {
-      // 探索區塊的「查看全部」進來時手上已經有第一頁了，先留著（有篩選列才重載）。
       void openCategory(categoryTarget, section.comics.length > 0)
       return
     }
-    // 分類頁進來時手上沒有內容，先自動抓第一頁（entry 型的翻頁不能在這裡起頭）。
     if (section.comics.length === 0 && more.kind === "target") void loadMore()
   }, [])
 
-  /** 進分類頁：先讀篩選列，再帶著預設選項載第一頁。 */
   async function openCategory(base: JumpTarget, keepExisting = false) {
     const loaded = await library.categoryOptionRows(sourceKey, base)
-    // 沒有篩選列就一切照舊，不要為了空手重打一次。
     if (keepExisting && loaded.length === 0) return
     const values = initialOptionValues(loaded)
     setRows(loaded)
@@ -131,7 +108,6 @@ export function SectionGridScreen({
     await reload(base, values)
   }
 
-  /** 換分類／換篩選：清空後從第一頁重載。 */
   async function reload(base: JumpTarget, options: string[]) {
     setLoadingMore(true)
     setStatus("")
@@ -186,7 +162,6 @@ export function SectionGridScreen({
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error))
       setTargetPage(-1)
-      // listings／篩選結果失敗就不自動重試（不然捲到底會一直重打）。
       if (listing) setListingPage(-1)
       if (search) setSearchPage(-1)
     } finally {
@@ -194,7 +169,6 @@ export function SectionGridScreen({
     }
   }
 
-  /** 收下這一頁，回報下一頁的頁碼（-1＝到底了）：有 maxPage 就信它，沒有就看這頁有沒有新東西。 */
   function nextPageOf(result: SectionPage, used: number): number {
     const incoming = result.sections.flatMap(item => item.comics)
     const added = appendComics(incoming)
@@ -243,7 +217,6 @@ export function SectionGridScreen({
         spacing={0}
         navigationTitle={section.title || entry?.title || listing?.name || title || t("browse.all")}
         navigationBarTitleDisplayMode="inline"
-        // 篩選列浮在內容上：掛在外層，載入中／0 筆時也還在。
         {...scrollTopBar(filterBar)}
       >
       {status ? (

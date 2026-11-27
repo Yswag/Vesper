@@ -1,6 +1,3 @@
-// 源管理：倉庫入口、可更新的源、已安裝的源清單。
-// Mihon 一個擴充一列（拖曳排序、左滑移除、更新都以擴充為單位），Aidoku／Venera 照舊一源一列。
-
 import {
   Button, ForEach, HStack, Image, List, NavigationLink, ProgressView, Rectangle, Section, Spacer, Text, VStack, ZStack,
   useEffect, useObservable, useState,
@@ -25,7 +22,6 @@ import { ExtensionDetailScreen } from "./ExtensionDetailScreen"
 import { RepositoryListScreen } from "./RepositoryListScreen"
 import { SourceDetailScreen } from "./SourceDetailScreen"
 
-/** `ForEach` 要求每筆都有 `id`：Mihon 是擴充，其餘是源。 */
 export type SourceRow = { id: string; group: SourceGroup }
 
 function toRows(sources = allSources()): SourceRow[] {
@@ -36,7 +32,6 @@ function sameOrder(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((key, index) => key === b[index])
 }
 
-/** 一筆可更新的擴充（畫面只排版，資料由 app/sourceUpdates 算好）。 */
 export interface UpdateRow {
   key: string
   group: SourceGroup
@@ -49,10 +44,8 @@ export interface UpdateRow {
 
 export interface SourceUpdatesPanel {
   rows: UpdateRow[]
-  /** 有更新正在跑（單筆或全部）。 */
   updating: boolean
   checking: boolean
-  /** 上一次手動檢查失敗的倉庫數。 */
   checkFailed: number
   onUpdate: (key: string) => void
   onUpdateAll: () => void
@@ -66,14 +59,12 @@ export function SourceListScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [checking, setChecking] = useState(false)
   const [checkFailed, setCheckFailed] = useState(0)
-  // 更新成功那一列會從清單消失：包在 withAnimation 裡才會淡出。
   useSubscription(notify => subscribeSourceUpdates(() => void withAnimation(notify)), subscribeLocale)
   const updates = updateRowsOf(availableSourceUpdates())
 
   useEffect(() => {
     const refreshSources = () => rows.setValue(toRows())
     const refreshRepositories = () => setRepositoryCount(listRepositories().length)
-    // 系統拖曳放手後 ForEach 直接改寫 rows；順序跟 registry 不同才寫回，寫失敗就退回原順序。
     const persistOrder = (next: SourceRow[]) => {
       const keys = next.map(row => row.id)
       if (sameOrder(keys, toRows().map(row => row.id))) return
@@ -134,7 +125,6 @@ export function SourceListScreen() {
   )
 }
 
-/** 一個擴充只報一次更新（子源共用同一個 apk）。 */
 function updateRowsOf(updates: ReturnType<typeof availableSourceUpdates>): UpdateRow[] {
   const groups = new Map(toRows().map(row => [row.id, row.group]))
   const rows = new Map<string, UpdateRow>()
@@ -160,10 +150,8 @@ function omit(record: Record<string, string>, keys: string[]): Record<string, st
   return next
 }
 
-/** 卡片底色：List 的列各自鋪一塊，整個 Section 由系統裁成圓角卡片。 */
 const cardRowBackground = <Rectangle fill={cardBackground} />
 
-/** 不是卡片的列（提示、空狀態）：去掉列底與內距，照原樣畫。 */
 const bareRow = {
   listRowBackground: <Rectangle fill="clear" />,
   listRowInsets: 0,
@@ -185,7 +173,6 @@ export function SourceListView({
 }) {
   const count = rows.value.length
   const updateRows = updates?.rows ?? []
-  /** 正在確認移除的列 id；確認選單掛在那一列上，iOS 26 起會從那一列彈出。 */
   const [pendingKey, setPendingKey] = useState<string | null>(null)
 
   return (
@@ -310,7 +297,6 @@ export function SourceListView({
                       />
                     ),
                   }}
-                  // 別給 role="destructive"：它搭 Dialog.confirm 事後才刪列會閃退。
                   trailingSwipeActions={{
                     allowsFullSwipe: false,
                     actions: [
@@ -335,7 +321,6 @@ export function SourceListView({
   )
 }
 
-/** List 的 Section 標題：左邊小標題，右邊可選一個文字按鈕（執行中換成轉圈）。 */
 function SectionHeader({
   title,
   action,
@@ -367,7 +352,6 @@ function SectionHeader({
   )
 }
 
-/** 一筆可更新的擴充：整列唯一的動作是尾端的更新鈕，不進詳情（下方已安裝那一列才進）。 */
 function SourceUpdateRow({ row, disabled, onUpdate }: { row: UpdateRow; disabled: boolean; onUpdate: () => void }) {
   const tint = useTint()
 
@@ -406,10 +390,6 @@ function SourceUpdateRow({ row, disabled, onUpdate }: { row: UpdateRow; disabled
   )
 }
 
-/**
- * 一筆已安裝的源（Mihon 是一個擴充）。首字圓形徽章是這頁特有的，其他樣式都走設計庫。
- * 箭頭由 List 的 NavigationLink 自己畫。
- */
 function SourceCardRow({ group }: { group: SourceGroup }) {
   const isMihon = group.kind === "mihon"
   const detail = isMihon

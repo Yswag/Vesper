@@ -1,12 +1,3 @@
-// 留言內容的受限富文本。
-//
-// 源的約定（見源模板）：留言只會給 `a / b / i / u / s / br / span / img` 這幾種標籤，
-// 我們也只認這幾種；**其他標籤連同標籤本身當純文字顯示**——不破版，也不會讓內容消失。
-// 圖片一律放到留言最後面（上游就是這樣約定的），所以不需要做圖文混排。
-//
-// 頭像與圖片都走既有的圖片管線（源多半需要 Referer），失敗時誠實顯示，不畫破圖。
-// 解析與快取都在 ComicLibrary.thumbnailPath 後面；這裡只認來源鍵與網址。
-
 import { HStack, Image, ProgressView, Spacer, Text, VStack, useEffect, useMemo, useState, type Color, type StyledText } from "scripting"
 
 import { comicLibrary } from "../app/services"
@@ -14,7 +5,6 @@ import { useResolvedColorScheme, useTint } from "../app/theme"
 import { radius, rect } from "../design/tokens"
 import { t } from "../i18n"
 
-/** 一段文字與它身上的樣式；`link` 有值就是 `<a href>`。 */
 export interface CommentRun {
   text: string
   bold?: boolean
@@ -26,7 +16,6 @@ export interface CommentRun {
 
 export interface CommentBody {
   runs: CommentRun[]
-  /** `img` 的 src，照出現順序；上游的約定是一律畫在文字後面。 */
   images: string[]
 }
 
@@ -43,14 +32,12 @@ function decodeEntities(text: string): string {
     .replace(/&amp;/gi, "&")
 }
 
-/** 抓標籤裡的屬性（雙引號、單引號、無引號三種寫法）。 */
 function attr(body: string, name: string): string | undefined {
   const match = new RegExp(`${name}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, "i").exec(body)
   if (!match) return undefined
   return decodeEntities(match[2] ?? match[3] ?? match[4] ?? "")
 }
 
-/** `span` 的 `style` 只支援上游載明的三種。 */
 function spanStyle(body: string): Omit<CommentRun, "text"> {
   const style = (attr(body, "style") ?? "").toLowerCase().replace(/\s+/g, "")
   return {
@@ -61,7 +48,6 @@ function spanStyle(body: string): Omit<CommentRun, "text"> {
   }
 }
 
-/** 開始標籤身上的樣式。 */
 function openStyle(tag: string, body: string): Omit<CommentRun, "text"> {
   if (tag === "span") return spanStyle(body)
   if (tag === "b") return { bold: true }
@@ -71,12 +57,6 @@ function openStyle(tag: string, body: string): Omit<CommentRun, "text"> {
   return {}
 }
 
-/**
- * 把留言的受限 HTML 拆成「文字片段 + 圖片」。
- *
- * 不認得的標籤不做任何解讀、也不會被吃掉：它連同 `<` `>` 一起留在文字裡，
- * 使用者至少還看得懂原始內容。`br` 變成換行。
- */
 export function parseComment(html: string): CommentBody {
   const runs: CommentRun[] = []
   const images: string[] = []
@@ -110,7 +90,6 @@ export function parseComment(html: string): CommentBody {
     }
   }
 
-  /** 回 false ＝不是我們認得的標籤（呼叫端要把它當純文字留下）。 */
   const handle = (raw: string): boolean => {
     const closing = raw.startsWith("/")
     const body = closing ? raw.slice(1) : raw
@@ -165,7 +144,6 @@ export function parseComment(html: string): CommentBody {
   return { runs, images }
 }
 
-/** 片段 → 一個 `Text` 的 rich text（Scripting 的 Text 只吃字串，樣式只能靠 styledText）。 */
 function toStyledText(runs: CommentRun[], color: Color, linkColor: Color): StyledText {
   return {
     font: "subheadline",
@@ -186,7 +164,6 @@ function toStyledText(runs: CommentRun[], color: Color, linkColor: Color): Style
   }
 }
 
-/** 留言裡附的圖。跟章節圖同一條管線（自己抓 → 快取 → 本地檔案）。 */
 function CommentImage({ sourceKey, src }: { sourceKey: string; src: string }) {
   const [image, setImage] = useState<UIImage | null>(null)
   const [aspect, setAspect] = useState<number | null>(null)

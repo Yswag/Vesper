@@ -1,13 +1,3 @@
-// Mihon 擴充的設定頁：把 dexvm `preferences` op 回來的 `PreferenceScreen` 畫成列。
-//
-// 認得的節點：`PreferenceCategory`（開一張新卡）、`PreferenceScreen`（子頁）、
-// `ListPreference`（下拉）、`MultiSelectListPreference`（子頁多選）、
-// `EditTextPreference`（輸入框）、`CheckBoxPreference`／`SwitchPreference(Compat)`（開關）。
-// 其餘（純 `Preference`、自訂類別）只顯示標題與說明，不假裝可以改。
-//
-// 值只寫使用者改過的那一個 key（`sources/mihon.ts` 的 `setPreferenceValue`）：
-// 寫完只重建這一個 apk 的 worker，其他源不動。
-
 import { Divider, NavigationLink, Text, VStack, useEffect, useState } from "scripting"
 
 import { useSubscription } from "../../app/useSubscription"
@@ -45,7 +35,6 @@ const ICON: Record<string, string> = {
   category: "folder",
 }
 
-/** 改一個值要跑一趟 VM，所以一頁一次只放一個在飛。 */
 type Apply = (key: string, value: unknown) => void
 
 export function MihonSettingsScreen({ sourceKey }: { sourceKey: string }) {
@@ -143,7 +132,6 @@ export function MihonSettingsScreen({ sourceKey }: { sourceKey: string }) {
   )
 }
 
-/** 一層節點：`PreferenceCategory` 開新卡，其餘照順序排在同一張。 */
 function PreferenceCards({
   sourceKey,
   nodes,
@@ -273,7 +261,6 @@ function PreferenceRow({
   return body
 }
 
-/** 巢狀的 `PreferenceScreen`：自己一張頁，列跟上面完全一樣。 */
 function MihonPreferenceSubScreen({
   title,
   sourceKey,
@@ -294,7 +281,6 @@ function MihonPreferenceSubScreen({
   )
 }
 
-/** `MultiSelectListPreference` 的子頁：勾了就地寫回去（跟 Aidoku 的多選一樣即時）。 */
 function MihonMultiSelectScreen({
   title,
   node,
@@ -334,7 +320,6 @@ function MihonMultiSelectScreen({
   )
 }
 
-/** `EditTextPreference`：一個輸入框，確認才寫。 */
 async function promptText(node: MihonPreference, values: MihonPreferenceValues, apply: (value: string) => void) {
   const text = await Dialog.prompt({
     title: node.title ?? "",

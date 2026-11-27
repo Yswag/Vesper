@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   unsupported: {
     search: "This source does not support search",
@@ -34,7 +32,6 @@ export default {
   pageUnreadable: "Page {n} cannot be read (the file is missing or damaged)",
 
   verificationTitle: "Complete the security check ({name})",
-  /** The challenge itself ran out of time; `{seconds}` is how long it waited. */
   verificationTimeout: "The verification timed out ({seconds}s)",
 
   aidoku: {
@@ -61,7 +58,6 @@ export default {
     timeout: "The source timed out",
     initFailed: "The source failed to initialize",
     unavailable: "This source is unavailable ({reason}). Turn it off and on again in source settings to retry.",
-    /** The Cloudflare challenge did not pass; `{reason}` is what the WebView reported. Not the source's fault. */
     verification: "Cloudflare is blocking this source and the security check did not finish ({reason})",
     popular: "Popular",
     latest: "Latest",
@@ -74,12 +70,10 @@ export default {
     requiresProDetail:
       "Mihon sources run dexvm in a WebView served by a local HTTP server. Upgrade to Scripting Pro, then come back and install.",
 
-    /** The store index (extensionList.extensions, index.pb, or the legacy array). */
     indexInvalid: "Not a Mihon index (expected extensionList.extensions, index.pb or a legacy array)",
     indexBadEntry: "Index entry is missing package name, version or name",
     indexNoApk: "Index entry has no apk URL",
     legacyUrl: "A legacy index URL must end with /index.min.json",
-    /** `{url}` is the address the index points at, `{reason}` why it failed. */
     followFailed: "Could not load the index at {url} ({reason})",
   },
 

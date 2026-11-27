@@ -22,7 +22,6 @@ export function ContentLanguageScreen({
 }: {
   value?: string[]
   onChanged?: (codes: string[]) => void
-  /** 預覽／嵌入用：直接給語言清單，不掃倉庫。 */
   candidates?: string[]
 } = {}) {
   useSubscription(subscribeLocale, subscribeContentLanguages)

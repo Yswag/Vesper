@@ -1,6 +1,3 @@
-// 來源分類頁解析：將 category.parts 解析為 UI 分類 chips（支援 fixed/random/dynamic），
-// 並透過 categoryComics.optionList 或 optionLoader 讀取專屬篩選列。
-
 import { normalizeJumpTarget, type JumpTarget } from "../engine/adapt"
 import { t } from "../i18n"
 import { logFailure } from "./operations"
@@ -9,7 +6,6 @@ import { ensureSourceReady, type InstalledSource } from "./registry"
 import { sourceText, translatedOptionRows } from "./translation"
 
 export interface CategoryChip {
-  /** 顯示文字；也是 `categoryComics.load` 的第一個參數。 */
   label: string
   target: JumpTarget
 }
@@ -19,11 +15,9 @@ export interface CategoryPart {
   name: string
   kind: "fixed" | "random" | "dynamic"
   chips: CategoryChip[]
-  /** 讀不出來的原因（dynamic 的 loader 丟錯最常見）；有值時 chips 是空的。 */
   error?: string
 }
 
-/** 有宣告分類頁、而且真的載得動，才值得在 UI 上給入口。 */
 export function hasCategoryPage(source: InstalledSource): boolean {
   const parts = source.instance?.category?.parts
   return Array.isArray(parts) && parts.length > 0 && typeof source.instance?.categoryComics?.load === "function"
@@ -38,9 +32,7 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : String(value).trim()
 }
 
-/** 固定項 → chip。`categoryParams` 缺項時退回 `groupParam`（nhentai 的語言 part 就是這樣）。 */
 function fixedChip(part: any, item: unknown, index: number, translate: (text: string) => string): CategoryChip | null {
-  // `{label, target}`：源自己把目標寫好了，直接照用。
   if (item && typeof item === "object") {
     const label = text((item as any).label ?? (item as any).title)
     const target = normalizeJumpTarget((item as any).target)
@@ -52,7 +44,6 @@ function fixedChip(part: any, item: unknown, index: number, translate: (text: st
   return {
     label: translate(label),
     target: {
-      // 送給源的是原文，只有顯示名換成譯文。
       page: part?.itemType === "search" ? "search" : "category",
       attributes: {
         category: label,
@@ -73,7 +64,6 @@ function dynamicChips(items: any[], translate: (text: string) => string): Catego
   return chips
 }
 
-/** 隨機挑 `count` 個索引，回傳排序後的結果（`categoryParams` 要對得上原索引）。 */
 function randomIndexes(total: number, count: number): number[] {
   const all = Array.from({ length: total }, (_, index) => index)
   for (let i = all.length - 1; i > 0; i--) {
@@ -87,24 +77,17 @@ function randomIndexes(total: number, count: number): number[] {
     .sort((a, b) => a - b)
 }
 
-// ---------------------------------------------------------------- 篩選列解析
-// 依據 categoryComics.optionList 或 optionLoader 動態加載當前分類適用的篩選列。
 
 export type CategoryOption = OptionItem
 export type CategoryOptionRow = OptionRow
 
-/** `showWhen` 是白名單、`notShowWhen` 是黑名單，比的是分類名（不是 param）。 */
 function optionRowVisible(row: Record<string, any>, category: string): boolean {
-  // zaimanhua 有一列把 notShowWhen 拼成 notshowWhen，兩種都吃。
   const hidden = asArray(row.notShowWhen ?? row.notshowWhen).map(String)
   if (hidden.includes(category)) return false
   const shown = asArray(row.showWhen).map(String)
   return shown.length === 0 || shown.includes(category)
 }
 
-/**
- * 載入指定分類項目的篩選列清單（未宣告或載入失敗時回傳空陣列）。
- */
 export async function loadCategoryOptionRows(
   source: InstalledSource,
   target: JumpTarget
@@ -113,7 +96,6 @@ export async function loadCategoryOptionRows(
   const module = source.instance?.categoryComics
   if (!module) return []
   const category = target.attributes.category ?? ""
-  // 沒帶 param 的目標給 null（不是空字串）：源寫 `param ?? 'c'` 的會在空字串上壞掉（picacg）。
   const param: string | null = target.attributes.param ?? null
 
   try {
@@ -131,7 +113,6 @@ export async function loadCategoryOptionRows(
   return []
 }
 
-/** 每列的預設選項，攤平成 `load` 要的 `options`。 */
 export function initialOptionValues(rows: CategoryOptionRow[]): string[] {
   return rows.map(row => row.initial)
 }
@@ -139,7 +120,6 @@ export function initialOptionValues(rows: CategoryOptionRow[]): string[] {
 export async function loadCategoryParts(source: InstalledSource): Promise<CategoryPart[]> {
   const parts = asArray(source.instance?.category?.parts)
   if (parts.length === 0) return []
-  // dynamic 的 loader 常用到 init() 準備好的資料（komga 的書庫清單就是）。
   await ensureSourceReady(source.stored.key)
 
   const translate = (text: string) => sourceText(source.instance, text)

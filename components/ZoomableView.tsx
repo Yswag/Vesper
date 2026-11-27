@@ -1,12 +1,3 @@
-// 可縮放內容容器：支援捏合縮放（1–maxZoom）、雙擊錨點縮放與放大後平移拖曳。
-//
-// 手勢實作防護原則：
-// 1. 手勢物件以 useMemo 保持單一實例，回調透過 useRef 讀取最新狀態，防範重複宣告引發崩潰。
-// 2. 縮放與平移採累積量絕對值計算，提升跟手流暢度。
-// 3. onZoomChange 僅在手勢結束（onEnded）時觸發，防範進行中改變父層捲動屬性導致手勢中斷。
-// 4. 未放大狀態不掛載拖曳手勢，避免阻斷外層 ScrollView 滑動與翻頁。
-// 5. 給了 onSingleTap 時單擊／雙擊都由這裡的單一 count 1 手勢判斷（子層手勢會擋掉外層單擊）。
-
 import {
   DragGesture,
   GeometryReader,
@@ -21,16 +12,12 @@ import {
   type VirtualNode,
 } from "scripting"
 
-/** 預設最大縮放倍率。 */
 export const MAX_ZOOM = 5
 
-/** 兩下點擊判定為雙擊的時間窗（ms）。 */
 const DOUBLE_TAP_WINDOW = 330
 
-/** 雙擊放大／還原的過場。 */
 const DOUBLE_TAP_ANIMATION = Animation.snappy({ duration: 0.3 })
 
-/** 量到尺寸就回報。 */
 function SizeReporter({
   size,
   onSize,
@@ -46,20 +33,13 @@ function SizeReporter({
 
 export interface ZoomableViewProps {
   children: VirtualNode
-  /** 內容在 1× 時的顯示尺寸；不給就自己量（適合高度／寬度由圖片決定的情況）。 */
   contentSize?: { width: number; height: number }
-  /** 可用區域（viewport），**只用來算平移夾範圍**，不影響版面；建議都傳。 */
   box?: { width: number; height: number }
-  /** 縮放狀態變化（父層用它停用外層捲動）；只會在**手勢結束**時呼叫。 */
   onZoomChange?: (zoomed: boolean) => void
-  /** 值變了就把縮放歸零。 */
   resetToken?: string | number
   maxZoom?: number
-  /** 雙擊放大的倍率（再雙擊一次還原）。 */
   doubleTapZoom?: number
-  /** 平移要不要夾在「內容範圍」內；false ＝自由平移（Lazy 畫布量不到真實尺寸時用）。 */
   clampPan?: boolean
-  /** 單擊（等雙擊時間窗過了才觸發）；座標為本元件的 local 座標。 */
   onSingleTap?: (location: Point) => void
 }
 
@@ -77,7 +57,6 @@ export function ZoomableView({
   const [measuredContent, setMeasuredContent] = useState({ width: 0, height: 0 })
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
-  // 拖曳手勢掛載狀態：僅在手勢結束時更新；未放大時不掛載以保留外層 ScrollView 捲動能力
   const [dragEnabled, setDragEnabled] = useState(false)
   const latest = useRef({
     zoom: 1,
@@ -96,7 +75,6 @@ export function ZoomableView({
   latest.current.content = content
 
   const clampZoom = (value: number) => Math.min(maxZoom, Math.max(1, value))
-  /** 將平移量限制在溢出邊界內，防止拖出內容空白區域。 */
   const clampPan = (value: { x: number; y: number }, atZoom: number) => {
     if (!shouldClamp) return value
     const maxX = Math.max(0, (content.width * atZoom - viewport.width) / 2)
@@ -115,8 +93,6 @@ export function ZoomableView({
     }
   }
 
-  /** 手勢結束／雙擊／重置後才通知父層（見檔頭 3.），順便決定要不要掛拖曳手勢。 */
-  // gestures 只建一次，回呼經 ref 讀最新的 prop。
   const zoomChangeRef = useRef(onZoomChange)
   zoomChangeRef.current = onZoomChange
   const notify = () => {
@@ -151,11 +127,9 @@ export function ZoomableView({
     const wasZoomed = latest.current.zoom > 1.001
     clearStart()
     commit(1, { x: 0, y: 0 })
-    // 只有真的放大過才通知：別頁掛載不該把父層的「放大中」蓋成 false。
     if (wasZoomed) notify()
   }, [resetToken])
 
-  // 放大中被卸載（Lazy 回收、換模式重建）也要通知，否則父層的捲動會一直停用。
   useEffect(() => () => {
     cancelPendingTap()
     if (latest.current.zoom > 1.001) zoomChangeRef.current?.(false)
@@ -165,11 +139,9 @@ export function ZoomableView({
     () => ({
       magnify: MagnifyGesture()
         .onChanged(value => {
-          // 手勢開始：記下起點與雙指中心錨點向量，之後一律算絕對值（跟手、不漏第一個取樣）。
           if (latest.current.startZoom <= 0) {
             latest.current.startZoom = latest.current.zoom
             latest.current.startPan = latest.current.pan
-            // 雙指中心相對於內容正中心的偏移向量（考慮當前已有的平移）
             const cx = (latest.current.box.width || latest.current.content.width) / 2
             const cy = (latest.current.box.height || latest.current.content.height) / 2
             const loc = value.startLocation ?? { x: cx, y: cy }
@@ -181,7 +153,6 @@ export function ZoomableView({
           const magnitude = value.magnification > 0 ? value.magnification : 1
           const next = clampZoom(latest.current.startZoom * magnitude)
           const scaleDelta = next / latest.current.startZoom
-          // 內容以中心縮放，若要讓雙指中心在放大過程中留在雙指正下方，位移補償為 anchorVector * (1 - scaleDelta)
           const nextPan = clampPan(
             {
               x: latest.current.startPan.x + latest.current.anchorVector.x * (1 - scaleDelta),
@@ -197,7 +168,6 @@ export function ZoomableView({
         }),
       drag: DragGesture()
         .onChanged(value => {
-          // 未放大時不平移（保險：手勢正常不會掛著）。
           if (latest.current.zoom <= 1.001) return
           if (!latest.current.dragging) {
             latest.current.dragging = true
@@ -220,10 +190,6 @@ export function ZoomableView({
     []
   )
 
-  /**
-   * 帶過場地縮放。`withAnimation` 的 body 不是同步執行，ref 要先寫好，
-   * 緊接的 `notify()` 才讀得到新倍率（否則拖曳不會掛上、外層捲動也不會停用）。
-   */
   const animateTo = (nextZoom: number, nextPan: { x: number; y: number }) => {
     latest.current.zoom = nextZoom
     latest.current.pan = nextPan
@@ -234,14 +200,12 @@ export function ZoomableView({
     notify()
   }
 
-  /** 雙擊：以點到的位置為錨點放大／還原。 */
   const toggleAt = (location: { x: number; y: number }) => {
     if (latest.current.zoom > 1.001) {
       clearStart()
       animateTo(1, { x: 0, y: 0 })
       return
     }
-    // 內容置中、以中心縮放。想讓局部點 q（相對中心的位移）留在原地，偏移取 q * (1 - 倍率)。
     const qx = location.x - latest.current.box.width / 2
     const qy = location.y - latest.current.box.height / 2
     const target = doubleTapZoom
@@ -249,7 +213,6 @@ export function ZoomableView({
     animateTo(target, clampPan({ x: qx * (1 - target), y: qy * (1 - target) }, target))
   }
 
-  /** 第一下先等時間窗；窗內來第二下＝雙擊，否則交給 onSingleTap。 */
   const handleTap = (location: Point) => {
     if (pendingTap.current !== null) {
       cancelPendingTap()
@@ -267,8 +230,6 @@ export function ZoomableView({
     <ZStack
       alignment="center"
       gesture={gestures.magnify}
-      // 放大時才掛拖曳（dragEnabled 只在手勢結束時翻，捏合途中不會中斷）。
-      // 放大時外層捲動由父層依 onZoomChange 停用，所以用 simultaneous 就夠。
       simultaneousGesture={dragEnabled ? gestures.drag : undefined}
       contentShape={onSingleTap ? "rect" : undefined}
       onTapGesture={
@@ -281,7 +242,6 @@ export function ZoomableView({
         alignment="center"
         spacing={0}
         frame={contentSize ? { width: contentSize.width, height: contentSize.height } : undefined}
-        // 量不到內容尺寸時（例：頁高由圖片決定）用背景量自己；background 不影響版面。
         background={
           contentSize
             ? undefined
@@ -294,7 +254,6 @@ export function ZoomableView({
                 )}
               </GeometryReader>
         }
-        // 縮放／平移走繪製層（不改佈局）：捏合時不用每幀重排版。
         scaleEffect={zoom}
         offset={pan}
       >

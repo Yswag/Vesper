@@ -1,6 +1,3 @@
-// composition root 建立的 production instance（index.tsx 在啟動時裝上）。
-// 畫面一律經 comicLibrary() 取用，沒裝就直接拋。
-
 import type { ComicLibrary } from "./comic"
 
 let library: ComicLibrary | null = null

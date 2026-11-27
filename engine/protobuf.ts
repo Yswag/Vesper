@@ -1,14 +1,9 @@
-// 最小 protobuf wire 解碼：只解 tag、varint、length-delimited 與 fixed，未知欄位自然跳過。
-// 64 位元整數一律 bigint（JS number 只到 2^53），要十進位字串時呼叫端自己 toString()。
-
 export type ProtoWire = 0 | 1 | 2 | 5
 
 export interface ProtoField {
   number: number
   wire: ProtoWire
-  /** wire 0／1／5 的整數。 */
   integer?: bigint
-  /** wire 2 的內容。 */
   bytes?: Uint8Array
 }
 
@@ -45,7 +40,6 @@ function readFixed(bytes: Uint8Array, at: number, size: number): bigint {
   return value
 }
 
-/** 把一段 protobuf 訊息解成欄位陣列（含重複欄位，順序保留）。 */
 export function decodeFields(bytes: Uint8Array): ProtoField[] {
   const fields: ProtoField[] = []
   let at = 0
@@ -80,7 +74,6 @@ export function decodeFields(bytes: Uint8Array): ProtoField[] {
   return fields
 }
 
-/** 有號 int64：wire 上是二補數，負數要減回 2^64。 */
 export function signedDecimal(value: bigint): string {
   const high = 1n << 63n
   return (value >= high ? value - (1n << 64n) : value).toString()

@@ -1,5 +1,3 @@
-// 首頁：繼續閱讀進度與 Bangumi 推薦流。
-
 import { Button, Divider, GeometryReader, GlassEffectContainer, HStack, Image, LazyHStack, NamespaceReader, NavigationLink, ProgressView, RoundedRectangle, ScrollView, Spacer, TabView, Text, VStack, ZStack, useEffect, useState, type Color, type VirtualNode } from "scripting"
 
 import { CoverImage, CoverPlaceholder } from "../../components/CoverImage"
@@ -25,9 +23,6 @@ import { getBangumiHomeFeed, type BangumiSubject } from "../../engine/bangumi"
 import { BangumiDetailScreen } from "./BangumiDetailScreen"
 import { HistoryScreen } from "./HistoryScreen"
 
-/**
- * 量測橫向輪播的 ScrollView 視窗寬度，供子卡片計算尺寸。
- */
 function carouselWidthProbe(onWidth: (width: number) => void) {
   return (
     <GeometryReader>
@@ -36,7 +31,6 @@ function carouselWidthProbe(onWidth: (width: number) => void) {
   )
 }
 
-/** 分頁點的融合容器；舊系統沒有玻璃，直接放內容。 */
 function GlassDots({ children }: { children: VirtualNode }) {
   return liquidGlass ? <GlassEffectContainer spacing={6}>{children}</GlassEffectContainer> : children
 }
@@ -47,20 +41,15 @@ export function HomeScreen() {
   const [following, setFollowing] = useState<BangumiSubject[]>([])
   const [loadingFeed, setLoadingFeed] = useState(true)
   const [popularPool, setPopularPool] = useState<BangumiSubject[]>([])
-  // 輪播的索引與計時器在 `HeroCarousel` 裡：換頁只重繪那個子元件，不重繪整頁。
   const [heroItems, setHeroItems] = useState<BangumiSubject[]>([])
 
-  // 繼續閱讀卡片長按「前往詳情」：推頁掛在這一層（不放進 Lazy 容器裡的列）。
   const [detailOf, setDetailOf] = useState<Progress | null>(null)
 
-  // 「繼續閱讀」與 Bangumi 兩條 carousel 各自量自己的捲動視窗寬，卡片尺寸照 comicMetrics 算。
   const [resumeCarouselWidth, setResumeCarouselWidth] = useState(0)
   const [bangumiCarouselWidth, setBangumiCarouselWidth] = useState(0)
-  // 兩條 carousel 共用 `bangumiCardSize`，卡片同大小
   const resumeCard = bangumiCardSize(resumeCarouselWidth)
   const bangumiCard = bangumiCardSize(bangumiCarouselWidth)
 
-  /** 從候選大池中隨機洗牌挑選 8 部漫畫作為輪播圖項目（純本機計算，零網路延遲） */
   function pickHeroItems(pool: BangumiSubject[], fallbackRank: BangumiSubject[]) {
     const source = pool.length >= 8 ? pool : fallbackRank
     if (source.length >= 8) {
@@ -69,7 +58,6 @@ export function HomeScreen() {
     }
   }
 
-  /** 抓 Bangumi 推薦流（force ＝ 略過 24h 快取）。 */
   async function loadFeed(force: boolean) {
     const feed = await getBangumiHomeFeed(force)
     setTopRank(feed.topRank)
@@ -77,22 +65,17 @@ export function HomeScreen() {
     setFollowing(feed.following)
     setPopularPool(feed.popularPool)
     
-    // 首次載入或下拉重整時挑選 8 部
     pickHeroItems(feed.popularPool, feed.topRank)
   }
 
-  // 源清單與書架（進度）一變就重繪（庫的單一訂閱）；回傳的 refresh 給 onAppear 與下拉重整用。
-  // 語言也在這裡：切了語言這一頁的字要立刻跟著變，不必重進。
   const refresh = useSubscription(comicLibrary().onChange, subscribeLocale)
 
   useEffect(() => {
     refresh()
 
-    // 載入 Bangumi 推薦流（先給快取，24 小時內不連網）
     void loadFeed(false).finally(() => setLoadingFeed(false))
   }, [])
 
-  // 一次重繪只讀一次閱讀歷史；下面所有區塊都用這一份。
   const progress = listProgress()
 
   return (
@@ -110,8 +93,6 @@ export function HomeScreen() {
           scrollContentBackground="hidden"
           {...scrollTopBar(null)}
           navigationDestination={progressDetailDestination({ entry: detailOf, onDismiss: () => setDetailOf(null) })}
-          // 下拉重新整理：略過 24 小時快取重抓榜單，並重讀一次書架的進度。
-          // iOS 自己會顯示轉圈，所以這裡不動 loadingFeed（那是給首次載入用的 placeholder）。
           refreshable={async () => {
             refresh()
             await loadFeed(true)
@@ -119,11 +100,11 @@ export function HomeScreen() {
         >
           <VStack spacing={24} padding={{ bottom: 44 }}>
 
-            {/* Hero 輪播：索引、計時器與分頁點都在子元件裡，換頁不重繪這一頁 */}
+            {}
             {heroItems.length > 0 ? <HeroCarousel items={heroItems} namespace={homeNs} /> : null}
             {heroItems.length === 0 && loadingFeed ? <HeroSkeleton /> : null}
 
-            {/* 1. 繼續閱讀區塊（若有進度才展示，保留一鍵接續）；標題推完整的閱讀歷史 */}
+            {}
             {progress.length > 0 ? (
               <VStack spacing={4}>
                 <NavigationLink destination={<HistoryScreen />} buttonStyle="plain">
@@ -152,7 +133,7 @@ export function HomeScreen() {
               </VStack>
             ) : null}
 
-            {/* 2. 🔥 近半年才開新連載的熱門新作 */}
+            {}
             <VStack spacing={4}>
               <HStack padding={{ horizontal: 16 }}>
                 <Text font="title3" fontWeight="bold">
@@ -181,7 +162,7 @@ export function HomeScreen() {
               )}
             </VStack>
 
-            {/* 3. 👀 大家在追（近期在讀人數最多的連載） */}
+            {}
             <VStack spacing={4}>
               <HStack padding={{ horizontal: 16 }}>
                 <Text font="title3" fontWeight="bold">
@@ -210,7 +191,7 @@ export function HomeScreen() {
               )}
             </VStack>
 
-            {/* 4. 🏆 Bangumi TOP 100 */}
+            {}
             <VStack spacing={4}>
               <HStack padding={{ horizontal: 16 }}>
                 <Text font="title3" fontWeight="bold">
@@ -249,27 +230,16 @@ export function HomeScreen() {
   )
 }
 
-/**
- * Hero 輪播：背景氛圍圖、翻頁本體與分頁點。
- *
- * 索引、計時器、暫停狀態都在這裡——每 4 秒換一張只重繪這個子元件，
- * 首頁的根（feed、閱讀歷史、四條橫向清單）不會跟著重跑。
- */
 function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace: NamespaceID }) {
-  // 帶色玻璃只吃 Color：先拿目前的方案解成字串。
   const tint = useTint()
   const tintColor = String(tint.tint[useResolvedColorScheme()]) as Color
   const [index, setIndex] = useState(0)
-  // 首頁不在畫面上時輪播暫停：畫面外換頁，TabView 跟不上 tabIndex，回來會錯位。
   const [active, setActive] = useState(true)
 
-  // 換一批項目（下拉重整重挑）就從第一張開始。
   useEffect(() => {
     setIndex(0)
   }, [items])
 
-  // 計時器（runtime 無 setInterval，且 setTimeout handle 0 為合法值需比對 !== null）。
-  // 手動滑動後 index 一變就重新起算，自動換頁的節奏跟改動前一樣。
   useEffect(() => {
     if (!active || items.length <= 1) return
 
@@ -290,14 +260,11 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
       frame={{ maxWidth: "infinity" }}
       onAppear={() => setActive(true)}
       onDisappear={() => setActive(false)}
-      // 氛圍光作為 background 裝飾層，不參與版面高度計算
       background={
         <ZStack alignment="top" frame={{ maxWidth: "infinity" }}>
           {items.map((item, idx) => {
             const isCurrent = idx === index
             if (!item.image) return null
-            // 只掛目前與前後各一張：遠的那些 opacity 是 0，掛著只是白白解碼一張大圖。
-            // 前後各留一張，進場的那張早就掛著，所以切換時的淡入淡出跟原本一樣。
             if (Math.min(Math.abs(idx - index), items.length - Math.abs(idx - index)) > 1) return null
             return (
               <Image
@@ -315,7 +282,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
         </ZStack>
       }
     >
-      {/* 輪播主體：高度 207（封面 179 + 上下緩衝各 14），讓半徑 10 的立體陰影在 TabView 內自然淡出不被裁切 */}
+      {}
       <TabView
         tabViewStyle="pageNeverDisplayIndex"
         tabIndex={index}
@@ -335,7 +302,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
             }
             buttonStyle="plain"
           >
-            {/* TabView 翻頁要固定高度：字級夾在 xxxLarge，輔助字級下右欄不被裁。 */}
+            {}
             <HStack
               spacing={15}
               alignment="center"
@@ -343,8 +310,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
               padding={{ horizontal: 16, vertical: 14 }}
               dynamicTypeSize={{ to: "xxxLarge" }}
             >
-              {/* 封面立體卡片：124×179（＝詳情頁 hero 的上限寬 `HERO_MAX_WIDTH`、同一組 1.44 比例）。
-                  179 加上上下內距 14×2 剛好填滿 207 的輪播條。 */}
+              {}
               {item.image ? (
                 <ZStack
                   frame={{ width: 124, height: 179 }}
@@ -382,13 +348,13 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
                 </ZStack>
               )}
 
-              {/* 右側資訊區 */}
+              {}
               <VStack
                 alignment="leading"
                 spacing={6}
                 frame={{ maxWidth: "infinity" }}
               >
-                {/* 評分與榜單徽章 */}
+                {}
                 <HStack spacing={6} alignment="center">
                   {item.rank && item.rank > 0 ? (
                     <HStack
@@ -408,10 +374,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
                   ) : null}
                 </HStack>
 
-                {/* 大標題（2 行上限，不遮擋）
-                    用 title3 而不是 headline：它是這一頁最大的一本書，
-                    不該比「繼續閱讀／熱門新作」那些區塊標題（同為 title3）還小。
-                    字色吃系統語意色：hero 背後的模糊封面只有 0.35，淺色主題時白字讀不到。 */}
+                {}
                 <Text
                   font="title3"
                   fontWeight="bold"
@@ -421,7 +384,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
                   {item.name_cn || item.name}
                 </Text>
 
-                {/* 標籤 · 作者 */}
+                {}
                 <HStack spacing={4} alignment="center">
                   {item.tags && item.tags.length > 0 ? (
                     <Text font="caption2" fontWeight="medium" foregroundStyle="secondaryLabel">
@@ -440,7 +403,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
                   ) : null}
                 </HStack>
 
-                {/* 簡介預覽（2 行精華） */}
+                {}
                 {item.summary ? (
                   <Text
                     font="caption2"
@@ -457,13 +420,13 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
         ))}
       </TabView>
 
-      {/* 置中 Liquid Glass 分裂式分頁指示點 */}
+      {}
       {items.length > 1 ? (
         <HStack frame={{ maxWidth: "infinity" }}>
           <Spacer />
           <GlassDots>
             <ZStack alignment="leading" frame={{ width: (items.length - 1) * 16 + 6, height: 16 }}>
-              {/* 靜態各圓點底座（極輕灰玻璃，去除厚重折射霧感） */}
+              {}
               <HStack spacing={10} alignment="center" frame={{ height: 16 }}>
                 {items.map((_, i) => (
                   <VStack
@@ -474,7 +437,7 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
                 ))}
               </HStack>
 
-              {/* 活躍藍色液態水滴（翻頁時物理拉絲扯斷，抵達時融入目標點） */}
+              {}
               <VStack
                 frame={{ width: 6, height: 6 }}
                 {...glass({ tint: tintColor, shape: capsule("circular") })}
@@ -490,17 +453,13 @@ function HeroCarousel({ items, namespace }: { items: BangumiSubject[]; namespace
   )
 }
 
-/** 格式化話數徽章文案：只保留話數（如：第2話、第03話），不帶頁數，乾淨精巧 */
 function formatEpisodeBadge(epTitle?: string): string {
   if (!epTitle) return t("home.lastRead")
   
-  // 萃取核心話數（例如「第 2 话 兄与弟」->「第2话」或「第00话 · 第 34 頁」->「第00话」）
-  // 這個字元集是**解析章節名的規則**（來源給的資料），不是文案。
   const match = epTitle.trim().match(/^(第\s*[\d.]+\s*[話话回卷集章期]|[\d.]+\s*[話话回卷集章期])/i)
   return match ? match[1].replace(/\s+/g, "") : epTitle.trim()
 }
 
-/** 繼續閱讀卡片：封面 + 進度話數磨砂標籤 + 標題；長按可前往詳情或刪掉這筆紀錄。 */
 function ResumeCard({
   entry,
   size,
@@ -509,13 +468,10 @@ function ResumeCard({
 }: {
   entry: Progress
   size: CardSize
-  /** 長按選單的「刪除」：抹掉這本的閱讀紀錄。 */
   onDelete?: () => void
-  /** 長按選單的「前往詳情」；源不在了就不給（詳情頁要源）。 */
   onOpenDetail?: () => void
 }) {
   const shown = resumeEntry(entry)
-  // 來源那一行：離線的紀錄在源名前面標「離線」；源被移除但還有離線內容時就只剩「離線」。
   const sourceLabel = [
     shown.offline ? t("common.offlineTag") : null,
     shown.sourceName ?? (shown.source === "offlineOnly" ? null : t("home.sourceRemoved")),
@@ -524,13 +480,12 @@ function ResumeCard({
     .join(" · ")
   const { width, height } = size
   const episodeText = shown.openable ? formatEpisodeBadge(entry.epTitle) : t("home.sourceInvalid")
-  // page 是 0 起算的領先可見頁；舊紀錄沒有頁數就沒有這條線（統一門檻在 app/shelf.ts）。
   const fraction = shown.readFraction ?? null
   const [opening, setOpening] = useState(false)
 
   const card = (
     <VStack alignment="leading" spacing={6} frame={{ width }}>
-      {/* 封面 + 懸浮閱讀話數標籤 */}
+      {}
       <ZStack
         alignment="bottomTrailing"
         frame={{ width, height }}
@@ -551,7 +506,7 @@ function ResumeCard({
           </CoverShadow>
         )}
 
-        {/* 原位 In-place 微載入指示層（封面暗化 + 微轉圈） */}
+        {}
         {opening ? (
           <ZStack
             frame={{ width, height }}
@@ -563,13 +518,13 @@ function ResumeCard({
           </ZStack>
         ) : null}
 
-        {/* 進度標籤：固定靠右下角，純話數精巧膠囊（源給的長標題才夾寬） */}
+        {}
         <HStack offset={{ x: -6, y: -6 }}>
           <CoverBadge text={episodeText} maxWidth={episodeText.length > 12 ? width - 12 : undefined} />
         </HStack>
       </ZStack>
 
-      {/* 沒頁數也佔位（透明），同一排卡片等高。 */}
+      {}
       <ProgressView
         value={fraction ?? 0}
         progressViewStyle="linear"
@@ -577,7 +532,7 @@ function ResumeCard({
         opacity={fraction !== null ? 1 : 0}
       />
 
-      {/* 單行俐落書名（超長自動截斷） */}
+      {}
       <Text
         font="caption"
         fontWeight="medium"
@@ -589,7 +544,7 @@ function ResumeCard({
         {entry.title}
       </Text>
 
-      {/* 來源名稱（離線的紀錄前面多一個「離線」） */}
+      {}
       <Text
         font="caption2"
         foregroundStyle="tertiaryLabel"
@@ -601,7 +556,6 @@ function ResumeCard({
     </VStack>
   )
 
-  // 源沒了、也沒有離線內容就進不去（封面也要源才解析得出來）；標籤那顆膠囊改成「源失效」。
   const body = shown.openable ? (
     <Button
       buttonStyle="plain"
@@ -617,7 +571,6 @@ function ResumeCard({
     </Button>
   ) : card
 
-  // 跟閱讀歷史同一組長按選單（screens/shared/progressActions）：推頁與刪除都掛在卡片外層，不搭 Button 的點擊。
   const canOpenDetail = onOpenDetail !== undefined && canOpenComicDetail(shown)
   if (!onDelete && !canOpenDetail) return body
 
@@ -633,7 +586,6 @@ function ResumeCard({
   )
 }
 
-/** Bangumi 漫畫推薦卡片 */
 function BangumiCard({
   subject,
   size,
@@ -664,7 +616,7 @@ function BangumiCard({
         spacing={6}
         frame={{ width }}
       >
-        {/* 封面與評分標籤 */}
+        {}
         <ZStack
           alignment="bottomTrailing"
           frame={{ width, height }}
@@ -692,8 +644,7 @@ function BangumiCard({
             </CoverShadow>
           )}
 
-          {/* 排名或評分角標（圖上的短角標一律 CoverBadge）；
-              fixedSize 讓它抱內容寬，不然 ZStack 會把它拉成整張封面寬、角標就跑到中左。 */}
+          {}
           <HStack offset={{ x: -6, y: -6 }} fixedSize={{ horizontal: true, vertical: false }}>
             {showRank && subject.rank && subject.rank > 0 ? (
               <CoverBadge text={`#${subject.rank}`} />
@@ -703,7 +654,7 @@ function BangumiCard({
           </HStack>
         </ZStack>
 
-        {/* 單行俐落書名（超長自動截斷） */}
+        {}
         <Text
           font="caption"
           fontWeight="medium"
@@ -719,10 +670,6 @@ function BangumiCard({
   )
 }
 
-/**
- * hero 輪播的骨架：同樣 207 高的主體＋16 高的分頁點那一列。
- * 右欄照真的排法：評分／榜單角標、兩行標題、標籤·作者、兩行簡介——少一列，資料來的時候整欄會往下抽。
- */
 function HeroSkeleton() {
   return (
     <VStack spacing={8} frame={{ maxWidth: "infinity" }} accessibilityLabel={t("home.feedLoading")}>
@@ -748,7 +695,6 @@ function HeroSkeleton() {
   )
 }
 
-/** 橫向卡片排的骨架：跟真的卡片同尺寸，也替真的那排量寬。 */
 function RowSkeleton({ size, onWidth }: { size: CardSize; onWidth: (width: number) => void }) {
   return (
     <VStack frame={{ maxWidth: "infinity" }} background={carouselWidthProbe(onWidth)}>

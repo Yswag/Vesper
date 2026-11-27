@@ -1,8 +1,3 @@
-// Aidoku 源的搜尋篩選：把預設值、使用者存的值與 UI 狀態接起來。
-//
-// 定義優先用舊版 `filters.json`（同步、不用起宿主）；沒有才去問 runtime 的 `getFilters()`。
-// 值存成 `{ "<sourceKey>": [值, 值] }`，跟 `search-options.json` 同一個目錄。
-
 import { appDataRoot, join, readText, writeText } from "../engine/fs"
 import * as aidoku from "../sources/aidoku"
 import {
@@ -37,7 +32,6 @@ function loadAll(): Stored {
   }
 }
 
-/** 每個源的定義只查一次（runtime 那條要起宿主）。 */
 const rowsCache = new Map<string, AidokuFilterRow[]>()
 
 export async function aidokuFilterRows(source: InstalledSource): Promise<AidokuFilterRow[]> {
@@ -50,7 +44,6 @@ export async function aidokuFilterRows(source: InstalledSource): Promise<AidokuF
   return rows
 }
 
-/** 使用者存的值；沒有存過就是預設值。 */
 export function loadFilterValues(sourceKey: string, rows: AidokuFilterRow[]): AidokuFilterValue[] {
   return decodeFilters(rows, loadAll()[sourceKey])
 }

@@ -1,8 +1,3 @@
-// 每個源的搜尋篩選（`search.optionList` 的選擇）。存成一個小 JSON 檔：
-//   { "<sourceKey>": [值, 值, null] }（multi-select 的值本身是一個 JSON 字串）
-// 直接存「送去源的那個陣列」，開 sheet 時再用 `decodeSearchOptions` 解回 UI 狀態，
-// 順便驗值還對不對得上（源更新過就退回預設）。
-
 import { appDataRoot, join, readText, writeText } from "../engine/fs"
 
 type Selections = Record<string, Array<string | null>>

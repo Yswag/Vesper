@@ -1,9 +1,6 @@
-// 五個主要分類分頁之中繼資料（標題 i18n key 與 SF Symbol 圖示）。
-
 import type { MessageKey } from "../i18n"
 
 export interface Section {
-  /** 字典 key；顯示字在 render 時才求值，不然切語言不會跟著變。 */
   titleKey: MessageKey
   systemImage: string
 }

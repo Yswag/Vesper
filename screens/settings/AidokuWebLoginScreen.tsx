@@ -1,10 +1,3 @@
-// Aidoku 的 webview 登入頁：真的載入源的登入網址，按「完成」才收 cookie／localStorage
-// 並寫進源設定；按「取消」什麼都不寫。
-//
-// 不重用 `sources/webLogin.ts` 的 `runWebLogin`：那條是 Venera 的「輪詢 checkStatus、
-// 成功自己關」流程，而這裡要使用者自己按「完成」。WebViewController 與 localStorage
-// 讀取仍沿用同一套（`dumpLocalStorage`）。
-
 import { Button, Navigation, ProgressView, Spacer, Text, VStack, WebView, ZStack, useEffect, useRef, useState } from "scripting"
 
 import { NoticeBanner } from "../../design/status"
@@ -48,7 +41,6 @@ export function AidokuWebLoginScreen({ sourceKey, item }: { sourceKey: string; i
       try {
         controller.dispose()
       } catch {
-        // 已經壞掉的 controller 就算了
       }
     }
   }, [])

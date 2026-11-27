@@ -1,13 +1,7 @@
-// 設定分頁：首頁 ＋ 各子頁（外觀／源清單／源詳情／帳號／源設定／下載／日誌／倉庫），
-// 以及外觀主題的名稱表（`app/theme.tsx` 只放 key）。
-//
-// key 路徑＝檔名，所以這裡每一則都是 `settings.<下面的路徑>`。
-
 export default {
   language: "語言",
   followSystem: "跟隨系統",
 
-  /** 多個子頁共用的句子（同一句話在兩個以上的子頁出現）。 */
   shared: {
     running: "執行中…",
     done: "{label}完成",
@@ -19,7 +13,6 @@ export default {
     password: "密碼",
     url: "網址",
     source: "源",
-    /** 來源類型（源清單、源詳情、倉庫條目共用）。 */
     kindVenera: "Venera",
     kindAidoku: "Aidoku",
     kindMihon: "Mihon",
@@ -28,14 +21,12 @@ export default {
     reinstall: "重新安裝",
     loadFailed: "載入失敗",
     readFailed: "讀取失敗",
-    /** 計數：中文沒有單複數，兩形同字——留著 `one`/`other` 是為了跟英文同形。 */
     countSources: { one: "{n} 個源", other: "{n} 個源" },
     countChapters: { one: "{n} 章", other: "{n} 章" },
     countImages: { one: "{n} 張", other: "{n} 張" },
     countItems: { one: "{n} 項", other: "{n} 項" },
   },
 
-  /** 設定首頁。 */
   root: {
     title: "設定",
     groupSources: "漫畫來源",
@@ -58,14 +49,12 @@ export default {
     homeData: "首頁熱門與數據",
   },
 
-  /** Mini Hub 管理頁。 */
   miniHub: {
     title: "Mini Hub",
     enabledGroup: "啟用",
     disabledGroup: "停用",
   },
 
-  /** 快取配置頁（縮圖與正文兩個池）。 */
   cache: {
     thumbsGroup: "縮圖",
     thumbsUsageTitle: "已快取",
@@ -86,7 +75,6 @@ export default {
     days: { one: "{n} 天", other: "{n} 天" },
   },
 
-  /** 外觀主題頁與主題名稱表。 */
   theme: {
     appearanceGroup: "深淺模式",
     light: "淺色",
@@ -113,7 +101,6 @@ export default {
     },
   },
 
-  /** 日誌頁。 */
   log: {
     title: "日誌",
     level: "日誌層級",
@@ -122,7 +109,6 @@ export default {
     count: "{shown} / {total} 筆",
   },
 
-  /** 漫畫源清單頁。 */
   sources: {
     title: "漫畫源",
     noFileAccess: "沒有檔案存取權限",
@@ -144,7 +130,6 @@ export default {
     removeExtensionMessage: "會連同這個擴充的 {n} 個子源一起移除。已加入書架的閱讀紀錄不會被刪除。",
   },
 
-  /** 內容語言（全 App 一份）。 */
   contentLanguage: {
     title: "內容語言",
     multi: "多語言",
@@ -152,7 +137,6 @@ export default {
     search: "搜尋語言",
   },
 
-  /** 單一 Mihon 擴充的詳情頁。 */
   extensionDetail: {
     title: "擴充詳情",
     notFound: "找不到這個擴充",
@@ -176,7 +160,6 @@ export default {
     removeMessage: "會連同它的 {n} 個子源一起移除。已加入書架的閱讀紀錄不會被刪除。",
   },
 
-  /** 單一源的詳情頁。 */
   sourceDetail: {
     title: "源詳情",
     notFound: "找不到這個漫畫源",
@@ -199,7 +182,6 @@ export default {
     removeMessage: "已加入書架的閱讀紀錄不會被刪除。",
   },
 
-  /** 源的登入／登出頁。 */
   account: {
     noLoginNeeded: "這個源不需要登入",
     logoutFootnote: "登出會清掉這個源的登入憑證與 cookie。",
@@ -217,7 +199,6 @@ export default {
     unsupportedDetail: "這個源宣告的登入方式 Vesper 還沒有實作，需要在瀏覽器裡登入。",
   },
 
-  /** 源自己的設定頁。 */
   sourceSettings: {
     title: "源設定",
     empty: "這個源沒有可調整的設定",
@@ -237,7 +218,6 @@ export default {
     restoreDefault: "回復預設值",
   },
 
-  /** Aidoku 源自己的設定頁（`settings.json` 的 schema）。 */
   aidokuSettings: {
     title: "源設定",
     languageGroup: "語言",
@@ -267,7 +247,6 @@ export default {
     selected: { one: "已選 {n} 項", other: "已選 {n} 項" },
   },
 
-  /** Mihon 擴充的設定（`preferences` op）。 */
   mihonSettings: {
     title: "源設定",
     empty: "這個源沒有可調整的設定",
@@ -279,7 +258,6 @@ export default {
   },
 
 
-  /** 下載管理頁。 */
   downloads: {
     title: "下載",
     empty: "還沒有任何下載",
@@ -305,7 +283,6 @@ export default {
     incompletePlain: "未完成",
   },
 
-  /** 源倉庫（清單頁）。 */
   repos: {
     searchPrompt: "搜尋所有倉庫的源",
     joined: "已加入 ({n})",
@@ -326,7 +303,6 @@ export default {
     addDone: "{label}完成：{name}（{count} 個源）",
   },
 
-  /** 單一倉庫（索引裡逐筆安裝）。 */
   repo: {
     removed: "這個倉庫已移除",
     removedDetail: "回上一頁即可。",
@@ -340,7 +316,6 @@ export default {
     updated: "已更新 {name} v{version}",
     updateAvailable: "更新 v{version}",
     r18: "R18",
-    /** 這個擴充的 ext-lib 版本 dexvm 解不動：列尾不給安裝鈕。 */
     unsupported: "不支援",
     refreshing: "重新整理…",
     refreshed: "已重新整理：{n} 個源",

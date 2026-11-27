@@ -1,5 +1,3 @@
-// 漫畫源沙箱加載器：透過 new Function 注入沙箱全域物件並實例化 ComicSource 子類別。
-
 import type { HostContext } from "./globals"
 import { createGlobals } from "./globals"
 import { log } from "./log"
@@ -17,9 +15,7 @@ export interface SourceMeta {
 
 export interface LoadedSource {
   meta: SourceMeta
-  /** 源的實例。呼叫端只知道它符合 Venera 的介面。 */
   instance: any
-  /** 能力探測：源宣告了哪些區塊。 */
   capabilities: SourceCapabilities
 }
 
@@ -28,7 +24,6 @@ export interface SettingOption {
   text: string
 }
 
-/** 源宣告的設定項（`select` / `switch` / `input` / `callback`）。 */
 export interface SettingSpec {
   id: string
   title: string
@@ -39,10 +34,6 @@ export interface SettingSpec {
   validator?: string
 }
 
-/**
- * 提取來源宣告的 settings 結構（包含預設值與 UI 設定項規格）。
- * `translate` 讓呼叫端用源自己的 `translation` 字典翻標題與選項（engine 不認識 sources）。
- */
 export function extractSettings(
   instance: any,
   translate: (text: string) => string = text => text
@@ -70,7 +61,6 @@ export function extractSettings(
   return { defaults, specs }
 }
 
-/** 解析選項格式（支援 "值-名" 字串或 {value, text} 物件）。 */
 function normalizeOptions(raw: unknown, translate: (text: string) => string): SettingOption[] {
   if (!Array.isArray(raw)) return []
   const out: SettingOption[] = []
@@ -86,7 +76,6 @@ function normalizeOptions(raw: unknown, translate: (text: string) => string): Se
     }
     if (!entry || typeof entry !== "object") continue
     const obj = entry as Record<string, unknown>
-    // 空字串是合法的值（包子的「原图」「默认」），只有沒寫 value 才略過。
     if (obj.value === undefined || obj.value === null) continue
     const value = String(obj.value)
     out.push({ value, text: translate(String(obj.text ?? obj.label ?? value)) })
@@ -94,7 +83,6 @@ function normalizeOptions(raw: unknown, translate: (text: string) => string): Se
   return out
 }
 
-/** 設定值合併：以源目前宣告的 id 為準，保留使用者改過的值。 */
 export function mergeSettings(
   defaults: Record<string, unknown>,
   saved: Record<string, unknown> | undefined
@@ -115,7 +103,6 @@ export interface SourceCapabilities {  search: boolean
   favorites: boolean
   settings: boolean
   comments: boolean
-  /** 源宣告了 `sendComment`（能不能「送出」是另一回事，例如 nhentai 是 throw 的 stub）。 */
   sendComment: boolean
   archive: boolean
   starRating: boolean
@@ -141,7 +128,6 @@ export function loadSource(code: string, ctx: HostContext): LoadedSource {
   const names = Object.keys(globals)
   const values = names.map(name => globals[name])
 
-  // `globalThis` / `eval` / `Function` 以參數遮蔽，讓源拿不到宿主環境。
   const body = `
     "use strict";
     (() => {
@@ -169,7 +155,6 @@ export function loadSource(code: string, ctx: HostContext): LoadedSource {
   return { meta, instance, capabilities: detectCapabilities(code, instance) }
 }
 
-/** 掃源的物件結構（與原始碼）產生 UI 用的能力徽章。 */
 export function detectCapabilities(code: string, instance: any): SourceCapabilities {
   const c = instance?.comic ?? {}
   const account = instance?.account ?? {}
@@ -186,8 +171,6 @@ export function detectCapabilities(code: string, instance: any): SourceCapabilit
     sendComment: typeof c.sendComment === "function",
     archive: typeof c.archive?.getArchives === "function",
     starRating: typeof c.starRating === "function",
-    // modifyImage 只出現在 onImageLoad 的回傳物件裡，執行期才看得到；
-    // 徽章問的是「這個源有沒有宣告這個能力」，所以直接掃原始碼。
     modifyImage: /modifyImage\s*[:=]/.test(code),
     loginWithPassword: typeof account.login === "function",
     loginWithWebview: !!account.loginWithWebview,
@@ -196,7 +179,6 @@ export function detectCapabilities(code: string, instance: any): SourceCapabilit
   }
 }
 
-/** 安裝/載入時的輕量記錄，方便在 Log 頁追問題。 */
 export function logLoad(meta: SourceMeta) {
   log("info", "source", `已載入 ${meta.name} (${meta.key}) v${meta.version}`)
 }

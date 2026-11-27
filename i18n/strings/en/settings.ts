@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   language: "Language",
   followSystem: "Follow System",
@@ -52,14 +50,12 @@ export default {
     homeData: "Home rankings & data",
   },
 
-  /** Mini Hub management screen. */
   miniHub: {
     title: "Mini Hub",
     enabledGroup: "Shown",
     disabledGroup: "Hidden",
   },
 
-  /** Cache settings (thumbnails and page images live in separate pools). */
   cache: {
     thumbsGroup: "Thumbnails",
     thumbsUsageTitle: "Cached",
@@ -227,7 +223,6 @@ export default {
     restoreDefault: "Restore default",
   },
 
-  /** Aidoku source settings (the `settings.json` schema). */
   aidokuSettings: {
     title: "Source settings",
     languageGroup: "Language",
@@ -257,7 +252,6 @@ export default {
     selected: { one: "{n} selected", other: "{n} selected" },
   },
 
-  /** Mihon extension settings (`preferences` op). */
   mihonSettings: {
     title: "Source settings",
     empty: "This source has no settings",

@@ -1,6 +1,3 @@
-// 純格式化：把數字轉成人看得懂的字。跟下載無關，誰要用誰 import。
-
-/** 位元組 → 人看得懂的字（佔用空間）。 */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B"
   const units = ["B", "KB", "MB", "GB"]

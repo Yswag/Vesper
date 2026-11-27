@@ -1,13 +1,5 @@
-// Venera 的 html host method。源端是「同步」呼叫（init.js 的 querySelector 沒有 await），
-// 所以這裡用內建的單檔 cheerio 在 process 內同步解析，並以整數 key 指涉節點 —— 與 Venera 的語意一致。
-//
-// 命名照 init.js：element 只有 `.text`（沒有 textContent/innerText）、`.attributes[...]`、
-// `.innerHTML`、`.children`、`.nodes`、`.parent`、`.classNames`、`.id`、`.localName`、
-// `.previousElementSibling`、`.nextElementSibling`；node 有 `.text`、`.type`、`.toElement()`。
-
 import { Script } from "scripting"
 
-/** 內建的單檔 cheerio：`assets/vendor/cheerio.js`（全域 `createCheerio()`），讀檔＋eval 約 13ms。 */
 const CHEERIO_BUNDLE = "/assets/vendor/cheerio.js"
 
 let _cheerio: any = null
@@ -22,7 +14,6 @@ function getCheerio(): any {
 interface Doc {
   $: any
   nodes: Map<number, any>
-  /** 節點 → 鍵：註冊前先查這裡，不再線性掃整張 nodes 表。 */
   keys: WeakMap<object, number>
 }
 
@@ -30,7 +21,6 @@ const docs = new Map<number, Doc>()
 let nextDocKey = 0
 let nextNodeKey = 1
 
-// LRU 文件快取上限（16 份），防止來源未調用 dispose() 導致記憶體洩漏
 const MAX_LIVE_DOCS = 16
 
 function isTag(node: any): boolean {
@@ -53,7 +43,6 @@ export function parseDocument(html: string): number {
   return key
 }
 
-/** 任何一次 API 呼叫都算「用到」：先刪再放回，讓這份文件變成最新。 */
 function touch(docKey: number, d: Doc) {
   docs.delete(docKey)
   docs.set(docKey, d)
@@ -67,7 +56,6 @@ function evictOverLimit() {
   }
 }
 
-/** 唯讀觀測點：目前還活著的文件數（離線驗証用，不是給源的功能）。 */
 export function liveDocumentCount(): number {
   return docs.size
 }
@@ -86,7 +74,6 @@ function nodeOf(docKey: number, nodeKey: number): any {
   return node
 }
 
-/** 把一個 cheerio/domhandler 節點登錄進文件，回傳它的整數 key。 */
 function register(docKey: number, node: any): number | null {
   if (!node) return null
   const d = doc(docKey)
@@ -142,7 +129,6 @@ export function getText(docKey: number, nodeKey: number): string {
   return d.$(nodeOf(docKey, nodeKey)).text()
 }
 
-/** 淺拷貝屬性表；缺屬性回 undefined（源的程式碼依賴這個語意）。 */
 export function getAttributes(docKey: number, nodeKey: number): Record<string, string> {
   const node = nodeOf(docKey, nodeKey)
   return { ...(node.attribs ?? {}) }
@@ -188,7 +174,6 @@ export function getLocalName(docKey: number, nodeKey: number): string {
   return nodeOf(docKey, nodeKey).name ?? ""
 }
 
-/** 只跳過非元素節點，回傳上/下一個「標籤」兄弟。 */
 function sibling(docKey: number, nodeKey: number, step: -1 | 1): number | null {
   const node = nodeOf(docKey, nodeKey)
   const parent = node.parent

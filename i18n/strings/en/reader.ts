@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   chapterFallback: "Chapter {n}",
 
@@ -48,9 +46,7 @@ export default {
   prefetch: "Image Prefetch",
   prefetchPages: { one: "{n} page", other: "{n} pages" },
   prefetchOff: "Off",
-  /** Reaching the end of this chapter appends the next one below, so scrolling just continues. */
   seamlessNext: "Auto-continue to next chapter",
-  /** Default follows the source's viewer (then global); on saves settings for this title only. */
   perComic: "Remember for this title",
 
   noChapters: "This title has no chapters yet",

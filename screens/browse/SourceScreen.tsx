@@ -1,8 +1,3 @@
-// 單一源的頁面外殼：導覽列右上一個下拉切「探索 / 分類 / 排行」，內容是一整棵子樹。
-//
-// 搜尋歸這裡：導覽列上的放大鏡才掛上系統搜尋框，取消就卸下；送出才真的打源，結果換成整頁的搜尋結果。
-// 三邊的狀態各自獨立（載入、錯誤、翻頁都不共用），這裡只負責切換與標題。
-
 import {
   Button,
   DefaultToolbarItem,
@@ -28,26 +23,15 @@ import { RankingScreen } from "./RankingScreen"
 import { SourceSearchResults } from "./SourceSearchResults"
 
 export function SourceScreen({ sourceKey }: { sourceKey: string }) {
-  // 標題與「有沒有分類／排行」都是庫給的 domain 資訊（畫面不碰源的 instance）。
   const info = comicLibrary().source(sourceKey)
-  // Picker 的值只能是 string / number，所以這裡用字串。
   const [mode, setMode] = useState("explore")
-  // 搜尋框：`keyword` 是框裡的原文，`submitted` 是「這些結果屬於哪個關鍵字」（送出才更新，空字串＝源的預設列表）。
   const [keyword, setKeyword] = useState("")
   const [submitted, setSubmitted] = useState<string | null>(null)
-  /**
-   * 系統搜尋框展開與否。存成 Observable 而不是 state：下拉展開的過程中系統會連續回報，
-   * 用 state 每次都會重繪整棵子樹（chip 列所在的頂部 bar 也重建），手勢就被打斷、一直彈回去。
-   */
   const searchOpen = useObservable(false)
-  /** Aidoku 源一展開就顯示空查詢的預設結果。只在開關時更新，手勢過程不碰版面。 */
   const [searchActive, setSearchActive] = useState(false)
-  /** 搜尋框掛載與否：平常不掛 searchable，點放大鏡才掛，取消就拿掉。 */
   const [searchMounted, setSearchMounted] = useState(false)
-  // 選單標籤與導覽列替代標題都在 render 時取自 `t()`：換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
-  // 換源時整組搜尋作廢，不要把上一個源的關鍵字帶過來。
   useEffect(() => {
     setKeyword("")
     setSubmitted(null)
@@ -57,7 +41,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   useEffect(() => {
     const listener = (open: boolean) => {
       setSearchActive(open)
-      // 取消（系統把 presented 設回 false）：清掉搜尋並卸下搜尋框。
       if (!open) {
         setKeyword("")
         setSubmitted(null)
@@ -68,7 +51,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
     return () => searchOpen.unsubscribe(listener)
   }, [searchOpen])
 
-  // 源沒宣告的頁面就不列進選單（33 個源裡有 2 個沒有分類、24 個沒有排行榜）。
   const hasCategory = info?.hasCategory ?? false
   const hasBoard = info?.hasRanking ?? false
   const pages = [
@@ -80,22 +62,17 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const showCategory = hasCategory && mode === "category"
   const showRanking = hasBoard && mode === "ranking"
   const title = info?.name ?? t("browse.source")
-  /** 空查詢也是有效搜尋（源會回自己的預設列表）：Aidoku 與 Mihon 的介面都是這個語意。 */
   const allowsEmptySearch = info?.kind === "aidoku" || info?.kind === "mihon"
-  /** 什麼時候該顯示搜尋結果：Aidoku／Mihon 源一展開搜尋框就算，其他源要送出過才算。 */
   const searchMode = submitted !== null || (allowsEmptySearch && searchActive)
 
-  /** 搜尋框的每一次變動：**不搜**，只記在原字。清成空的就復原（回原本的檢視）。 */
   function handleKeywordChange(text: string) {
     setKeyword(text)
     if (text.trim() === "") setSubmitted(null)
   }
 
-  /** 送出（鍵盤的搜尋鍵）：現在框裡的字才去搜；Aidoku／Mihon 源空字也送（等於看預設列表）。 */
   function handleSubmitSearch() {
     const term = keyword.trim()
     if (!term && !allowsEmptySearch) return
-    // 結果拿到就收起鍵盤，讓出來給網格。
     if (Keyboard.visible) Keyboard.hide()
     setSubmitted(term)
   }
@@ -127,7 +104,6 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
                 buttonStyle="plain"
                 action={() => {
                   setSearchMounted(true)
-                  // 先掛上 searchable，下一拍再展開。
                   setTimeout(() => searchOpen.setValue(true), 50)
                 }}
               >

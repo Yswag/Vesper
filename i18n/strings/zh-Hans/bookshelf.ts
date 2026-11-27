@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   historyTab: "阅读历史",
   offlineTab: "离线内容",

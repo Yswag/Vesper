@@ -1,10 +1,8 @@
 import { pageInsets } from "../design/tokens"
 
-/** 跟頁面左右邊距一致，封面左緣才會對齊上面的標題與切換列。 */
 export const H_PADDING = pageInsets.horizontal
 export const H_SPACING = 9
 export const V_SPACING = 16
-/** Cover height / width. */
 export const ASPECT = 1.45
 
 const MIN_CELL_WIDTH = 110
@@ -17,7 +15,6 @@ export interface ComicGridMetrics {
   cellHeight: number
 }
 
-/** Derive a stable grid from the width offered by the immediate parent. */
 export function comicGridMetrics(containerWidth: number): ComicGridMetrics {
   const width = Math.max(0, containerWidth)
   const availableWidth = Math.max(0, width - H_PADDING * 2)

@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   keyword: "Keyword",
 
@@ -16,7 +14,6 @@ export default {
   filterMulti: "Multiple choices",
   filterSelect: "Select",
   filterNone: "Unspecified",
-  /** Ascending toggle of a sort filter. */
   filterAscending: "Ascending",
   filterDescending: "Descending",
   filterIgnore: "Ignore",

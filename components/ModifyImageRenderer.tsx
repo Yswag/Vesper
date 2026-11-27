@@ -1,9 +1,3 @@
-// modifyImage 的合成器：把 engine 產生的貼圖清單離屏畫成一張 PNG。
-//
-// 兩條路：沒有旋轉時走 <ZStack>（實測 800×8000 只要 ~26 ms，比 Canvas 便宜約 4 倍），
-// 有旋轉時走 <Canvas>（Canvas 的 rotate 對 90° 是精確的；UIImage.rotated() 會多一像素並重新取樣）。
-// 陷阱：alignment 要下在 frame 上，否則 stack 的自然尺寸會被置中、offset 過的內容會被裁掉。
-
 import { Canvas, Image, ImageRenderer, ZStack } from "scripting"
 
 import { opDestSize, type Composition, type ImageCompositor, type ImageOp } from "../engine/imageprocess"
@@ -34,7 +28,6 @@ function stacked({ width, height, ops }: Composition) {
   )
 }
 
-/** 旋轉後要平移多少，才能讓旋轉過的方框對回貼圖的左上角。 */
 function turnOffset(op: ImageOp, turns: number): { x: number; y: number } {
   if (turns === 1) return { x: op.sh, y: 0 }
   if (turns === 2) return { x: op.sw, y: op.sh }

@@ -1,5 +1,3 @@
-// 简体中文。**LLM 產出、未經母語者校對**。
-
 export default {
   unsupported: {
     search: "这个源不支持搜索",
@@ -34,7 +32,6 @@ export default {
   pageUnreadable: "第 {n} 页读不到（文件不存在或已损坏）",
 
   verificationTitle: "请完成安全验证 ({name})",
-  /** 过盾自己超过等待时间；`{seconds}` 是等了几秒。 */
   verificationTimeout: "验证超时（{seconds} 秒）",
 
   aidoku: {
@@ -59,11 +56,8 @@ export default {
     failed: "源出错：{message}",
     timeout: "源响应超时",
     initFailed: "源初始化失败",
-    /** 重试后仍失败被标成不可用；`{reason}` 是最后一次的失败原因。 */
     unavailable: "这个源暂时不可用（{reason}），到来源设置关掉再开就会重新尝试",
-    /** Cloudflare 过盾没过；`{reason}` 是 WebView 给的原因。不是源的错，源不会被标成不可用。 */
     verification: "这个源被 Cloudflare 挡住，安全验证没完成（{reason}）",
-    /** 探索页的两个列表。 */
     popular: "热门",
     latest: "最新",
     missing: "扩展的文件不见了（请重新安装这个扩展）",
@@ -74,12 +68,10 @@ export default {
     requiresPro: "Mihon 源需要 Scripting Pro",
     requiresProDetail: "Mihon 源要靠本机 HTTP 服务器在 WebView 里运行 dexvm。升级 Scripting Pro 后再回来安装。",
 
-    /** 仓库索引（extensionList.extensions、index.pb 或旧式数组）。 */
     indexInvalid: "Mihon 索引格式不对（要 extensionList.extensions、index.pb 或旧式数组）",
     indexBadEntry: "索引条目缺套件名称、版本或名称",
     indexNoApk: "索引条目没有 apk 网址",
     legacyUrl: "旧式索引网址必须以 /index.min.json 结尾",
-    /** `{url}` 是索引指向的地址、`{reason}` 是下载失败的原因。 */
     followFailed: "读不到索引指向的网址 {url}（{reason}）",
   },
 

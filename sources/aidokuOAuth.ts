@@ -1,6 +1,3 @@
-// Aidoku 源 `method: "oauth"` 的純函式：PKCE、callback 解析與 token 交換。
-// 流程照上游 SettingView：auth URL 補 code_challenge；callback 換 token 後把「回應原文」交給源。
-
 import { fetch } from "scripting"
 
 function base64url(bytes: Uint8Array): string {
@@ -13,14 +10,12 @@ function base64url(bytes: Uint8Array): string {
     .replace(/=+$/, "")
 }
 
-/** 43 字元的 code_verifier（32 bytes 隨機 → base64url）。 */
 export function randomVerifier(): string {
   const bytes = new Uint8Array(32)
   crypto.getRandomValues(bytes)
   return base64url(bytes)
 }
 
-/** S256：base64url(sha256(verifier))。 */
 export function codeChallenge(verifier: string): string {
   const data = Data.fromArrayBuffer(new TextEncoder().encode(verifier).buffer as ArrayBuffer)
   if (!data) throw new Error("challenge failed")
@@ -33,7 +28,6 @@ export interface OAuthParams {
   clientId?: string
 }
 
-/** 從 auth URL 取 redirect_uri／client_id（token 交換要同一組）。 */
 export function paramsOf(authUrl: string): OAuthParams {
   const url = new URL(authUrl)
   return {
@@ -42,7 +36,6 @@ export function paramsOf(authUrl: string): OAuthParams {
   }
 }
 
-/** 補上 PKCE 參數；其他 query 原樣保留。 */
 export function withPkce(authUrl: string, verifier: string): string {
   const url = new URL(authUrl)
   url.searchParams.set("code_challenge", codeChallenge(verifier))
@@ -51,7 +44,6 @@ export function withPkce(authUrl: string, verifier: string): string {
   return url.toString()
 }
 
-/** callback 的 code：query 優先，其次 fragment（有些 provider 用 `#code=`）。 */
 export function codeOf(callbackUrl: string): string {
   const url = new URL(callbackUrl)
   const fromQuery = url.searchParams.get("code")
@@ -68,7 +60,6 @@ export interface TokenRequest {
   clientId?: string
 }
 
-/** 用 authorization code 換 token，回 token endpoint 的回應原文。 */
 export async function exchangeToken(request: TokenRequest): Promise<string> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",

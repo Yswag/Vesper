@@ -1,12 +1,7 @@
-// 漫畫源網站 Favicon / Icon 快取管理模組。
-// 本地快取位於 cache/source-icons/<key>.bin。
-// 依 KNOWN_SOURCE_DOMAINS 或來源宣告網域，透過 Google/DuckDuckGo Favicon 服務或根路徑靜默抓取。
-
 import { fetch } from "scripting"
 import { appDataRoot, ensureDir, exists, join, remove, writeBytes } from "./fs"
 import { log } from "./log"
 
-/** 已知各大源的代表網域或備選網域清單對照表 */
 const KNOWN_SOURCE_DOMAINS: Record<string, string[]> = {
   copy_manga: ["api.copy-manga.com", "api.copy2000.online", "www.copy20.com", "copymanga.site"],
   Komiic: ["komiic.com"],
@@ -56,12 +51,9 @@ export function hasSourceIcon(key: string): boolean {
   }
 }
 
-/** 記憶體快取，避免每幀重複讀檔解碼 */
 const memCache = new Map<string, UIImage | null>()
-/** 正在飛的抓取工作，避免同一個 key 並行打多次網路 */
 const inflight = new Map<string, Promise<string | null>>()
 
-/** 從本機快取或記憶體取得已解碼的 UIImage，若尚未快取則回傳 null */
 export function getCachedSourceIcon(key: string): UIImage | null {
   if (memCache.has(key)) {
     return memCache.get(key) ?? null
@@ -75,13 +67,11 @@ export function getCachedSourceIcon(key: string): UIImage | null {
         return img
       }
     } catch {
-      // 檔案損毀就忽略
     }
   }
   return null
 }
 
-/** 從來源實例中推導該來源的候選 domains */
 export function guessDomainsForSource(key: string, instance?: any): string[] {
   const result: string[] = []
   if (KNOWN_SOURCE_DOMAINS[key]) {
@@ -113,7 +103,6 @@ export function guessDomainsForSource(key: string, instance?: any): string[] {
             }
           }
         } catch {
-          // 忽略
         }
       }
     }
@@ -122,7 +111,6 @@ export function guessDomainsForSource(key: string, instance?: any): string[] {
   return result
 }
 
-/** 背景非同步抓取並快取來源圖標 */
 export async function fetchAndCacheSourceIcon(
   key: string,
   instance?: any
@@ -162,12 +150,10 @@ export async function fetchAndCacheSourceIcon(
 
             if (res.status === 200) {
               const buf = await res.arrayBuffer()
-              // Google 回傳 404 時是 726 bytes 的預設地球圖標，濾除它
               if (buf.byteLength >= 100 && buf.byteLength !== 726) {
                 const data = Data.fromUint8Array(new Uint8Array(buf))
                 const decoded = data ? UIImage.fromData(data) : null
                 if (decoded) {
-                  // 解碼成功，寫入快取
                   writeBytes(targetPath, buf)
                   memCache.set(key, decoded)
                   log("debug", "icons", `已快取 ${key} 的圖標 (${domain})`)
@@ -176,7 +162,6 @@ export async function fetchAndCacheSourceIcon(
               }
             }
           } catch {
-            // 嘗試下一個 URL
           }
         }
       }
@@ -192,18 +177,15 @@ export async function fetchAndCacheSourceIcon(
   return task
 }
 
-/** 只清記憶體那份（已解碼的 UIImage）。磁碟的檔案不動，下一次 getCachedSourceIcon 會重新讀檔。 */
 export function clearSourceIconMemory(): void {
   memCache.clear()
 }
 
-/** 清理所有圖標快取：記憶體與磁碟一起（設定頁那顆「清除縮圖快取」呼叫的就是這一個）。 */
 export function clearSourceIconCache(): void {
   clearSourceIconMemory()
   remove(iconDir())
 }
 
-/** 唯讀觀測點：目前記在記憶體快取裡的 key（清空入口的斷言；值可能是 null，這裡只看有沒有這一筆）。 */
 export function sourceIconMemoryKeys(): string[] {
   return [...memCache.keys()]
 }

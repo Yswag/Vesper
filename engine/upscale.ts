@@ -1,22 +1,15 @@
-// ACNet 超解析度服務。兩條後端：Core ML + Metal（預設）與 ONNX/wasm（後備，超大頁或 Core ML 失敗時走），
-// 契約相同：吃原始位元組、回 JPEG。
-// 切塊推論（每塊帶一圈上下文、輸出只取中間，與整張推論逐像素相同），可只算來源的一部分、縮到指定尺寸輸出。
-// 採串行隊列防重入、LRU 記憶體快取（process 級，換話就清），並於閱讀器退出時釋放資源。
-
 import { Script } from "scripting"
 import { join, readBytes } from "./fs"
 import { log } from "./log"
 import { requirePro } from "./pro"
 import { coreMLAvailable, isBackgroundGpuError, upscaleWithCoreML } from "./upscaleCoreML"
 
-/** true 走 Core ML + Metal，失敗或超大頁自動退回 wasm。 */
 const CORE_ML_UPSCALE = true
 
 let serverInstance: HttpServer | null = null
 let controllerInstance: WebViewController | null = null
 let currentPort = 0
 
-// 記憶體快取（LRU 上限 6 張，儲存 JPEG 原始位元組避免點陣常駐消耗）。
 const MAX_UPSCALE_CACHE_SIZE = 6
 export type UpscaleBackend = "coreml" | "onnx"
 export interface UpscaleResult {
@@ -29,7 +22,6 @@ const sessionCache = new Map<string, { data: Data; backend: UpscaleBackend }>()
 function getCachedUpscaleData(key: string): { data: Data; backend: UpscaleBackend } | undefined {
   const item = sessionCache.get(key)
   if (item) {
-    // LRU: 重新放入尾端標記為最近使用
     sessionCache.delete(key)
     sessionCache.set(key, item)
   }
@@ -40,7 +32,6 @@ function setCachedUpscaleData(key: string, data: Data, backend: UpscaleBackend):
   if (sessionCache.has(key)) {
     sessionCache.delete(key)
   } else if (sessionCache.size >= MAX_UPSCALE_CACHE_SIZE) {
-    // 淘汰最久未存取項目
     const oldestKey = sessionCache.keys().next().value
     if (oldestKey) {
       sessionCache.delete(oldestKey)
@@ -50,19 +41,14 @@ function setCachedUpscaleData(key: string, data: Data, backend: UpscaleBackend):
   sessionCache.set(key, { data, backend })
 }
 
-/**
- * 任務串行互斥隊列：防範推論並發與執行中提前 dispose 引發 WebKit EXC_BAD_ACCESS。
- */
 let queuePromise = Promise.resolve<any>(null)
 
-/** 清掉整個超分圖片快取（換話時呼叫）。 */
 export function clearUpscaleCache(): void {
   const size = sessionCache.size
   if (size > 0) {
     sessionCache.clear()
     log("debug", "upscale", `已清空超分圖片記憶體快取，釋放 ${size} 張高解析度圖像`)
   }
-  // 安全重置：將 dispose 排入串行隊列尾端，確保當前飛航推論結束後才安全釋放，絕不在執行途中銷毀
   queuePromise = queuePromise.then(
     () => {
       if (controllerInstance) {
@@ -80,13 +66,10 @@ export function clearUpscaleCache(): void {
   )
 }
 
-/** 塊邊長與上下文寬度（實測：pad 16 與整張推論逐像素相同、塊 512 只比整張慢 13%）。 */
 const TILE = 512
 const PAD = 16
-/** 來源範圍在這個像素數以內就整張一次算（舊版的安全範圍），省掉切塊的 13%。 */
 const SINGLE_PASS_PIXELS = 2_400_000
 
-/** 匯出給驗証用；平常只有 `ensureServer` 會呼叫。 */
 export function buildACNetHTML(port: number): string {
   return `<!DOCTYPE html>
 <html>
@@ -353,11 +336,8 @@ window.exportJpegBlob = async function(uploadUrl) {
 </html>`;
 }
 
-/** 超分的範圍與輸出；不給就是整張、輸出 2x。 */
 export interface UpscaleTarget {
-  /** 只算來源的這一塊（像素）；上下文仍從整張取。 */
   sourceRect?: { x: number; y: number; width: number; height: number }
-  /** 輸出尺寸（像素），通常＝這一頁的顯示框。 */
   outWidth: number
   outHeight: number
 }
@@ -372,7 +352,6 @@ function runOptions(target: UpscaleTarget | undefined): string {
   })
 }
 
-/** 快取鍵要帶範圍與輸出尺寸：顯示框變大時不拿舊的小圖。 */
 function cacheKey(key: string, target: UpscaleTarget | undefined): string {
   if (!target) return key
   const rect = target.sourceRect
@@ -383,7 +362,6 @@ function cacheKey(key: string, target: UpscaleTarget | undefined): string {
 let activeSourceData: Data | null = null
 let uploadedBuffer: ArrayBuffer | null = null
 
-/** 帶有 CORP 與 MIME 標頭的本地 HTTP 回應。 */
 function staticResponse(bytes: Uint8Array, contentType: string, extraHeaders: Record<string, string> = {}): HttpResponse {
   return HttpResponse.raw(200, "OK", {
     headers: {
@@ -397,30 +375,24 @@ function staticResponse(bytes: Uint8Array, contentType: string, extraHeaders: Re
 
 async function ensureServer(): Promise<number> {
   if (serverInstance && currentPort) return currentPort
-  // 本機 HttpServer 是 Scripting Pro 的功能；沒有它這裡只會失敗兩次再降級。
   requirePro("upscale")
 
   const server = new HttpServer()
 
   const acnetPath = join(Script.directory, "assets/acnet/anime4k_acnet.onnx")
-  // 採 .txt 副檔名避免大體積 minified JS 觸發型別服務解析異常，執行時以 text/javascript 提供
   const ortJsPath = join(Script.directory, "assets/acnet/ort.min.js")
   const wasmThreadedPath = join(Script.directory, "assets/acnet/ort-wasm-simd-threaded.wasm")
   const wasmFallbackPath = join(Script.directory, "assets/acnet/ort-wasm-simd.wasm")
 
   const acnetBytes = readBytes(acnetPath)
   const ortJsBytes = readBytes(ortJsPath)
-  // 多執行緒時 ORT 要 threaded 版；隔離失效或 numThreads = 1 時它會回頭要非 threaded 那顆。
   const wasmThreadedBytes = readBytes(wasmThreadedPath)
   const wasmFallbackBytes = readBytes(wasmFallbackPath)
 
-  // 兩顆都當成必要資源：不同 build 的 wasm 不能互換，拿 threaded 去頂 fallback 的 URL
-  // 只會把「找不到檔」變成更難懂的初始化失敗。
   if (!acnetBytes || !ortJsBytes || !wasmThreadedBytes || !wasmFallbackBytes) {
     throw new Error("ACNet 資源檔案丟失 (請確認 assets/acnet 目錄完整)")
   }
 
-  // 頁面需透過 loopback 提供 COOP/COEP 標頭以啟用多執行緒 WASM 推論
   server.registerHandler("/", () =>
     staticResponse(new TextEncoder().encode(buildACNetHTML(currentPort)), "text/html; charset=utf-8", {
       "Cross-Origin-Opener-Policy": "same-origin",
@@ -448,14 +420,10 @@ async function ensureServer(): Promise<number> {
   return currentPort
 }
 
-/** 超分伺服器的埠號（沒開就是 0）。 */
 export function upscalePort(): number {
   return currentPort
 }
 
-/**
- * 確保 WebViewController 超分執行個體就緒（僅於 queuePromise 隊列內調用）。
- */
 async function ensureEngine(): Promise<void> {
   if (controllerInstance) return
 
@@ -468,7 +436,6 @@ async function ensureEngine(): Promise<void> {
     await controller.loadURL(`http://127.0.0.1:${port}/`)
     await controller.waitForLoad()
 
-    // 初始化 ONNX 會話
     await controller.evaluateJavaScript(`return window.initSession();`)
     controllerInstance = controller
     log("info", "upscale", `[ONNX] 引擎就緒（連接埠號 ${port}）`)
@@ -501,7 +468,6 @@ function resetEngineInstances(): void {
 }
 
 export function disposeUpscaleEngine(): void {
-  // 排入隊列尾端安全釋放，避免在執行中 dispose 引起 EXC_BAD_ACCESS。Core ML 引擎常駐，不在這裡拆。
   queuePromise = queuePromise.then(
     () => resetEngineInstances(),
     () => resetEngineInstances()
@@ -511,10 +477,6 @@ export function disposeUpscaleEngine(): void {
   sessionCache.clear()
 }
 
-/**
- * 單次推論執行的原子操作。
- * 若 iOS 進入後台墓碑模式導致 socket 關閉或 WebKit 行程被終止，此處將拋出異常以供外層捕捉並重試自癒。
- */
 async function executeInference(
   key: string,
   sourceData: Data,
@@ -529,7 +491,6 @@ async function executeInference(
   uploadedBuffer = null
 
   const inferStart = Date.now()
-  // 1. 執行推論；推論中被翻走就請頁面在下一塊停下（長條頁有幾十塊，不能等到整頁算完）
   let cancelPoll: number | null = null
   if (isCancelled) {
     cancelPoll = setInterval(() => {
@@ -548,7 +509,6 @@ async function executeInference(
     if (cancelPoll !== null) clearInterval(cancelPoll)
   }
 
-  // 推論完畢再次檢查是否已被翻走；若已離開畫面，立即重置 Canvas 釋放 WebKit 顯存後提早結束
   if (status === "cancelled" || (isCancelled && isCancelled())) {
     try {
       await controller.evaluateJavaScript(`window.resetCanvas && window.resetCanvas();`)
@@ -556,7 +516,6 @@ async function executeInference(
     return null
   }
 
-  // 2. 導出成果
   await controller.evaluateJavaScript(`return window.exportJpegBlob("http://127.0.0.1:${currentPort}/upload");`)
 
   if (!uploadedBuffer) return null
@@ -568,10 +527,8 @@ async function executeInference(
   return outData
 }
 
-/** 縮後輸出的像素上限：實測過最大的顯示（1179×17685），單頁推論約 3.5 秒內。 */
 export const MAX_OUTPUT_PIXELS = 21_000_000
 
-/** 要超分的來源範圍（像素）。不給 `x`/`y`＝整張；寬圖分割時給半張。 */
 export interface UpscaleSource {
   x?: number
   y?: number
@@ -579,16 +536,11 @@ export interface UpscaleSource {
   height: number
 }
 
-/**
- * 跑不跑超分、輸出多大。顯示框（像素）比來源範圍大才跑；
- * 輸出＝顯示框，但不超過 2×（再大只是插值，交給顯示端放大）；縮後仍超過上限就不跑。
- */
 export function planUpscale(
   source: UpscaleSource,
   box: { width: number; height: number }
 ): UpscaleTarget | null {
   if (source.width <= 0 || source.height <= 0 || box.width <= 0 || box.height <= 0) return null
-  // contain 後兩軸倍率相同；取小的那個＝實際撐滿的那一軸。
   const scale = Math.min(box.width / source.width, box.height / source.height)
   if (scale <= 1) return null
   const factor = Math.min(scale, 2)
@@ -610,10 +562,6 @@ function memoryTooLow(target: UpscaleTarget | undefined): boolean {
   return Device.availableMemory < pixels * 4 * 3 + MEMORY_HEADROOM_BYTES
 }
 
-/**
- * 對原始圖像 Data 執行 ACNet ONNX 2x 神經網路超解析度，返回 JPEG 格式位元組。
- * `target` 指定只算哪一塊、輸出多大；不給就是整張、輸出 2x。
- */
 export async function sharpenImage(
   pageKey: string,
   sourceData: Data,
@@ -624,12 +572,9 @@ export async function sharpenImage(
   const cached = getCachedUpscaleData(key)
   if (cached) return { data: cached.data, fromCache: true, backend: cached.backend }
 
-  // 透過 Promise 串聯保證嚴格順序執行，徹底消除競爭條件
   const runTask = async (): Promise<UpscaleResult | null> => {
-    // 檢查呼叫端元件是否已翻走或 unmount；若是，直接跳過神經網路計算，避免翻頁時隊列堆積拖垮 GPU
     if (isCancelled && isCancelled()) return null
 
-    // 二次檢查快取
     const doubleCheck = getCachedUpscaleData(key)
     if (doubleCheck) return { data: doubleCheck.data, fromCache: true, backend: doubleCheck.backend }
 
@@ -648,7 +593,6 @@ export async function sharpenImage(
             setCachedUpscaleData(key, native.data, "coreml")
             return { data: native.data, fromCache: false, backend: "coreml" }
           }
-          // 被取消也是回 null：不是「不適用」，別為了一張已經翻走的頁冷啟動 wasm 引擎。
           if (isCancelled && isCancelled()) return null
           log("debug", "upscale", "[Core ML] 不適用這張，退回 ONNX")
         } catch (error) {
@@ -661,13 +605,11 @@ export async function sharpenImage(
       }
 
       try {
-        // 第一次嘗試：樂觀執行（平時 0 額外心跳/檢查開銷）
         sharpened = await executeInference(key, sourceData, isCancelled, target)
       } catch (firstError) {
         log("warning", "upscale", `[ONNX] 頁面 ${key} 推論異常（可能剛自背景喚醒），重置引擎後重試`, firstError)
         resetEngineInstances()
 
-        // 第二次嘗試：全新冷啟動重試
         if (!isCancelled || !isCancelled()) {
           sharpened = await executeInference(key, sourceData, isCancelled, target)
         }

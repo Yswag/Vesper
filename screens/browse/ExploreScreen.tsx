@@ -1,6 +1,3 @@
-// 單一來源探索頁：Aidoku 源有首頁時膠囊列第 0 個是「首頁」並預設選中（原版 SourceHomeContentView）；
-// 其餘分頁支援分類膠囊切換、垂直分區橫向輪播（multiPart）與三欄網格（multiPage）。
-
 import {
   GeometryReader,
   HStack,
@@ -58,13 +55,10 @@ function entryMore(page: SectionPage, used: Cursor): MoreSource {
 
 export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const library = comicLibrary()
-  // 畫面自己訂閱語言：導覽列標題與下面的字都在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
   const [entries, setEntries] = useState<ExploreEntry[]>([])
   const [entriesLoading, setEntriesLoading] = useState(true)
-  /** 源有沒有首頁；跟 `entries` 一起定下來，膠囊列第一次出現就不會先畫 listing。 */
   const [homeAvailable, setHomeAvailable] = useState(false)
-  /** 選中的膠囊：有首頁時 0＝首頁、其餘＝listing 序號 +1；沒有首頁時直接是 listing 序號。 */
   const [selection, setSelection] = useState(0)
   const [home, setHome] = useState<SourceHome | null>(null)
   const [homeLoading, setHomeLoading] = useState(false)
@@ -77,15 +71,12 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   const [loadingMore, setLoadingMore] = useState(false)
   const [status, setStatus] = useState<StatusKind>("ready")
   const [errorText, setErrorText] = useState("")
-  /** 這一輪 listings 的 epoch：換源或重試時舊的一輪作廢。 */
   const entryRun = useRef(0)
-  /** 首頁載入的 epoch：換源或下拉重整時舊的一輪作廢。 */
   const homeRun = useRef(0)
 
   const showHome = homeAvailable && selection === 0
   const listingIndex = homeAvailable ? selection - 1 : selection
 
-  /** 讀這一源的探索分類。Aidoku 要先讓源把 listings 載進來，所以整段是非同步的。 */
   async function loadEntries() {
     const id = ++entryRun.current
     const current = () => entryRun.current === id
@@ -93,16 +84,13 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     setErrorText("")
     try {
       const list = await library.explore(sourceKey)
-      // `explore()` 已經讓源載好了，所以這裡問得到「有沒有首頁」。
       const available = library.hasHome(sourceKey)
       if (!current()) return
-      // 先定能力再定清單：就算兩次 state 更新被拆成兩輪，也只會先看到「首頁」那顆，不會先閃 listing。
       setHomeAvailable(available)
       setSelection(0)
       setEntries(list)
     } catch (error) {
       if (!current()) return
-      // listings 若在源載好之後才失敗，有首頁的源還是要看得到首頁（原版不因 listings 失敗而失去 home）。
       const available = library.hasHome(sourceKey)
       setHomeAvailable(available)
       setSelection(0)
@@ -117,7 +105,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     }
   }
 
-  /** 首頁；`reload` 是下拉重整（丟掉記憶體快取重讀）。 */
   async function loadHome(reload = false) {
     const id = ++homeRun.current
     const current = () => homeRun.current === id
@@ -149,7 +136,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
 
   useEffect(() => {
     if (showHome) {
-      // 換回首頁時沿用上次的內容（原版也只在家裡沒有 home 時才重抓）。
       if (home === null && !homeLoading) void loadHome()
       return
     }
@@ -226,16 +212,13 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     return fresh.length
   }
 
-  // 顯示文字在 render 時才算：狀態只負責判斷。
   const isMultiSection = sections.length > 1
   const singleSection = sections[0]
   const singleHasMore = singleSection ? moreOfSection(0).kind !== "none" : false
   const homeComponents = home ? visibleHomeComponents(home.components) : []
 
-  // 導覽列標題使用源的名稱，更具歸屬感與清晰感
   const navTitle = library.source(sourceKey)?.name ?? t("browse.explore")
 
-  /** 膠囊列：有首頁時第 0 個是「首頁」（原版 ListingsHeaderView 同一個排法）。 */
   const chipItems = [
     ...(homeAvailable ? [{ key: "home", title: t("browse.home"), index: 0 }] : []),
     ...entries.map(entry => ({
@@ -245,10 +228,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
     })),
   ]
 
-  /**
-   * 分頁 chip 列（有首頁或兩個以上的 listing 才有）：當捲動區頂部的 bar，貼在導覽列下面，
-   * 內容從它後面捲過去。
-   */
   const chipRow =
     homeAvailable || chipItems.length > 1 ? (
       <ChipRow>
@@ -280,24 +259,20 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
         spacing={0}
         navigationTitle={navTitle}
         navigationBarTitleDisplayMode="inline"
-        // 靠頂對齊避免內容不足時被 ZStack 垂直置中
         frame={{ maxHeight: "infinity", alignment: "top" }}
       >
-      {/* 內容區：換分頁就重掛，捲動位置回到頂端（原版切分頁也會 scrollTo(0)）。 */}
+      {}
       <ScrollView
         key={`tab:${selection}`}
         scrollContentBackground="hidden"
         scrollDismissesKeyboard="interactively"
-        // 不加 refreshable：它與導覽列搜尋框的「下拉展開」是同一個手勢，會互相搶、拉不出來。
-        // 首頁內容靠源層的 10 分鐘 TTL 自動更新。
-        // 頂部邊緣用柔和樣式：導覽列標題仍有底，但沒有硬邊。
         {...scrollTopBar(chipRow)}
       >
 
-        {/* 首頁分頁 */}
+        {}
         {showHome ? homeContent() : null}
 
-        {/* 沒有探索分類：載入中、讀失敗（可重試），或這個源真的只能搜尋 */}
+        {}
         {!showHome && entries.length === 0 ? (
           entriesLoading ? (
             <ComicGridSkeleton />
@@ -308,7 +283,7 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
           )
         ) : null}
 
-        {/* 讀失敗（可重試）或這個分類真的沒東西 */}
+        {}
         {!showHome && entries.length > 0 && sections.length === 0 && !busy ? (
           status === "error" ? (
             <RetryBlock text={errorText} onRetry={() => void loadFirst(entries[listingIndex])} />
@@ -317,13 +292,12 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
           ) : null
         ) : null}
 
-        {/* 載入初態 */}
+        {}
         {!showHome && busy && entries.length > 0 && sections.length === 0 ? (
           MULTI_PART_TYPES.has(entries[listingIndex]?.type ?? "") ? <MagazineSkeleton /> : <ComicGridSkeleton />
         ) : null}
 
         {!showHome && isMultiSection ? (
-          /* 多區塊模式：垂直列表 + 橫向輪播 */
           <LazyVStack spacing={14} padding={{ top: 10, bottom: 44 }}>
             {sections.map((section, idx) => (
               <MagazineSectionRow
@@ -336,7 +310,6 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
             ))}
           </LazyVStack>
         ) : !showHome && singleSection ? (
-          /* 單一區塊模式：3 欄網格與滾動分頁 */
           <VStack spacing={0}>
             {singleSection.title ? (
               <HStack padding={{ horizontal: pageInsets.horizontal, top: 12, bottom: 4 }}>
@@ -359,11 +332,8 @@ export function ExploreScreen({ sourceKey }: { sourceKey: string }) {
   )
 }
 
-/** 橫向輪播區塊列 */
-/** 這兩種分類載入完是多區塊（標題＋橫向卡片排），其他是網格。 */
 const MULTI_PART_TYPES = new Set(["multiPartPage", "singlePageWithMultiPart"])
 
-/** 多區塊載入中：跟 `MagazineSectionRow` 同一組標題、卡片尺寸與間距。 */
 function MagazineSkeleton() {
   const [width, setWidth] = useState(0)
   const card = exploreCardSize(width)
@@ -417,7 +387,6 @@ function MagazineSectionRow({
   section: ComicSection
   initialMore: MoreSource
 }) {
-  // 卡片寬照這條 carousel 的**捲動視窗**寬算（不是螢幕、也不是卡片自己的寬）。
   const [carouselWidth, setCarouselWidth] = useState(0)
   const card = exploreCardSize(carouselWidth)
 
@@ -425,7 +394,7 @@ function MagazineSectionRow({
     <NamespaceReader>
       {exploreNs => (
         <VStack spacing={4}>
-          {/* 標題欄 */}
+          {}
           <NavigationLink
             destination={
               <SectionGridScreen
@@ -445,7 +414,7 @@ function MagazineSectionRow({
             </HStack>
           </NavigationLink>
 
-          {/* 橫向滑動卡片架 */}
+          {}
           <ScrollView
             axes="horizontal"
             scrollIndicator="hidden"
@@ -477,7 +446,7 @@ function MagazineSectionRow({
                     buttonStyle="plain"
                   >
                     <VStack alignment="leading" spacing={6} frame={{ width: card.width }}>
-                      {/* 封面海報（1:1.48 經典劇集/電影海報比例） */}
+                      {}
                       <ZStack
                         alignment="bottomTrailing"
                         frame={{ width: card.width, height: card.height }}
@@ -492,7 +461,6 @@ function MagazineSectionRow({
                           lifted
                         />
                         {comic.updateTime ? (
-                          // 更新時間角標：源的原始字串，夾在封面寬度內才不會溢出。
                           <HStack
                             offset={{ x: -6, y: -6 }}
                             frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottomTrailing" }}
@@ -502,7 +470,7 @@ function MagazineSectionRow({
                         ) : null}
                       </ZStack>
 
-                      {/* 書名與副標靠左一行：同一排的卡片才會對齊 */}
+                      {}
                       <VStack alignment="leading" spacing={1.5} frame={{ width: card.width }}>
                         <Text
                           font="footnote"
@@ -515,7 +483,7 @@ function MagazineSectionRow({
                           {comic.title}
                         </Text>
 
-                        {/* 副標資訊：更新話數 / 標籤 / 作者（極小淡灰字，無內容則不佔位） */}
+                        {}
                         {comic.subtitle || (comic.tags && comic.tags[0]) ? (
                           <Text
                             font="caption2"
@@ -541,7 +509,6 @@ function MagazineSectionRow({
   )
 }
 
-/** 失敗時的一句說明＋重試膠囊。 */
 function RetryBlock({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
     <VStack

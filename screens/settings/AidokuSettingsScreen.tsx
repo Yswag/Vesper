@@ -1,15 +1,3 @@
-// Aidoku 源的設定頁：把 `Payload/settings.json` 的 schema 畫成列。
-//
-// 範圍：group 一張卡片、page 攤平成同一頁（不做巢狀子頁）；
-// `login` 做 `method: "basic"`（寫 `<key>.username` / `<key>.password` / `<key>`）
-// 與 `method: "web"`（開登入頁，寫 `<key>.keys` / `.values` / `.ls.*` / `<key>`）；
-// `editable-list` 增刪字串（`inline` 攤在同一頁，否則進子頁），
-// `button` 有確認文字先問，再叫源的 `handle_notification`；
-// `oauth` 的登入見 `AidokuOAuthScreen`。
-//
-// 值只寫使用者改過的 key（`installed.json` 的 `settings`），沒改的就是 schema 預設；
-// 改完會讓源下次呼叫時重載（見 `sources/aidoku.ts` 的 `setSetting`）。
-
 import { Divider, HStack, Navigation, NavigationLink, Slider, Spacer, Stepper, Text, VStack, useEffect, useState } from "scripting"
 
 import { languageName } from "../../app/languageNames"
@@ -65,12 +53,10 @@ const CONTROL_ICON: Record<AidokuSettingControl, string> = {
   unsupported: "nosign",
 }
 
-/** 多選的值（不是陣列就當成空）。 */
 function valuesOf(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.map(value => String(value ?? "")) : []
 }
 
-/** basic 登入寫進去的三個鍵（子鍵在 source 的 `login.username` 這種位置）。 */
 function loginKeys(settingKey: string): { name: string; password: string; state: string } {
   return {
     name: `${settingKey}.username`,
@@ -79,7 +65,6 @@ function loginKeys(settingKey: string): { name: string; password: string; state:
   }
 }
 
-/** 語言列的右側摘要：選了什麼（最多兩顆名字，其餘給 +N）。 */
 function languageDetail(spec: AidokuSettingsSpec, overrides: Record<string, unknown>): string {
   const stored = Array.isArray(overrides.languages) ? overrides.languages.map(value => String(value ?? "")) : null
   const selected = stored ?? spec.defaultLanguages
@@ -93,7 +78,6 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
   const [source, setSource] = useState<InstalledSource | undefined>(undefined)
   const [loaded, setLoaded] = useState(false)
   const [status, setStatus] = useState<StatusNotice | null>(null)
-  /** 正在執行的 `button`（這類設定不一定有 key，沒有才退回標題）。 */
   const [runningKey, setRunningKey] = useState<string | null>(null)
 
   useEffect(() => {
@@ -103,7 +87,6 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setLoaded(true)
   }, [sourceKey])
 
-  // 從語言子頁回來時，registry 已經換了新值：跟著重讀，摘要才會是對的。
   useEffect(() => subscribeSources(() => setSource(findSource(sourceKey))), [sourceKey])
 
   const spec = source?.settingsSpec
@@ -127,7 +110,6 @@ export function AidokuSettingsScreen({ sourceKey }: { sourceKey: string }) {
     setStatus({ kind: "ready", text: t("settings.aidokuSettings.loggedIn") })
   }
 
-  /** `button`：有確認文字先問，再叫源自己的 `handle_notification`。 */
   async function runAction(item: AidokuSettingItem) {
     const id = item.key || item.title
     if (item.confirmTitle || item.confirmText) {
@@ -286,7 +268,6 @@ interface RowActions extends LoginActions {
   runningKey: string | null
 }
 
-/** 一組＝一張卡片（標題＋註腳）；`page` 來的組也走這裡。 */
 function GroupCard({
   group,
   sourceKey,
@@ -387,7 +368,6 @@ function ItemRows({
 
   if (item.control === "login") {
     const keys = loginKeys(item.key)
-    // oauth 存的是 token 原文（或 callback URL），不是 `logged_in`。
     const loggedIn =
       item.method === "oauth"
         ? typeof overrides[item.key] === "string" && String(overrides[item.key]).length > 0
@@ -471,15 +451,11 @@ function ItemRows({
   return <NumberItem item={item} value={typeof value === "number" ? value : undefined} onApply={onApply} />
 }
 
-/** 「尚未支援」右側那句話。 */
 function unsupportedLabel(item: AidokuSettingItem): string {
   if (item.unsupported === "login") return t("settings.aidokuSettings.unsupportedLogin")
   return t("settings.aidokuSettings.unsupported")
 }
 
-/**
- * `method: "web"` 的登入：沒有帳號可顯示，只有「未登入 → 開瀏覽器」與「已登入 → 登出」。
- */
 function WebLoginItem({
   item,
   loggedIn,
@@ -525,10 +501,6 @@ function WebLoginItem({
   )
 }
 
-/**
- * `method: "basic"` 的登入：兩欄帳密＋登入；登入後只顯示帳號與登出。
- * 帳密不寫進 log，也不顯示在畫面上（登入後連輸入框都不留）。
- */
 function LoginItem({
   item,
   username,
@@ -599,7 +571,6 @@ function LoginItem({
   )
 }
 
-/** 多選：標題一列，選項各一列（`multi-single-select` 不准把最後一個取消）。 */
 function MultiSelect({
   item,
   selected,
@@ -613,7 +584,6 @@ function MultiSelect({
     const has = selected.includes(value)
     if (has && item.type === "multi-single-select" && selected.length <= 1) return
     const next = has ? selected.filter(entry => entry !== value) : [...selected, value]
-    // 順序照 schema，不照點擊順序：源比對陣列時比較穩。
     onApply(item.options.filter(option => next.includes(option.value)).map(option => option.value))
   }
 
@@ -634,7 +604,6 @@ function MultiSelect({
   )
 }
 
-/** 文字：邊打邊存會每次重載源，所以在失焦（或鍵盤關掉）時才寫。 */
 function TextItem({
   item,
   value,
@@ -665,7 +634,6 @@ function TextItem({
   )
 }
 
-/** 滑桿與步進器：`min`／`max`／`step` 由源給，沒給就用 0–1（滑桿）或 0–10（步進器）。 */
 function NumberItem({
   item,
   value,

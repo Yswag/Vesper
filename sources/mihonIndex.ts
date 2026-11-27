@@ -1,17 +1,3 @@
-// Mihon（keiyoushi）倉庫索引：`index.pb`（gzip 的 protobuf）與 `index.json` 收斂成同一份 CatalogEntry。
-//
-// 讀法照 mihonapp/mihon main（f8e30a8，2026-11-22）：
-//   data/src/main/java/mihon/data/extension/service/ExtensionStoreService.kt 的 fetchStore／getExtensions
-//   data/src/main/java/mihon/data/extension/model/NetworkExtensionStore.kt 的 @ProtoNumber
-//   data/src/main/java/mihon/data/extension/model/NetworkLegacyExtensionRepo.kt
-//
-// 格式看解壓後的第一個位元組，不看副檔名（Mihon 就是這樣判斷）：
-//   `[` 舊式陣列：只認結尾 `/index.min.json` 的網址，內容不看，改讀同目錄 `repo.json`
-//   `{` 先當 `repo.json`，解不成才當 `index.json`
-//   其餘是 protobuf 的 index.pb
-// `repo.json` 有 `index_v2` 就遞迴讀它；沒有才回頭讀舊式 `index.min.json` 陣列。
-// 倉庫名稱取索引自己的 name（新格式第 1 欄）；舊式 repo 才用 meta.name。
-
 import { fetch } from "scripting"
 
 import { maybeGunzip } from "../engine/gzip"
@@ -23,7 +9,6 @@ import { keyOf } from "./mihon"
 
 export type MihonIndexSchema = "extension-list" | "array" | "legacy-repo"
 
-/** 索引宣告的倉庫資訊；目前只存下來，不顯示也不驗簽。 */
 export interface MihonIndexMeta {
   badgeLabel?: string
   signingKey?: string
@@ -33,24 +18,17 @@ export interface MihonIndexMeta {
 
 export interface MihonIndexResult {
   entries: CatalogEntry[]
-  /** 被跳過的條目與原因。 */
   rejected: Array<{ index: number; reason: string }>
-  /** 索引自己宣告的名稱（`NetworkExtensionStore.name`／舊式 `meta.name`）。 */
   name?: string
   meta?: MihonIndexMeta
 }
 
-/** Android 套件名稱。 */
 const PACKAGE_PATTERN = /^[A-Za-z0-9._]+$/
 const JSON_ARRAY = 0x5b
 const JSON_OBJECT = 0x7b
-/** repo.json → index_v2 只會一層；留餘裕擋壞資料的迴圈。 */
 const MAX_FOLLOW = 4
-/** `ContentWarning` 的 `@ProtoNumber`。 */
 const CONTENT_WARNING_NSFW = 3
-/** 舊式陣列的 nsfw 是數字，Mihon 把 1 當 R18。 */
 const LEGACY_NSFW = 1
-/** `ContentWarning.NSFW` 的序列化名稱與 `@JsonNames` 別名。 */
 const JSON_NSFW_NAMES = ["NSFW", "CONTENT_WARNING_NSFW"]
 
 const utf8 = new TextDecoder("utf-8")
@@ -69,7 +47,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-/** 這個 JSON 是不是 Mihon 的索引；不是就回 null。 */
 export function mihonIndexSchema(raw: unknown): MihonIndexSchema | null {
   if (Array.isArray(raw)) {
     const records = raw
@@ -87,7 +64,6 @@ export function mihonIndexSchema(raw: unknown): MihonIndexSchema | null {
   return null
 }
 
-// ---------------------------------------------------------------- 索引的內部形狀
 
 interface IndexExtension {
   name?: string
@@ -107,7 +83,6 @@ interface DecodedStore {
   extensions?: IndexExtension[]
 }
 
-// ---------------------------------------------------------------- protobuf 欄位
 
 function fieldBytes(fields: ProtoField[], number: number): Uint8Array | undefined {
   return fields.find(field => field.number === number && field.wire === 2)?.bytes
@@ -187,7 +162,6 @@ function protobufStoreOf(bytes: Uint8Array): DecodedStore {
   }
 }
 
-// ---------------------------------------------------------------- JSON 欄位
 
 function extensionOfJson(value: unknown): IndexExtension {
   const item = recordOf(value) ?? {}
@@ -227,7 +201,6 @@ function storeOfJson(raw: unknown): DecodedStore | null {
   }
 }
 
-/** 舊式 `index.min.json`：apk 是檔名（掛在 `apk/` 下），icon 由套件名稱推。 */
 function legacyExtensionOfJson(value: unknown, base: string): IndexExtension {
   const item = recordOf(value) ?? {}
   const packageName = textOfValue(item.pkg)
@@ -246,7 +219,6 @@ function legacyExtensionOfJson(value: unknown, base: string): IndexExtension {
   }
 }
 
-// ---------------------------------------------------------------- 對外
 
 function parseJson(bytes: Uint8Array): unknown {
   try {
@@ -264,7 +236,6 @@ async function fetchBytes(url: string): Promise<Uint8Array> {
   return maybeGunzip(new Uint8Array(await response.arrayBuffer()))
 }
 
-/** 索引指向的網址讀不到時，把網址與原因一起報出來（不是默默退回別份索引）。 */
 async function followFetch(url: string): Promise<Uint8Array> {
   try {
     return await fetchBytes(url)
@@ -327,7 +298,6 @@ async function storeResult(store: DecodedStore, url: string): Promise<MihonIndex
   return { ...entriesOf(extensions, catalogBaseOf(url)), name: store.name, meta: store.meta }
 }
 
-/** 沒有 `index_v2` 的舊式 repo：清單還在本目錄的 `index.min.json`。 */
 async function legacyResult(repo: Record<string, unknown>, repoUrl: string): Promise<MihonIndexResult> {
   const base = catalogBaseOf(repoUrl)
   const bytes = await followFetch(`${base}index.min.json`)
@@ -351,10 +321,6 @@ async function follow(url: string, depth: number): Promise<MihonIndexResult> {
   return loadMihonIndex(url, await followFetch(url), depth + 1)
 }
 
-/**
- * 抓一份 Mihon 倉庫索引並解析。`body` 已經抓過（且解過 gzip）就傳進來，省一次下載。
- * 四種網址（`index.pb`、`index.json`、`index.min.json`、`repo.json`）都走這一個入口。
- */
 export async function loadMihonIndex(url: string, body?: Uint8Array, depth = 0): Promise<MihonIndexResult> {
   if (depth > MAX_FOLLOW) throw new Error(t("sources.mihon.indexInvalid"))
   const bytes = maybeGunzip(body ?? (await fetchBytes(url)))

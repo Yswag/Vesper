@@ -1,8 +1,3 @@
-// 源的分類頁：把源宣告的 `category.parts` 畫成 chips，點下去進大網格。
-//
-// 分類完全由源決定（類型 / 標籤 / 書庫…），要讀完 parts 才知道有幾組、組裡有什麼；
-// 某一組讀不到（dynamic 的 loader 丟錯、要登入）只顯示一則說明，不擋其他組。
-
 import { FlowLayout, HStack, NavigationLink, ScrollView, Text, VStack, ZStack, useEffect, useState } from "scripting"
 
 import { type CategoryChip, type CategoryPart } from "../../app/comic"
@@ -17,7 +12,6 @@ import { EmptyState, NoticeBanner, type StatusKind } from "../../design/status"
 import { SkeletonBlock } from "../../design/skeleton"
 import { pageInsets, pageSpacing } from "../../design/tokens"
 
-/** 骨架 chip 的寬度：長短不一才像真的分類。 */
 const SKELETON_WIDTHS = [96, 72, 110]
 
 export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
@@ -25,7 +19,6 @@ export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
   const [status, setStatus] = useState<StatusKind>("loading")
   const [errorText, setErrorText] = useState("")
 
-  // 畫面自己訂閱語言：下面的狀態字在 render 時取自 `t()`，換語言要重繪才算數。
   useSubscription(subscribeLocale)
 
   useEffect(() => {
@@ -73,7 +66,7 @@ export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
                 spacing={10}
                 frame={{ maxWidth: "infinity" }}
               >
-                {/* 只有一組時不必標名字，標了反而多一行。 */}
+                {}
                 {named ? (
                   <Text font="headline" fontWeight="bold">
                     {part.name}
@@ -100,7 +93,6 @@ export function CategoryScreen({ sourceKey }: { sourceKey: string }) {
   )
 }
 
-/** 分類載入骨架：跟載入後的 chip 列同高，資料來了版面不會跳。 */
 function ChipSkeleton() {
   return (
     <VStack

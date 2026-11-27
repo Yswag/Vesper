@@ -1,6 +1,3 @@
-// 外觀主題設定頁：深淺模式，加上構圖 × 顏色兩軸選擇。
-// 由 SettingsScreen 導覽進入。
-
 import { Circle, ColorPicker, Divider, HStack, Image, Picker, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useRef, type Color, type ScrollViewProxy } from "scripting"
 
 import {
@@ -36,13 +33,11 @@ const APPEARANCE_LABELS: Record<Appearance, MessageKey> = {
 }
 
 export function ThemeSettingsScreen() {
-  // 這一頁的每一個名字（構圖／色盤）都在字典裡：語言換了要跟著重繪。
   useSubscription(subscribeLocale)
   const choice = useThemeChoice()
   const paletteProxy = useRef<ScrollViewProxy>()
   const selectedPaletteKey = choice.palette === "custom" ? "palette:custom" : `palette:${choice.palette}`
 
-  // 進頁時把選中的色盤捲進視野：色盤列比畫面寬，預設位置看不到選中項。
   useEffect(() => {
     const proxy = paletteProxy.current
     if (!proxy) return
@@ -111,7 +106,6 @@ export function ThemeSettingsScreen() {
   )
 }
 
-/** 一個構圖：精簡優雅的純文字排版，無示範縮圖干擾，選中打勾。 */
 function CompositionRow({
   composition,
   selected,
@@ -145,7 +139,6 @@ function CompositionRow({
   )
 }
 
-/** 一個顏色：橫向的小圓，選中加一圈外框；熱區為 44×44 pt。 */
 function PaletteDotButton({
   palette,
   selected,
@@ -176,11 +169,6 @@ function PaletteDotButton({
   )
 }
 
-/** 最前方的自訂調色盤按鈕：
- * iOS 的 ColorPicker 是 Label + ColorWell 的組合控制項，
- * 我們將 ColorPicker 放於底層透過透明度隱藏，但覆蓋滿版以接收原生點擊喚起系統面板；
- * 上層疊上我們自繪的標準 30pt PaletteDot + 選中 38pt 外框，保證視覺與位置 100% 精準對齊。
- */
 function CustomColorButton({
   selected,
   onColorChanged,
@@ -194,7 +182,7 @@ function CustomColorButton({
 
   return (
     <ZStack alignment="center" frame={{ width: 44, height: 44 }}>
-      {/* 視覺層：完全按照其他圓點的規格繪製 */}
+      {}
       <PaletteDot palette={customPalette} size={30} />
       <Circle frame={{ width: 30, height: 30 }} stroke={dotStroke} allowsHitTesting={false} />
       {selected ? (
@@ -205,7 +193,7 @@ function CustomColorButton({
         />
       ) : null}
 
-      {/* 原生互動層：覆蓋滿版，透明觸發原生選色視窗 */}
+      {}
       <ColorPicker
         title=""
         value={currentCustom}

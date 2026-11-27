@@ -1,6 +1,3 @@
-// 來源圓角圖標或首字徽章元件（方案 B：iOS 圓角方塊 App Icon 樣式）
-// 顯示順序：源自己給的圖示（本機檔案最優先，沒網路也看得到）→ 網站 favicon 快取 → 首字徽章。
-
 import { Image, Text, ZStack, useEffect, useState } from "scripting"
 import { cardBackgroundStrong, rect, sourceIconSize } from "../design/tokens"
 import { fetchAndCacheSourceIcon, getCachedSourceIcon } from "../engine/sourceicons"
@@ -10,7 +7,6 @@ export interface SourceAvatarProps {
   name: string
   size?: number
   instance?: any
-  /** 源自己給的圖示：本機檔案路徑或遠端網址。 */
   iconUrl?: string
 }
 
@@ -18,7 +14,6 @@ function isRemote(iconUrl: string): boolean {
   return /^https?:\/\//i.test(iconUrl)
 }
 
-/** 本機檔案才讀得起來；遠端網址交給 Image 自己去載。 */
 function localIconOf(iconUrl?: string): UIImage | null {
   if (!iconUrl || isRemote(iconUrl)) return null
   try {
@@ -39,7 +34,6 @@ export function SourceAvatar({
   const firstLetter = (name.trim().slice(0, 1) || "?").toUpperCase()
   const cornerRadius = Math.round(size * 0.22)
   const iconShape = rect(cornerRadius)
-  // 首字放 overlay：List 的分隔線對齊列內第一個 Text，直接當子節點會把線拉到頭像底下。
   const letter = (
     <ZStack
       frame={{ width: size, height: size }}
@@ -52,7 +46,6 @@ export function SourceAvatar({
   )
 
   useEffect(() => {
-    // 列被重用到別的源時，state 還是上一個源的圖：一律先換成這個源現有的（沒有就清掉）。
     const local = localIconOf(iconUrl)
     const cached = local ? null : getCachedSourceIcon(sourceKey)
     setIcon(local ?? cached)
@@ -94,7 +87,6 @@ export function SourceAvatar({
 
   const remoteIcon = iconUrl && isRemote(iconUrl) ? iconUrl : undefined
   if (remoteIcon) {
-    // 首字墊在下面：離線載不到圖時看到的是徽章，不是一個空圓角方塊。
     return (
       <ZStack
         alignment="center"

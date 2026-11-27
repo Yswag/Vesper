@@ -1,13 +1,9 @@
-// 統一 HTTP 出口：負責 headers 正規化、預設 User-Agent 注入、Cookie 同步與失控重試防護。
-// 依契約 4xx/5xx 不主動拋出例外（由調用端檢驗 status）。
-
 import { fetch, type AbortSignal } from "scripting"
 
 import { absorbResponseCookies, authEpochOf, cookieHeader, mergeCookieHeader } from "./cookies"
 import { isCloudflareChallenge, solveCloudflare } from "./cloudflare"
 import { log } from "./log"
 
-// 預設桌面版 User-Agent（防止站方切換為行動版導致 HTML 解析異常）
 export const WEB_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
 
@@ -20,25 +16,18 @@ export interface HttpResponse {
 export interface HttpBytesResponse {
   status: number
   headers: Record<string, string>
-  /** 必須是 ArrayBuffer：源會直接 `new DataView(res.body)`。 */
   body: ArrayBuffer
 }
 
-// ------------------------------------------------------------------ 請求失控防護
-// 針對單一來源在滑動視窗內重複請求同一 URL 超標時主動拋出例外，防範來源進入無限重試迴圈。
 const WINDOW_MS = 10000
 const SAME_URL_LIMIT = 8
 const TOTAL_LIMIT = 200
 const requestHits = new Map<string, Map<string, number[]>>()
-// 每個源最後一次發請求的時間。requestHits 只會在「同一個源下次發請求」時被 prune，所以一個之後
-// 不再被使用的源，它的表就再也沒人清——記下時間，讓後來的請求順手把它掃掉（見 guardRunaway）。
 const lastSeen = new Map<string, number>()
 
 function guardRunaway(sourceKey: string, url: string): () => void {
   const now = Date.now()
 
-  // 視窗內都沒再動過的源，整張表直接刪掉。它每一筆都已超過視窗（下面那圈本來就會濾掉），
-  // 所以這是在清殘留，不是在改判定。
   for (const [key, seen] of lastSeen) {
     if (now - seen >= WINDOW_MS) {
       requestHits.delete(key)
@@ -88,10 +77,6 @@ function guardRunaway(sourceKey: string, url: string): () => void {
   return undo
 }
 
-/**
- * 唯讀觀測點：失控防護表目前還記著哪些源、各幾次（驗「不再被使用的源不會殘留」）。
- * 只看殘留、不做 prune——斷言的判準就是「表裡還有沒有這個源」。
- */
 export function runawayTableSnapshot(): Record<string, number> {
   const snapshot: Record<string, number> = {}
   for (const [key, byUrl] of requestHits) {
@@ -102,7 +87,6 @@ export function runawayTableSnapshot(): Record<string, number> {
   return snapshot
 }
 
-/** extra 裡這些鍵是「選項」不是 header。 */
 const OPTION_KEYS = new Set([
   "method",
   "data",
@@ -124,17 +108,12 @@ export interface RequestOptions {
   timeout?: number
 }
 
-/**
- * 源的 headers 參數有兩種寫法：扁平的 header map，或 `{headers: {...}}` 再包一層。
- * 兩種都要吃，否則整組 UA/Referer 會變成一個叫 headers 的 header 送出去。
- */
 export function normalizeHeaders(raw: unknown): Record<string, string> {
   const out: Record<string, string> = {}
   if (!raw || typeof raw !== "object") return out
   const source = raw as Record<string, unknown>
   const nested = source.headers
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    // 包一層的寫法也要過濾選項，不然 `{"headers": {"http_client": …}}` 會把它當真的 header 送出去。
     for (const [k, v] of Object.entries(nested as Record<string, unknown>)) {
       if (OPTION_KEYS.has(k)) continue
       if (v != null) out[k] = String(v)
@@ -171,16 +150,10 @@ function encodeBody(data: unknown, headers: Record<string, string>): any {
   return String(data)
 }
 
-// ------------------------------------------------------------------ GET 回應快取
-//
-// 源用 `cache-time` 告訴我們這個 GET 能重用多久（`long`＝6 小時，其餘 5 秒），
-// `prevent-parallel` 則要求同一個網址排隊（站方限流時很有用）。語意照 Venera 的
-// `NetworkCacheManager`／`AppDio.request`。
 
 const RESPONSE_CACHE_MAX_BYTES = 10 * 1024 * 1024
 const CACHE_TTL_SHORT = 5000
 const CACHE_TTL_LONG = 6 * 60 * 60 * 1000
-/** 這兩個 header 每次都可能不一樣（登入、過盾），不能進快取鍵，否則永遠對不上。 */
 const VOLATILE_HEADERS = new Set(["cookie", "authorization"])
 
 interface CachedResponse {
@@ -191,7 +164,6 @@ interface CachedResponse {
   size: number
 }
 
-/** Map 的插入順序就是 LRU：命中時搬到最後。 */
 const responseCache = new Map<string, CachedResponse>()
 let responseCacheBytes = 0
 
@@ -242,19 +214,13 @@ function storeCached(key: string, response: { status: number; headers: Record<st
   responseCacheBytes += size
 }
 
-/** 唯讀觀測點：這條路徑的狀態不能流到下一次測試。 */
 export function clearResponseCache() {
   responseCache.clear()
   responseCacheBytes = 0
 }
 
-// ------------------------------------------------------------------ prevent-parallel
 const serialTails = new Map<string, Promise<void>>()
 
-/**
- * 排到同一個網址的隊尾；回傳的函式要在請求結束時呼叫（成功失敗都要）。
- * 新的隊尾要在 `await` **之前**就掛上去，否則同時進來的那幾個會一起排在前一個後面。
- */
 function acquireSerial(slot: string): Promise<() => void> {
   const previous = serialTails.get(slot)
   let release!: () => void
@@ -265,7 +231,6 @@ function acquireSerial(slot: string): Promise<() => void> {
       try {
         await previous
       } catch {
-        // 前一個失敗不影響這一個
       }
     }
     return () => {
@@ -284,7 +249,6 @@ async function perform(
   fromSource = true
 ): Promise<any> {
   if (!url || typeof url !== "string") {
-    // fetch("") 會永久 hang，必須在這裡擋掉。
     throw new Error(`Network: 空的 URL（${options.method ?? "GET"}）`)
   }
   const method = (options.method ?? "GET").toUpperCase()
@@ -302,7 +266,6 @@ async function perform(
 
   const body = method === "GET" || method === "HEAD" ? undefined : encodeBody(extra.data, headers)
 
-  // `cache-time` / `prevent-parallel` 是源的選項（不是 header），語意照 Venera。
   const cacheTime = typeof extra["cache-time"] === "string" ? (extra["cache-time"] as string) : null
   const serial = extra["prevent-parallel"] === true || extra["prevent-parallel"] === "true"
   const cacheKey = fromSource && !asBytes && method === "GET" ? responseKey(sourceKey, url, headers) : ""
@@ -336,15 +299,12 @@ async function perform(
     }
     log("debug", "http", `${method} ${shortUrl(url)} → ${result.status} (${Date.now() - started}ms)`)
 
-    // 只有來自源的非二進位請求（API / HTML 等文字請求）才觸發自動過盾，圖片下載不彈窗
     if (fromSource && !asBytes && isCloudflareChallenge(result.status, result.headers, result.body)) {
       log("info", "http", `偵測到 Cloudflare 挑戰 (${result.status}): ${shortUrl(url)}，嘗試自動過盾`)
-      // 撤銷被攔截的那次計數，避免重試算入 runaway guard 觸發限制
       undo?.()
       const targetUa = headers["user-agent"] || WEB_UA
       await solveCloudflare(sourceKey, url, targetUa)
 
-      // 過盾成功，重新構建 headers 並重新發送原始請求
       log("info", "http", `過盾成功，重新發送請求: ${shortUrl(url)}`)
       const freshCookie = cookieHeader(sourceKey, url)
       const retryHeaders = { ...headers }
@@ -367,13 +327,10 @@ async function perform(
       return retried
     }
 
-    // 只有文字請求會進快取（`cacheKey` 在 `asBytes` 時是空的），這裡再窄一次型別。
     if (cacheKey && typeof result.body === "string") storeCached(cacheKey, { ...result, body: result.body })
     return result
   } catch (error) {
     if (isAbortError(error)) {
-      // 取消是正常結束，不是失敗：撤銷這一次的計數（不然「取消後立刻重送同一個 URL」會被
-      // 當成重試迴圈而拋錯），也不留下任何日誌——Log 頁不該被取消洗版。
       undo?.()
     }
     throw error
@@ -382,10 +339,6 @@ async function perform(
   }
 }
 
-/**
- * 取消的唯一判定方式。這個 runtime 沒有 `AbortError` class（`instanceof` 用不上），
- * `fetch` 被 abort 時丟出的是一個 name 為 "AbortError" 的 DOMException。
- */
 export function isAbortError(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError"
 }
@@ -436,7 +389,6 @@ export function requestBytes(
   return perform(sourceKey, url, { method, extra: { ...extra, headers: headers ?? extra?.headers, data: data ?? extra?.data } }, true, signal)
 }
 
-/** 圖片管線用：帶自訂 header 抓位元組。不納入失控防護（由 UI 驅動，一章可能幾十張）。 */
 export function fetchImageBytes(
   url: string,
   headers: Record<string, string>,

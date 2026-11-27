@@ -1,5 +1,3 @@
-// English. Machine-translated, not reviewed by a native speaker.
-
 export default {
   title: "Browse",
   manageSources: "Manage comic sources",
@@ -19,7 +17,6 @@ export default {
   viewLabel: "Source view: {label}",
 
   noResults: "No results",
-  /** The source declares no ranking options. */
   noRankingOptions: "This source has no rankings",
   refresh: "Refresh",
   reload: "Reload",

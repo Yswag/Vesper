@@ -1,6 +1,3 @@
-// 跨來源聚合搜尋模組：依來源分組呈現結果，每源完成即時推送進度。
-// 支援透過 AbortSignal 中止連線與取消佇列調度。
-
 import type { AbortSignal } from "scripting"
 
 import { sourceWorkerLimit } from "../engine/sourcehost/host"
@@ -26,16 +23,8 @@ export interface SearchProgress {
   total: number
 }
 
-/** 30+ 個源同時打太粗暴；這裡一次只放 6 個（Aidoku 另受宿主 worker 上限限制），排隊跑。 */
 const CONCURRENCY = 6
 
-/**
- * 下一個該派工的源（純邏輯，不碰宿主）：`hosted` 逐筆標記還排著的源是不是要佔宿主 worker
- * （Aidoku 與 Mihon 一起算）。名額用完就**跳過它往後找**——後面的 Venera 源不該被擋住。
- *
- * `groups` 是 Mihon 的 apk：同一個 apk 的子源共用一個 worker，已經有一個在跑就跳過，
- * 不然它們只會在 worker 前面排隊，看起來就像「搜尋很慢」。回 -1 表示現在都不能派。
- */
 export function nextSearchSourceIndex(
   hosted: readonly boolean[],
   activeHosted: number,
@@ -52,12 +41,6 @@ export function nextSearchSourceIndex(
   return -1
 }
 
-/**
- * 跑單一個源。失敗也回一筆（error 有值），呼叫端不用 try ——
- * 聚合搜尋（側邊欄）與「改完篩選只重跑這一源」都用它。
- *
- * **取消不是失敗**：AbortError 原樣丟出去，不變成 `{ error }` 條目（側邊欄不該多一筆紅字）。
- */
 export async function searchOne(
   source: InstalledSource,
   keyword: string,
@@ -81,12 +64,6 @@ export async function searchOne(
   }
 }
 
-/**
- * 排隊跑一輪所有源。
- *
- * Aidoku 源另外限流到宿主的 worker 上限：多出來的不但幫不上忙，還會把剛載好的源從 worker 上擠掉，
- * 點進詳情時又得重載一輪。Venera 源照原本的並行，不被 Aidoku 的名額擋住。
- */
 export async function searchAll(
   sources: InstalledSource[],
   keyword: string,
@@ -95,10 +72,8 @@ export async function searchAll(
   signal?: AbortSignal
 ): Promise<SourceSearchResult[]> {
   const results: SourceSearchResult[] = []
-  /** 還沒派工的源，維持呼叫端給的順序。 */
   const pending = sources.slice()
   const hostedPending: boolean[] = pending.map(source => source.stored.kind !== "venera")
-  /** Mihon 的 apk：同一個 apk 的子源共用一個 worker，同時只能派一個。 */
   const groupPending: Array<string | undefined> = pending.map(source =>
     mihon.isMihon(source) ? mihon.packageKeyOf(source.stored.key) : undefined
   )
@@ -107,20 +82,17 @@ export async function searchAll(
   let active = 0
   let activeHosted = 0
   let done = 0
-  /** 第一個把整輪打下來的錯（取消）：後面的源不再派工，但已經在飛的照樣把結果回報出去。 */
   let halted: unknown = null
   let wake: (() => void) | null = null
 
   const report = () => onProgress({ results: [...results], done, total: sources.length })
 
-  // 取消要立刻讓呼叫端知道（不必等手上的收尾），但已經派出去的仍然跑完並回報。
   let failRun: (error: unknown) => void = () => {}
   const failed = new Promise<never>((_, reject) => {
     failRun = reject
   })
   failed.catch(() => {})
 
-  /** 派工到並行上限或沒有可派的源為止。 */
   const fill = (): void => {
     while (active < CONCURRENCY) {
       const index = nextSearchSourceIndex(hostedPending, activeHosted, limit, groupPending, activeGroups)
