@@ -27,6 +27,11 @@ function ensureWorker(sourceKey) {
       reportPending(entry.key, entry.pendingJobs)
       return
     }
+    // worker 自己回報 wasm 記憶體：宿主超過預算時先收佔最多的。
+    if (message.type === "footprint") {
+      reportFootprint(entry.key, Math.max(0, Number(message.bytes) || 0))
+      return
+    }
     const waiter = entry.pending.get(message.id)
     if (!waiter) return
     if (message.ok) {
@@ -107,6 +112,14 @@ function report(taskId, sourceKey, ok, value, error, fatal) {  try {
 function reportPending(sourceKey, remaining) {
   try {
     window.webkit.messageHandlers.sourceResult.postMessage({ pending: true, sourceKey, remaining })
+  } catch (postError) {
+    // 宿主沒註冊 handler 時就只留在頁面上
+  }
+}
+
+function reportFootprint(sourceKey, bytes) {
+  try {
+    window.webkit.messageHandlers.sourceResult.postMessage({ footprint: true, sourceKey, bytes })
   } catch (postError) {
     // 宿主沒註冊 handler 時就只留在頁面上
   }

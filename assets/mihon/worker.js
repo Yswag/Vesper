@@ -148,6 +148,7 @@ async function load(prefs, userAgent) {
   const wasmAt = Date.now()
 
   vm = await createDexvm({ wasmBytes: wasm, http: proxySync, log: note, evalJs, sleep: sleepSync })
+  lastFootprint = 0
   vmHandle = null
   const instanceAt = Date.now()
 
@@ -179,6 +180,17 @@ function call(op, args) {
   const payload = Object.assign({}, args || {})
   if (op !== "open" && op !== "cookies") payload.handle = vmHandle
   return vm.call(op, payload)
+}
+
+let lastFootprint = 0
+
+/** wasm 記憶體只長不縮：變了就告訴頁面，宿主超過預算時先收佔最多的 worker。 */
+function reportFootprint() {
+  if (!vm) return
+  const bytes = vm.exports.memory.buffer.byteLength
+  if (bytes === lastFootprint) return
+  lastFootprint = bytes
+  self.postMessage({ type: "footprint", bytes })
 }
 
 /** 告訴頁面這邊還剩幾個背景 job（宿主要用它排回收順序）。 */
@@ -217,6 +229,7 @@ function runPendingStep() {
   }
   const remaining = Number(result && result.remaining) || 0
   reportPending(remaining)
+  reportFootprint()
   if (remaining > 0) schedulePendingStep(Number(result && result.nextDueMs) || 0)
 }
 
@@ -254,6 +267,7 @@ async function handle(message) {
       throw error
     }
     if (message.case === "eval") return JSON.parse(evalJs(String(message.src)))
+    if (message.case === "memory") return { wasm: vm ? vm.exports.memory.buffer.byteLength : 0 }
     throw new Error("unknown probe case: " + message.case)
   }
   throw new Error("unknown message: " + message.type)
@@ -268,6 +282,7 @@ self.onmessage = (event) => {
   handle(message).then(
     (value) => {
       self.postMessage({ id: message.id, ok: true, value })
+      reportFootprint()
       if (hostOp) schedulePendingStep(0)
     },
     (error) => {
@@ -278,6 +293,7 @@ self.onmessage = (event) => {
         kind: (error && error.kind) || "internal",
         fatal: (error && error.kind) === "trap",
       })
+      reportFootprint()
       if (hostOp) schedulePendingStep(0)
     }
   )

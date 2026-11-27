@@ -24,8 +24,16 @@ const PROXY_TIMEOUT_MS = 15_000
 const START_TIMEOUT_MS = 5_000
 const IMAGE_TIMEOUT_MS = 30_000
 const DEFAULT_IDLE_TIMEOUT_MS = 10 * 60_000
-/** 同時最多幾個源的 worker（對齊 Aidoku 原版的 maxConcurrentTasks）。 */
-const WORKER_LIMIT = 3
+/**
+ * 同時最多幾個源的 worker。實測一般 Mihon worker 約 5MB、32 個同時開著也穩，真正的限制是記憶體：
+ * 個數只是底線，超過 `WORKER_MEMORY_BUDGET` 時先收佔最多的。
+ */
+const DEFAULT_WORKER_LIMIT = 12
+/**
+ * 所有 worker 回報的 wasm 記憶體合計上限。wasm 只長不縮（包子解一次 PoW 就是 70MB+），
+ * 只有回收 worker 才放得掉；WebContent 實測約 1.5–1.8GB 被殺，舊機更低，所以留很大的餘裕。
+ */
+const WORKER_MEMORY_BUDGET = 384 * 1024 * 1024
 
 /**
  * worker 的種類：同一個宿主、同一套隊列與上限，差別只在載入時用哪個 worker 腳本。
@@ -102,6 +110,8 @@ const loadedKeys = new Set<string>()
  * 回收時有 job 的排在最後：丟掉就得丟掉那些 job，能留就留。
  */
 const pendingJobs = new Map<string, number>()
+/** 每個 worker 最近回報的 wasm 記憶體（位元組）；沒回報的當 0。 */
+const footprints = new Map<string, number>()
 /** 載入中的源：載入期間源就可能寫設定，這時 loadedKeys 裡還不是它。 */
 const loadingKeys = new Set<string>()
 /** 還沒被 worker 取走的載入素材（依源分開，兩個源同時載入也不會互相蓋掉）。 */
@@ -120,6 +130,7 @@ export function setSourceSettingWriter(writer: (key: string, name: string, value
 /** 頁面被建立過幾次（回歸驗証用它數「只重建一次」）。 */
 let generation = 0
 let idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS
+let workerLimit = DEFAULT_WORKER_LIMIT
 /** setTimeout 的第一個 handle 是 0，所以不能用 truthy 判斷。 */
 let idleTimer: number | null = null
 let lastActivity = 0
@@ -185,6 +196,17 @@ export function sourcePendingJobs(sourceKey: string): number {
 /** 頁面上現在有哪幾個 worker（診斷與探針用：上限是 `sourceWorkerLimit()`）。 */
 export function sourceWorkerSlots(): string[] {
   return [...slots.keys()]
+}
+
+/** 這個源的 worker 最近回報的 wasm 記憶體。 */
+export function sourceWorkerFootprint(sourceKey: string): number {
+  return footprints.get(sourceKey) ?? 0
+}
+
+function noteFootprint(sourceKey: string, bytes: number): void {
+  if (!sourceKey || !slots.has(sourceKey)) return
+  if (bytes > 0) footprints.set(sourceKey, bytes)
+  else footprints.delete(sourceKey)
 }
 
 function notePendingJobs(sourceKey: string, remaining: number): void {
@@ -373,7 +395,12 @@ export function isSourceLoaded(sourceKey: string): boolean {
  * 呼叫端讀這個數字，不要自己抄一份。
  */
 export function sourceWorkerLimit(): number {
-  return WORKER_LIMIT
+  return workerLimit
+}
+
+/** 探針量上限用：只影響之後的分配，已經開著的 worker 不收。 */
+export function setSourceWorkerLimit(limit: number): void {
+  workerLimit = Math.max(1, Math.floor(limit))
 }
 
 function hostAssetPath(name: string): string {
@@ -915,6 +942,10 @@ async function createHost(): Promise<WebViewController> {
         notePendingJobs(String(payload.sourceKey ?? ""), Number(payload.remaining) || 0)
         return true
       }
+      if (payload?.footprint === true) {
+        noteFootprint(String(payload.sourceKey ?? ""), Number(payload.bytes) || 0)
+        return true
+      }
       const waiter = taskWaiters.get(payload?.id)
       if (!waiter) return true
       taskWaiters.delete(payload.id)
@@ -940,6 +971,7 @@ async function createHost(): Promise<WebViewController> {
   loadedKeys.clear()
   loadingKeys.clear()
   pendingJobs.clear()
+  footprints.clear()
   pendingAix.clear()
   pendingPackages.clear()
   pendingApks.clear()
@@ -1014,19 +1046,25 @@ async function runTask(sourceKey: string, startScript: (id: number) => string, t
 }
 
 /**
- * 這個源要一個 worker：滿了就回收最久沒用而且閒著的那個，全都忙就等其中一個閒下來。
- * 回收會讓那個源下次呼叫時重載（`loadedKeys` 一起清掉）。
+ * 這個源要一個 worker：記憶體超過預算先收佔最多而且閒著的，個數滿了再收最久沒用的，
+ * 全都忙就等其中一個閒下來。回收會讓那個源下次呼叫時重載（`loadedKeys` 一起清掉）。
  */
 async function acquireSlot(sourceKey: string): Promise<void> {
   for (;;) {
     if (slots.has(sourceKey)) return
-    if (slots.size < WORKER_LIMIT) {
+    const heavy = nextBudgetVictim(victimCandidates(), WORKER_MEMORY_BUDGET)
+    if (heavy) {
+      log("info", "sourcehost", `worker 記憶體超過預算，回收佔最多的 ${heavy}（${Math.round(sourceWorkerFootprint(heavy) / 1048576)}MB）`)
+      await dropWorker(heavy)
+      continue
+    }
+    if (slots.size < workerLimit) {
       slotOf(sourceKey)
       return
     }
     const victim = pickVictim()
     if (victim) {
-      log("info", "sourcehost", `worker 已達上限 ${WORKER_LIMIT}，回收閒置最久的 ${victim}`)
+      log("info", "sourcehost", `worker 已達上限 ${workerLimit}，回收閒置最久的 ${victim}`)
       await dropWorker(victim)
       continue
     }
@@ -1060,25 +1098,55 @@ export function nextWorkerVictim(candidates: readonly WorkerVictimCandidate[]): 
   return idleKey ?? holdingKey
 }
 
-interface WorkerVictimCandidate {
+/**
+ * 記憶體超過預算時要回收誰：閒著的裡佔最多的（有背景 job 的排最後）。沒超過、或全都在忙就回 null。
+ * 純函式。
+ */
+export function nextBudgetVictim(candidates: readonly WorkerVictimCandidate[], budget: number): string | null {
+  const total = candidates.reduce((sum, candidate) => sum + candidate.footprint, 0)
+  if (total <= budget) return null
+  let best: WorkerVictimCandidate | null = null
+  for (const candidate of candidates) {
+    if (candidate.busy > 0 || candidate.footprint <= 0) continue
+    if (!best) {
+      best = candidate
+      continue
+    }
+    const holding = candidate.pendingJobs > 0
+    const bestHolding = best.pendingJobs > 0
+    if (holding !== bestHolding) {
+      if (!holding) best = candidate
+      continue
+    }
+    if (candidate.footprint > best.footprint) best = candidate
+  }
+  return best?.key ?? null
+}
+
+export interface WorkerVictimCandidate {
   key: string
   lastUsed: number
   /** 手上有呼叫（執行中＋排隊中）。 */
   busy: number
   /** dexvm 還沒跑完的背景 job。 */
   pendingJobs: number
+  /** worker 回報的 wasm 記憶體（位元組；沒回報是 0）。 */
+  footprint: number
+}
+
+function victimCandidates(): WorkerVictimCandidate[] {
+  return [...slots.values()].map(slot => ({
+    key: slot.key,
+    lastUsed: slot.lastUsed,
+    busy: busyCount(slot.key),
+    pendingJobs: sourcePendingJobs(slot.key),
+    footprint: sourceWorkerFootprint(slot.key),
+  }))
 }
 
 /** 最久沒用而且閒著的源（有背景 job 的排最後；全都忙就回 null）。 */
 function pickVictim(): string | null {
-  return nextWorkerVictim(
-    [...slots.values()].map(slot => ({
-      key: slot.key,
-      lastUsed: slot.lastUsed,
-      busy: busyCount(slot.key),
-      pendingJobs: sourcePendingJobs(slot.key),
-    }))
-  )
+  return nextWorkerVictim(victimCandidates())
 }
 
 /** 叫頁面把這個 worker 收掉，並把它的狀態清除。 */
@@ -1088,6 +1156,7 @@ async function dropWorker(sourceKey: string): Promise<void> {
   loadedKeys.delete(sourceKey)
   loadingKeys.delete(sourceKey)
   pendingJobs.delete(sourceKey)
+  footprints.delete(sourceKey)
   pendingAix.delete(sourceKey)
   pendingPackages.delete(sourceKey)
   pendingApks.delete(sourceKey)
@@ -1135,6 +1204,7 @@ async function load(sourceKey: string, label: string, start: (id: number) => str
   loadedKeys.delete(sourceKey)
   // 新實例從空的佇列開始：上一份的背景 job 跟著舊實例一起沒了。
   pendingJobs.delete(sourceKey)
+  footprints.delete(sourceKey)
   loadingKeys.add(sourceKey)
   prepare()
   try {
@@ -1483,6 +1553,7 @@ function teardown(): void {
   loadedKeys.clear()
   loadingKeys.clear()
   pendingJobs.clear()
+  footprints.clear()
   pendingAix.clear()
   pendingPackages.clear()
   pendingApks.clear()
