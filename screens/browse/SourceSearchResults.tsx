@@ -3,12 +3,8 @@
 
 import {
   AbortController,
-  Button,
   HStack,
-  Image,
-  Menu,
   Navigation,
-  Picker,
   ProgressView,
   ScrollView,
   Spacer,
@@ -18,38 +14,26 @@ import {
   useEffect,
   useRef,
   useState,
-  type VirtualNode,
 } from "scripting"
 
 import type { ComicListItem } from "../../engine/adapt"
 import { isAbortError } from "../../engine/http"
 import { comicLibrary } from "../../app/services"
 import { loadSearchSelections, saveSearchSelection } from "../../app/searchOptions"
-import { aidokuFilterRows, loadFilterValues, saveFilterValues } from "../../app/aidokuSearchFilters"
-import { PageBackground, ThemedNavigationStack, useTint } from "../../app/theme"
+import { applyFilterDraft, filterEntries, filterPayload, loadSearchFilters, type SearchFilterSet } from "../../app/searchFilters"
+import { PageBackground, ThemedNavigationStack } from "../../app/theme"
 import { useSubscription } from "../../app/useSubscription"
 import { subscribe as subscribeLocale, t } from "../../i18n"
 import { decodeSearchOptions, defaultSearchValues, encodeSearchOptions, type SearchOptionRow, type SearchOptionValue } from "../../sources/searchOptions"
-import {
-  activeFilterCount,
-  defaultFilterValues,
-  encodeFilters,
-  type AidokuFilterRow,
-  type AidokuFilterValue,
-} from "../../sources/aidokuFilters"
 import { findSource } from "../../sources/registry"
 import { ComicGridLayout, ComicGridSkeleton } from "../../components/ComicGrid"
+import { SourceFilterBar, SourceFilterSheet } from "../../components/SourceFilterSheet"
 import { Chip } from "../../design/chip"
+import type { FilterControl } from "../../design/filterEntries"
 import { scrollTopBar } from "../../design/glass"
 import { EmptyState, NoticeBanner } from "../../design/status"
 import { pageInsets } from "../../design/tokens"
-import { AidokuFilterSheet } from "./AidokuFilterSheet"
 import { SearchFilterSheet } from "../search/SearchFilterSheet"
-
-interface FilterState {
-  rows: AidokuFilterRow[]
-  values: AidokuFilterValue[]
-}
 
 /** 有幾列的篩選跟源的預設不一樣（chip 上的數字）。 */
 function customOptionCount(rows: SearchOptionRow[], values: SearchOptionValue[]): number {
@@ -62,14 +46,13 @@ function customOptionCount(rows: SearchOptionRow[], values: SearchOptionValue[])
 
 export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; term: string }) {
   const library = comicLibrary()
-  const tint = useTint()
   useSubscription(subscribeLocale)
   const [hits, setHits] = useState<ComicListItem[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState("")
   const [attempt, setAttempt] = useState(0)
-  /** Aidoku 源的搜尋篩選（列＋值）；其他源留在 null。 */
-  const [filters, setFilters] = useState<FilterState | null>(null)
+  /** Aidoku／Mihon 源的搜尋篩選；其他源留在 null。 */
+  const [filters, setFilters] = useState<SearchFilterSet | null>(null)
   /** Venera 源的篩選值：跟聚合搜尋讀同一份（`search-options.json`）。 */
   const [selections, setSelections] = useState<Record<string, Array<string | null>>>(loadSearchSelections())
   /** 這一輪搜尋的 epoch：換關鍵字或重試時舊的一輪作廢，在飛的請求真的被中止。 */
@@ -103,17 +86,17 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     })
   }
 
-  // Aidoku 源的篩選定義要問源（舊版讀 filters.json、v2 問 runtime），所以是非同步的。
+  // 篩選定義要問源（Aidoku 可能要起宿主、Mihon 要問 dexvm），所以是非同步的。
   useEffect(() => {
     let alive = true
     setFilters(null)
     const source = findSource(sourceKey)
-    if (!source || source.stored.kind !== "aidoku") return
+    if (!source) return
     void (async () => {
       try {
-        const rows = await aidokuFilterRows(source)
-        if (!alive || rows.length === 0) return
-        setFilters({ rows, values: loadFilterValues(sourceKey, rows) })
+        const next = await loadSearchFilters(source)
+        if (!alive || !next) return
+        setFilters(next)
       } catch {
         // 篩選拿不到就只是沒有篩選可用，不影響搜尋本身。
       }
@@ -123,8 +106,9 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     }
   }, [sourceKey])
 
-  const encodedFilters = filters ? encodeFilters(filters.rows, filters.values) : []
-  const filterKey = JSON.stringify(encodedFilters)
+  const entries = filters ? filterEntries(filters) : []
+  const payload = filters ? filterPayload(filters) : []
+  const filterKey = JSON.stringify(payload)
 
   useEffect(() => {
     const id = ++run.current.id
@@ -138,7 +122,7 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       try {
         const result = await library.searchSource(sourceKey, term, optionRequest, {
           signal: controller.signal,
-          filters: encodedFilters,
+          filters: payload,
         })
         if (!current()) return
         setError(result.error ?? "")
@@ -167,15 +151,9 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     await Navigation.present({
       element: (
         <ThemedNavigationStack>
-          <AidokuFilterSheet
-            rows={current.rows}
-            values={current.values}
-            defaults={defaultFilterValues(current.rows)}
-            onApply={next => {
-              const values = next ?? defaultFilterValues(current.rows)
-              saveFilterValues(sourceKey, current.rows, values)
-              setFilters({ rows: current.rows, values })
-            }}
+          <SourceFilterSheet
+            entries={filterEntries(current)}
+            onApply={draft => setFilters(applyFilterDraft(current, draft))}
           />
         </ThemedNavigationStack>
       ),
@@ -183,129 +161,15 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
     })
   }
 
-  /** 套用某一列的值（chips 是即時生效，沒有「套用」）。 */
-  function applyValue(index: number, value: AidokuFilterValue) {
+  /** 膠囊改一個值：存回去，`filterKey` 一變就重新搜尋並回到第一頁。 */
+  function applyValue(id: string, control: FilterControl) {
     if (!filters) return
-    const values = filters.values.map((item, at) => (at === index ? value : item))
-    saveFilterValues(sourceKey, filters.rows, values)
-    setFilters({ rows: filters.rows, values })
+    setFilters(applyFilterDraft(filters, { [id]: control }))
   }
 
-  /** 每個篩選一顆膠囊：select／sort／multi 開 menu，check 直接切（跟 Aidoku 一樣）。 */
-  function chip(row: AidokuFilterRow, index: number): VirtualNode {
-    const value = filters?.values[index]
-
-    switch (row.kind) {
-      case "text":
-        // 文字篩選沒有 chip，只從篩選 sheet 進（Aidoku 也是這樣）。
-        return <VStack spacing={0} />
-      case "check": {
-        const on = value === true
-        return <Chip text={row.label} selected={on} onTap={() => applyValue(index, !on)} />
-      }
-      case "select": {
-        const current = typeof value === "string" ? value : (row.options[0]?.value ?? "")
-        const active = current !== row.options[0]?.value
-        return (
-          <Menu label={<Chip text={row.label} selected={active} chevron />}>
-            <Picker
-              title={row.label}
-              value={current}
-              onChanged={(next: string | number) => applyValue(index, String(next))}
-            >
-              {row.options.map(option => (
-                <Text key={option.value} tag={option.value}>
-                  {option.label}
-                </Text>
-              ))}
-            </Picker>
-          </Menu>
-        )
-      }
-      case "sort": {
-        const sort =
-          typeof value === "object" && value !== null && "index" in value ? value : { index: 0, ascending: false }
-        const active = sort.index !== 0 || sort.ascending
-        return (
-          <Menu label={<Chip text={`${row.label}: ${row.options[sort.index] ?? ""}`} selected={active} chevron />}>
-            <Picker
-              title={row.label}
-              value={String(sort.index)}
-              onChanged={(next: string | number) =>
-                applyValue(index, { index: Number(next) || 0, ascending: sort.ascending })
-              }
-            >
-              {row.options.map((option, at) => (
-                <Text key={String(at)} tag={String(at)}>
-                  {option}
-                </Text>
-              ))}
-            </Picker>
-            {row.canAscend ? (
-              <Button action={() => applyValue(index, { index: sort.index, ascending: !sort.ascending })}>
-                <HStack spacing={6}>
-                  <Image systemName={sort.ascending ? "chevron.up" : "chevron.down"} />
-                  <Text>{t("search.filterAscending")}</Text>
-                </HStack>
-              </Button>
-            ) : null}
-          </Menu>
-        )
-      }
-      case "multi": {
-        const picked =
-          typeof value === "object" && value !== null && "included" in value
-            ? value
-            : { included: [] as string[], excluded: [] as string[] }
-        const count = picked.included.length + picked.excluded.length
-        // Aidoku 的 MultiSelectFilterView 也是 Menu：點一下包含、再點一下排除（canExclude 時）、再點一下取消。
-        // 每顆選項都不關 Menu，才能連續勾選。
-        const toggle = (option: string) => {
-          const included = picked.included.filter(item => item !== option)
-          const excluded = picked.excluded.filter(item => item !== option)
-          if (picked.included.includes(option)) {
-            if (row.canExclude) excluded.push(option)
-          } else if (!(row.canExclude && picked.excluded.includes(option))) {
-            included.push(option)
-          }
-          applyValue(index, { included, excluded })
-        }
-        return (
-          <Menu
-            label={
-              <Chip
-                text={row.label}
-                selected={count > 0}
-                detail={count > 0 ? String(count) : undefined}
-                chevron
-              />
-            }
-          >
-            {row.options.map(option => (
-              <Button
-                key={option.value}
-                menuActionDismissBehavior="disabled"
-                action={() => toggle(option.value)}
-              >
-                <HStack spacing={8}>
-                  <Text>{option.label}</Text>
-                  {picked.included.includes(option.value) ? (
-                    <Image systemName="checkmark" foregroundStyle={tint.tint} />
-                  ) : picked.excluded.includes(option.value) ? (
-                    <Image systemName="xmark" foregroundStyle={tint.tint} />
-                  ) : null}
-                </HStack>
-              </Button>
-            ))}
-          </Menu>
-        )
-      }
-    }
-  }
-
-  /** 上緣那一排篩選：Venera 源一顆（開自己的 sheet），Aidoku 源是 `[篩選]` 加每個篩選一顆。 */
-  function filterBar(): VirtualNode {
-    // `filters` 只有 Aidoku 源會有值，所以這一段不會跟下面那排打到。
+  /** 上緣那一排篩選：Venera 源一顆（開自己的 sheet），Aidoku／Mihon 源是 `[篩選]` 加每個篩選一顆。 */
+  function filterBar() {
+    // `filters` 只有 Aidoku／Mihon 源會有值，所以這一段不會跟下面那排打到。
     if (optionRows.length > 0 && !filters) {
       return (
         <HStack
@@ -324,32 +188,10 @@ export function SourceSearchResults({ sourceKey, term }: { sourceKey: string; te
       )
     }
     if (!filters) return <VStack spacing={0} />
-    const count = activeFilterCount(filters.rows, filters.values)
-    // 照源給的順序、不把改過的提到前面：chip 一換位置就會把開著的 Menu 收掉，多選沒辦法連續勾。
-    const entries = filters.rows
-      .map((row, index) => ({ row, index }))
-      .filter(entry => entry.row.kind !== "text")
-
-    return (
-      <ScrollView axes="horizontal" scrollIndicator="hidden">
-        <HStack spacing={6} padding={{ horizontal: pageInsets.horizontal, vertical: 6 }}>
-          <Chip
-            icon="line.3.horizontal.decrease"
-            detail={count > 0 ? String(count) : undefined}
-            onTap={() => void openFilters()}
-            accessibilityLabel={t("search.filterTitle")}
-          />
-          {entries.map(entry => (
-            <VStack key={`chip:${entry.index}`} spacing={0}>
-              {chip(entry.row, entry.index)}
-            </VStack>
-          ))}
-        </HStack>
-      </ScrollView>
-    )
+    return <SourceFilterBar entries={entries} onOpenAll={() => void openFilters()} onChange={applyValue} />
   }
 
-  function body(): VirtualNode {
+  function body() {
     if (error) {
       return (
         <VStack spacing={12} padding={{ top: 40, horizontal: pageInsets.horizontal }} frame={{ maxWidth: "infinity" }}>

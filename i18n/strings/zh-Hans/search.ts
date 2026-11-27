@@ -19,6 +19,9 @@ export default {
   /** 排序篩選的遞增開關。 */
   filterAscending: "递增",
   filterDescending: "递减",
+  filterIgnore: "忽略",
+  filterInclude: "包含",
+  filterExclude: "排除",
 
   history: "历史搜索",
   historyEmpty: "输入关键字搜索所有已启用的源",

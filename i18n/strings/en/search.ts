@@ -19,6 +19,9 @@ export default {
   /** Ascending toggle of a sort filter. */
   filterAscending: "Ascending",
   filterDescending: "Descending",
+  filterIgnore: "Ignore",
+  filterInclude: "Include",
+  filterExclude: "Exclude",
 
   history: "Search history",
   historyEmpty: "Type a keyword to search every enabled source",

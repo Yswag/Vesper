@@ -33,6 +33,7 @@ import { t } from "../i18n"
 import { getContentLanguages } from "../app/contentLanguages"
 
 import * as memo from "./mihonMemo"
+import type { MihonFilterState } from "./mihonFilters"
 import { prefsFileOf, rootNodesOf, type MihonPreference, type MihonPreferenceValues } from "./mihonPrefs"
 import type { StoredSource } from "./store"
 import type { InstalledSource } from "./registry"
@@ -236,16 +237,17 @@ export async function sources(apkKey: string): Promise<MihonSource[]> {
   return list
 }
 
-/** 搜尋（`filters` 是 dexvm 的 `FilterState`；還沒接篩選 UI，所以一律空陣列）。 */
+/** 搜尋（`filters` 是 dexvm 的 `FilterState` 整份，順序與 `filters` op 回的一致）；空陣列就是源的預設。 */
 export async function search(
   apkKey: string,
   sourceId: string,
   query: string,
   page = 1,
-  filters: Array<{ name: string; state: number }> = []
+  filters: MihonFilterState[] = []
 ): Promise<MihonMangaPage> {
   return await call<MihonMangaPage>(apkKey, "search", { sourceId, query, page, filters })
 }
+
 
 /** 子源的 `HttpSource.headers`（源沒宣告 UA 時 dexvm 補上預設 UA）。 */
 export async function headers(apkKey: string, sourceId: string): Promise<Record<string, string>> {
@@ -370,6 +372,7 @@ export function forget(apkKey: string): void {
 function forgetChildMemory(sourceKey: string): void {
   memo.forget(sourceKey)
   sourceHeaders.delete(sourceKey)
+  sourceFilters.delete(sourceKey)
 }
 
 // ---------------------------------------------------------------- 磁碟上的擴充
@@ -1003,12 +1006,13 @@ export async function listPage(
 export async function searchPage(
   source: InstalledSource,
   keyword: string,
-  page = 1
+  page = 1,
+  filters: MihonFilterState[] = []
 ): Promise<ComicListPage> {
   const ref = refOf(source)
   return await mapAsk(source, "search", async () => {
     await ensureExtension(ref.apkKey)
-    return toListPage(ref, await search(ref.apkKey, ref.sourceId, keyword, page), page)
+    return toListPage(ref, await search(ref.apkKey, ref.sourceId, keyword, page, filters), page)
   })
 }
 
@@ -1175,4 +1179,32 @@ export async function coverRequest(source: InstalledSource, url: string): Promis
     log("warning", "mihon", `${source.stored.key} 的 headers 問不到，封面不帶 headers（${url}）`, failure)
     return { url, method: "GET", data: null, headers: {} }
   }
+}
+
+// ---------------------------------------------------------------- 篩選定義
+
+/** 子源的 `filters` 定義（每個子源問一次；失敗不快取）。 */
+const sourceFilters = new Map<string, Promise<unknown>>()
+
+/**
+ * 篩選定義：和 `sourceHeaders` 一樣每個子源問一次。
+ * 載入要先在隊列外做完——在 `runSourceExclusive` 裡再排自己會互等。
+ */
+export function filterDefs(source: InstalledSource): Promise<unknown> {
+  const key = source.stored.key
+  const hit = sourceFilters.get(key)
+  if (hit) return hit
+  const ref = refOf(source)
+  const pending = attemptWithHealing(ref.apkKey, "filters", async () => {
+    await ensureExtension(ref.apkKey)
+    return await runSourceExclusive(
+      ref.apkKey,
+      async () => await callMihon(ref.apkKey, "filters", { sourceId: ref.sourceId })
+    )
+  })
+  sourceFilters.set(key, pending)
+  pending.catch(() => {
+    if (sourceFilters.get(key) === pending) sourceFilters.delete(key)
+  })
+  return pending
 }

@@ -354,7 +354,8 @@ export function SelectRow({
   options,
   onChanged,
 }: {
-  icon: string
+  /** 不給就不畫圖示（整張卡都是純文字列的時候）。 */
+  icon?: string
   iconColor?: RowColor
   title: string
   value: string
@@ -365,7 +366,7 @@ export function SelectRow({
 
   return (
     <HStack spacing={14} padding={rowPadding} alignment="center" frame={{ maxWidth: "infinity" }}>
-      <IconBadge icon={icon} color={iconColor} />
+      {icon ? <IconBadge icon={icon} color={iconColor} /> : null}
       <Text font="body" fontWeight="regular" foregroundStyle="label">
         {title}
       </Text>

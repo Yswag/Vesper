@@ -2,7 +2,7 @@
 //
 // 每列照 `type` 畫不同的控制項：select / multi-select 用 settings 那種勾選列，
 // dropdown 用系統的 menu picker（ccc 的出版社有 55 項，chip 排不下）。
-// 外殼跟 `AidokuFilterSheet` 一樣：導覽列左 ✕ 右 ✓、底部重設；草稿放在這裡，按 ✓ 才交出去。
+// 外殼跟源篩選的 sheet 一樣（`components/SourceFilterSheet.tsx`）：導覽列左 ✕ 右 ✓、底部重設；草稿放在這裡，按 ✓ 才交出去。
 
 import { Button, Divider, HStack, Image, Navigation, ScrollView, Toolbar, ToolbarItem, VStack, useState } from "scripting"
 

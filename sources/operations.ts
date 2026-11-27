@@ -14,6 +14,7 @@ import { readChapterImageKeys } from "../engine/offline"
 import type { SourceViewer } from "../library/readerSettings"
 import * as aidoku from "./aidoku"
 import * as mihon from "./mihon"
+import type { MihonFilterState } from "./mihonFilters"
 import { splitOption } from "./options"
 import type { InstalledSource } from "./registry"
 import { ensureSourceReady, reloginSource, sourcesRevision, type ReloginOutcome } from "./registry"
@@ -92,7 +93,7 @@ export type Relogin = (source: InstalledSource) => Promise<ReloginOutcome>
  */
 export interface SourceScope {
   signal?: AbortSignal
-  /** Aidoku 源的搜尋篩選描述子（`aidokuFilters.encodeFilters`）。 */
+  /** 篩選：Aidoku 源的描述子，或 Mihon 的 `{ name, state }` 整份（`app/searchFilters.ts` 的 `filterPayload`）。 */
   filters?: unknown[]
   /** 沒人在等的呼叫（追更）：Aidoku 源的隊列把它排在使用者的呼叫後面。目前只有詳情認它。 */
   background?: boolean
@@ -408,7 +409,7 @@ export async function loadRankingPage(
 interface SearchOptions {
   /** 源自己的篩選選項（`search.optionList` 的值，照列順序；dropdown 可以是 null）。 */
   options?: Array<string | null>
-  /** Aidoku 源的篩選描述子（`aidokuFilters.encodeFilters` 的結果）。 */
+  /** 篩選：Aidoku 源的描述子，或 Mihon 的 `{ name, state }` 整份（`app/searchFilters.ts` 的 `filterPayload`）。 */
   filters?: unknown[]
   page?: number
 }
@@ -420,7 +421,9 @@ export async function searchSource(
   scope?: SourceScope
 ): Promise<ComicListPage> {
   if (aidoku.isAidoku(source)) return await aidoku.search(source, keyword, options.page ?? 1, options.filters ?? [])
-  if (mihon.isMihon(source)) return await mihon.searchPage(source, keyword, options.page ?? 1)
+  if (mihon.isMihon(source)) {
+    return await mihon.searchPage(source, keyword, options.page ?? 1, (options.filters ?? []) as MihonFilterState[])
+  }
   const instance = await requireInstance(source)
   const search = instance.search
   // ehentai 的 search 只有 loadNext（第一頁 = 沒有游標）；搜尋頁只取第一頁，所以這樣就夠。
