@@ -84,20 +84,16 @@ export function textValueOf(node: MihonPreference, values: MihonPreferenceValues
   return node.defaultText ?? textOf(node.defaultValue)
 }
 
-/**
- * 多選目前選了哪些。
- * dexvm 的 SharedPreferences 把字串集合存成換行相接的字串（`getStringSet` 再拆回去），
- * 所以這裡兩邊都走這個表示法。
- */
+/** 多選目前選了哪些（dexvm 的 `StringSet`，`exportPrefs` 回陣列）。 */
 export function multiValuesOf(node: MihonPreference, values: MihonPreferenceValues): string[] {
   const stored = node.key ? values[node.key] : undefined
-  if (typeof stored === "string") return stored.split("\n").filter(value => value.length > 0)
+  if (Array.isArray(stored)) return stored.filter((value): value is string => typeof value === "string")
   return node.defaultValues.slice()
 }
 
-/** 多選寫回去的樣子（空集合就是空字串，跟「沒這個鍵」不同）。 */
-export function multiStoredValue(values: string[]): string {
-  return values.join("\n")
+/** 多選寫回去的樣子（空陣列跟「沒這個鍵」不同）。 */
+export function multiStoredValue(values: string[]): string[] {
+  return values.slice()
 }
 
 /** 列右側／副標要顯示的目前值。 */

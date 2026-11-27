@@ -236,7 +236,7 @@ export async function sources(apkKey: string): Promise<MihonSource[]> {
   return list
 }
 
-/** 搜尋（`filters` 是 dexvm 的 `FilterDef` 狀態；dexvm 的 filter state 無效，所以一律空陣列）。 */
+/** 搜尋（`filters` 是 dexvm 的 `FilterState`；還沒接篩選 UI，所以一律空陣列）。 */
 export async function search(
   apkKey: string,
   sourceId: string,
@@ -865,10 +865,17 @@ async function passChallenge(source: InstalledSource, challenge: SourceChallenge
  * 把 clearance 也塞進 dexvm 的 jar：擴充自己（以及 `CookieManager`）讀的就是那一份。
  * 塞不進去不算失敗——宿主 jar 那一份仍會併進代理請求。
  */
+function jarKeyOf(cookie: Cookie, host: string): string {
+  const domain = String(cookie.domain ?? "")
+  return domain.startsWith(".") ? `.${bareHost(domain.slice(1))}` : host
+}
+
 async function deliverClearance(ref: MihonRef, url: string, cookies: Cookie[]): Promise<void> {
-  // dexvm 的 jar 認 host 就是 host（不分 path、不做後綴比對），所以拿被擋的那個 host 當鍵。
+  // dexvm 的 jar：鍵帶前導點是 domain cookie（送給子網域），不帶是 host-only。照 WebView 給的 domain 送。
   const host = bareHost(hostOf(url))
-  const pairs = cookies.filter(cookie => cookie.name && host).map(cookie => [host, cookie.name, cookie.value ?? ""])
+  const pairs = cookies
+    .filter(cookie => cookie.name && host)
+    .map(cookie => [jarKeyOf(cookie, host), cookie.name, cookie.value ?? ""])
   if (pairs.length === 0) return
   try {
     await call(ref.apkKey, "cookies", { set: pairs })
