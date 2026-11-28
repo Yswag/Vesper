@@ -46,6 +46,8 @@ sources/             漫畫源管理
   groups.ts          已安裝源的分組（Mihon 一個 apk 一組）與組排序
   mihonIndex.ts      Mihon（keiyoushi）倉庫索引解析（index.pb／index.json／repo.json）
   mihonMemo.ts       Mihon 的 SManga／SChapter 與 memo 落地（每部作品一個檔，LRU 200 部／8MB）
+  mihonCookies.ts    dexvm cookie jar 的持久化與依網址取／清／換（純函式＋檔案）
+  mihonWeb.ts        Mihon「在網頁開啟」：源的 headers／UA、同站重帶 headers、與 dexvm 同步 cookie
   registry.ts        運行時源註冊表
   webLogin.ts        WebView 登入與 Cloudflare 驗證代理
   downloads.ts       下載排程與狀態管理
@@ -73,7 +75,7 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 | 下載／離線閱讀 | ✅ | ✅ | ✅ |
 | 追更／未讀角標 | ✅ | ✅ | ✅ |
 | 源設定 | ✅ | ✅ | ✅ |
-| 登入 | ✅ 帳密／cookie／瀏覽器 | ✅ 帳密／cookie／OAuth | ✗ |
+| 登入 | ✅ 帳密／cookie／瀏覽器 | ✅ 帳密／cookie／OAuth | ✅ 在網頁開啟源首頁 |
 | 留言 | ✅ | ✗ | ✗ |
 | 排行榜 | ✅ | ✗ | ✗ |
 | Cloudflare 過盾 | ✅ | ✅ | ✅ |

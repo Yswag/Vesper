@@ -3,6 +3,7 @@ import {
   DefaultToolbarItem,
   Image,
   Menu,
+  NavigationLink,
   Picker,
   Text,
   Toolbar,
@@ -21,6 +22,7 @@ import { CategoryScreen } from "./CategoryScreen"
 import { ExploreScreen } from "./ExploreScreen"
 import { RankingScreen } from "./RankingScreen"
 import { SourceSearchResults } from "./SourceSearchResults"
+import { SourceWebViewScreen } from "./SourceWebViewScreen"
 
 export function SourceScreen({ sourceKey }: { sourceKey: string }) {
   const info = comicLibrary().source(sourceKey)
@@ -109,6 +111,16 @@ export function SourceScreen({ sourceKey }: { sourceKey: string }) {
               >
                 <Image systemName="magnifyingglass" font="body" fontWeight="medium" foregroundStyle="label" />
               </Button>
+            </ToolbarItem>
+          )}
+          {info?.kind === "mihon" && !searchActive && (
+            <ToolbarItem placement="topBarTrailing">
+              <NavigationLink
+                accessibilityLabel={t("browse.web.open")}
+                destination={<SourceWebViewScreen sourceKey={sourceKey} title={title} />}
+              >
+                <Image systemName="globe" font="body" fontWeight="medium" foregroundStyle="label" />
+              </NavigationLink>
             </ToolbarItem>
           )}
           {pages.length > 1 && (

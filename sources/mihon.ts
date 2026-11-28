@@ -25,7 +25,17 @@ import { t } from "../i18n"
 import { getContentLanguages } from "../app/contentLanguages"
 
 import * as memo from "./mihonMemo"
-import { forgetJar, isEmptyJar, jarWithoutUrl, loadJar, normalizeJar, saveJar } from "./mihonCookies"
+import {
+  forgetJar,
+  isEmptyJar,
+  jarCookiesFor,
+  jarWithSite,
+  loadJar,
+  normalizeJar,
+  saveJar,
+  type JarCookie,
+  type MihonJar,
+} from "./mihonCookies"
 import type { MihonFilterState } from "./mihonFilters"
 import { prefsFileOf, rootNodesOf, type MihonPreference, type MihonPreferenceValues } from "./mihonPrefs"
 import type { StoredSource } from "./store"
@@ -318,20 +328,50 @@ export async function fetchImage(apkKey: string, sourceId: string, page: MihonPa
   return bytes
 }
 
-export async function clearCookiesFor(apkKey: string, url: string): Promise<number> {
-  deleteCookies(apkKey, url)
+function syncHostClearance(apkKey: string, url: string, cookies: readonly JarCookie[]): void {
   const packageId = packageIdOf(apkKey)
-  for (const child of installedOf(apkKey).sources ?? []) deleteCookies(sourceKeyOf(packageId, child.id), url)
+  const keys = [apkKey, ...(installedOf(apkKey).sources ?? []).map(child => sourceKeyOf(packageId, child.id))]
+  const clearance = cookies
+    .filter(cookie => HOST_JAR_CLEARANCE.includes(cookie.name))
+    .map(cookie => ({ name: cookie.name, value: cookie.value, domain: cookie.scope }))
+  for (const key of keys) {
+    deleteCookies(key, url)
+    if (clearance.length > 0) setCookies(key, url, clearance)
+  }
+}
+
+async function withJar<T>(apkKey: string, task: (jar: MihonJar) => Promise<T>): Promise<T> {
+  await ensureExtension(apkKey)
   return await attemptWithHealing(apkKey, "cookies", () =>
     runSourceExclusive(apkKey, async () => {
       await ensureLoaded(apkKey)
       const raw = await callMihon(apkKey, "cookies", {})
-      const { jar, removed } = jarWithoutUrl(normalizeJar(raw?.cookies), url)
-      if (removed > 0) await callMihon(apkKey, "cookies", { clear: true, import: jar })
-      saveJar(dirOf(apkKey), jar)
-      return removed
+      return await task(normalizeJar(raw?.cookies))
     })
   )
+}
+
+export async function siteCookies(apkKey: string, url: string): Promise<JarCookie[]> {
+  return await withJar(apkKey, async jar => {
+    saveJar(dirOf(apkKey), jar)
+    return jarCookiesFor(jar, url)
+  })
+}
+
+export async function replaceSiteCookies(apkKey: string, url: string, cookies: readonly JarCookie[]): Promise<number> {
+  syncHostClearance(apkKey, url, cookies)
+  return await withJar(apkKey, async current => {
+    const { jar, removed } = jarWithSite(current, url, cookies)
+    if (JSON.stringify(jar) !== JSON.stringify(current)) {
+      await callMihon(apkKey, "cookies", { clear: true, import: jar })
+    }
+    saveJar(dirOf(apkKey), jar)
+    return removed
+  })
+}
+
+export async function clearCookiesFor(apkKey: string, url: string): Promise<number> {
+  return await replaceSiteCookies(apkKey, url, [])
 }
 
 export function isLoaded(apkKey: string): boolean {
@@ -1017,7 +1057,7 @@ export function comicModule(source: InstalledSource): {
 
 const sourceHeaders = new Map<string, Promise<Record<string, string>>>()
 
-function headersOf(source: InstalledSource): Promise<Record<string, string>> {
+export function headersOf(source: InstalledSource): Promise<Record<string, string>> {
   const key = source.stored.key
   const hit = sourceHeaders.get(key)
   if (hit) return hit

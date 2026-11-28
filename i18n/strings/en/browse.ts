@@ -34,4 +34,14 @@ export default {
   noCategories: "This source has no categories available",
   partError: "Couldn't load: {error}",
   categoryLabel: "Category: {label}",
+
+  web: {
+    open: "Open in WebView",
+    back: "Back",
+    forward: "Forward",
+    more: "More",
+    share: "Share",
+    openInSafari: "Open in Safari",
+    clearCookies: "Clear cookies",
+  },
 }

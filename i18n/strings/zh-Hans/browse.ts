@@ -34,4 +34,14 @@ export default {
   noCategories: "这个源没有可用的分类",
   partError: "读不到：{error}",
   categoryLabel: "分类：{label}",
+
+  web: {
+    open: "在网页中打开",
+    back: "上一页",
+    forward: "下一页",
+    more: "更多",
+    share: "分享",
+    openInSafari: "用 Safari 打开",
+    clearCookies: "清除 Cookie",
+  },
 }
