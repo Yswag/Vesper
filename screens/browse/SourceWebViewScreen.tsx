@@ -1,12 +1,12 @@
 import {
   Button,
-  HStack,
   Image,
   Menu,
   ProgressView,
   Spacer,
   Toolbar,
   ToolbarItem,
+  ToolbarSpacer,
   VStack,
   WebView,
   ZStack,
@@ -17,6 +17,7 @@ import {
 
 import { useSubscription } from "../../app/useSubscription"
 import { Chip } from "../../design/chip"
+import { liquidGlass } from "../../design/glass"
 import { NoticeBanner } from "../../design/status"
 import { log } from "../../engine/log"
 import { subscribe as subscribeLocale, t } from "../../i18n"
@@ -90,55 +91,67 @@ export function SourceWebViewScreen({ sourceKey, title }: { sourceKey: string; t
         toolbar={
           <Toolbar>
             <ToolbarItem placement="topBarTrailing">
-              <HStack spacing={16}>
-                <Button
-                  buttonStyle="plain"
-                  disabled={!state?.canNavigateBack}
-                  accessibilityLabel={t("browse.web.back")}
-                  action={() => controller.goBack()}
-                >
-                  <Image systemName="chevron.backward" font="body" fontWeight="medium" foregroundStyle="label" />
-                </Button>
-                <Button
-                  buttonStyle="plain"
-                  disabled={!state?.canNavigateForward}
-                  accessibilityLabel={t("browse.web.forward")}
-                  action={() => controller.goForward()}
-                >
-                  <Image systemName="chevron.forward" font="body" fontWeight="medium" foregroundStyle="label" />
-                </Button>
-                <Menu
-                  accessibilityLabel={t("browse.web.more")}
-                  label={<Image systemName="ellipsis.circle" font="body" fontWeight="medium" foregroundStyle="label" />}
-                >
-                  <Button title={t("browse.refresh")} systemImage="arrow.clockwise" action={() => controller.reload()} />
-                  <Button
-                    title={t("browse.web.share")}
-                    systemImage="square.and.arrow.up"
-                    action={() => void ShareSheet.present([web.currentUrl()])}
+              <Button
+                buttonStyle="plain"
+                disabled={!state?.canNavigateBack}
+                accessibilityLabel={t("browse.web.back")}
+                action={() => controller.goBack()}
+              >
+                <Image systemName="chevron.backward" font="body" fontWeight="medium" foregroundStyle="label" />
+              </Button>
+            </ToolbarItem>
+            <ToolbarItem placement="topBarTrailing">
+              <Button
+                buttonStyle="plain"
+                disabled={!state?.canNavigateForward}
+                accessibilityLabel={t("browse.web.forward")}
+                action={() => controller.goForward()}
+              >
+                <Image systemName="chevron.forward" font="body" fontWeight="medium" foregroundStyle="label" />
+              </Button>
+            </ToolbarItem>
+            {liquidGlass ? <ToolbarSpacer sizing="fixed" placement="topBarTrailing" /> : null}
+            <ToolbarItem placement="topBarTrailing">
+              <Menu
+                accessibilityLabel={t("browse.web.more")}
+                label={
+                  <Image
+                    systemName={liquidGlass ? "ellipsis" : "ellipsis.circle"}
+                    font="body"
+                    fontWeight="medium"
+                    foregroundStyle="label"
                   />
-                  <Button
-                    title={t("browse.web.openInSafari")}
-                    systemImage="safari"
-                    action={() => void Safari.openURL(web.currentUrl())}
-                  />
-                  <Button title={t("browse.web.clearCookies")} systemImage="trash" action={() => void clearCookies()} />
-                </Menu>
-              </HStack>
+                }
+              >
+                <Button title={t("browse.refresh")} systemImage="arrow.clockwise" action={() => controller.reload()} />
+                <Button
+                  title={t("browse.web.share")}
+                  systemImage="square.and.arrow.up"
+                  action={() => void ShareSheet.present([web.currentUrl()])}
+                />
+                <Button
+                  title={t("browse.web.openInSafari")}
+                  systemImage="safari"
+                  action={() => void Safari.openURL(web.currentUrl())}
+                />
+                <Button title={t("browse.web.clearCookies")} systemImage="trash" action={() => void clearCookies()} />
+              </Menu>
             </ToolbarItem>
           </Toolbar>
         }
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       >
-        {loading ? (
-          <ProgressView
-            value={state?.estimatedProgress ?? 0}
-            total={1}
-            progressViewStyle="linear"
-            frame={{ maxWidth: "infinity" }}
-          />
-        ) : null}
-        <WebView controller={controller} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} />
+        <ZStack alignment="top" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+          <WebView controller={controller} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} />
+          {loading ? (
+            <ProgressView
+              value={state?.estimatedProgress ?? 0}
+              total={1}
+              progressViewStyle="linear"
+              frame={{ maxWidth: "infinity" }}
+            />
+          ) : null}
+        </ZStack>
       </VStack>
 
       {message ? (
