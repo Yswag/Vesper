@@ -67,7 +67,7 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 | 倉庫／安裝 | ✅ | ✅ | ✅ keiyoushi |
 | 探索 | ✅ 分類區塊 | ✅ 首頁＋listings | ✅ 熱門／最新（沒有首頁、分類） |
 | 搜尋（含聚合） | ✅ | ✅ | ✅ |
-| 源端篩選 | ✅ | ✅ | ✗ 還沒接 UI |
+| 源端篩選 | ✅ | ✅ | ✅ |
 | 詳情／章節 | ✅ | ✅ | ✅ 一次 `mangaUpdate` |
 | 閱讀（含源端解混淆） | ✅ | ✅ | ✅ 正文圖一律 `fetchImage` |
 | 下載／離線閱讀 | ✅ | ✅ | ✅ |
@@ -98,7 +98,7 @@ screens/             各功能分頁（home / bookshelf / browse / search / sett
 
 - 漫畫源腳本：`文件/Vesper/sources/<key>.js`
 - Aidoku 源：`文件/Vesper/sources/aidoku/<id>/`
-- Mihon 擴充：`文件/Vesper/sources/mihon/<packageId>/`（`extension.apk`、`installed.json` 記子源與啟用狀態，`memo/<sourceId>/` 是每個子源的 SManga／SChapter）
+- Mihon 擴充：`文件/Vesper/sources/mihon/<packageId>/`（`extension.apk`、`installed.json` 記子源與啟用狀態，`cookies.json` 是 dexvm 的 cookie jar，`memo/<sourceId>/` 是每個子源的 SManga／SChapter）
 - 源清單排序：`文件/Vesper/sources/order.json`（以列為單位，Mihon 子源靠 package key 收斂成同一組）
 - 倉庫設定：`文件/Vesper/sources/repositories.json`
 - 書架與歷史：`文件/Vesper/library.json`

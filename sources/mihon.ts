@@ -10,12 +10,13 @@ import {
   probeMihonWorker,
   resetSourceHost,
   runSourceExclusive,
+  sourceQueuedCalls,
   takeSourceChallenge,
   type MihonLoadTimings,
   type SourceChallenge,
   type SourcePriority,
 } from "../engine/sourcehost/host"
-import { bareHost, hostOf, setCookies, type Cookie } from "../engine/cookies"
+import { bareHost, deleteCookies, hostOf, setCookies, type Cookie } from "../engine/cookies"
 import { solveCloudflare } from "../engine/cloudflare"
 import { appDataRoot, ensureDir, exists, join, listDir, readBytes, readText, remove, writeBytes, writeText } from "../engine/fs"
 import type { ImageRequest } from "../engine/images"
@@ -24,6 +25,7 @@ import { t } from "../i18n"
 import { getContentLanguages } from "../app/contentLanguages"
 
 import * as memo from "./mihonMemo"
+import { forgetJar, isEmptyJar, jarWithoutUrl, loadJar, normalizeJar, saveJar } from "./mihonCookies"
 import type { MihonFilterState } from "./mihonFilters"
 import { prefsFileOf, rootNodesOf, type MihonPreference, type MihonPreferenceValues } from "./mihonPrefs"
 import type { StoredSource } from "./store"
@@ -159,11 +161,32 @@ function opTimeout(op: string): number | undefined {
   return SLOW_OPS.has(op) ? SLOW_OP_TIMEOUT_MS : undefined
 }
 
+async function seedJar(apkKey: string): Promise<void> {
+  const jar = loadJar(dirOf(apkKey))
+  if (isEmptyJar(jar)) return
+  try {
+    await callMihon(apkKey, "cookies", { import: jar })
+  } catch (failure) {
+    log("warning", "mihon", `${apkKey} 的 cookie 沒放回 dexvm`, failure)
+  }
+}
+
+async function persistJar(apkKey: string): Promise<void> {
+  if (sourceQueuedCalls(apkKey) > 1) return
+  try {
+    const raw = await callMihon(apkKey, "cookies", {})
+    saveJar(dirOf(apkKey), normalizeJar(raw?.cookies))
+  } catch (failure) {
+    log("warning", "mihon", `${apkKey} 的 cookie 沒存下來`, failure)
+  }
+}
+
 async function ensureLoaded(apkKey: string): Promise<void> {
   if (isSourceLoaded(apkKey)) return
   const entry = extensions.get(apkKey)
   if (!entry) throw new Error(`${apkKey} 還沒開啟（先 open 一次）`)
   await loadMihonExtension(entry.bytes, apkKey, entry.prefs)
+  await seedJar(apkKey)
 }
 
 export async function open(
@@ -179,6 +202,7 @@ export async function open(
       apkKey,
       async () => {
         const loaded = await loadMihonExtension(apk, apkKey, prefs)
+        await seedJar(apkKey)
         return { manifest: loaded.manifest as MihonManifest, timings: loaded.timings }
       },
       priority
@@ -197,7 +221,9 @@ async function call<T>(
       apkKey,
       async () => {
         await ensureLoaded(apkKey)
-        return (await callMihon(apkKey, op, args, opTimeout(op))) as T
+        const result = (await callMihon(apkKey, op, args, opTimeout(op))) as T
+        await persistJar(apkKey)
+        return result
       },
       priority
     )
@@ -283,11 +309,29 @@ export async function fetchImage(apkKey: string, sourceId: string, page: MihonPa
   const bytes = await attemptWithHealing(apkKey, "fetchImage", () =>
     runSourceExclusive(apkKey, async () => {
       await ensureLoaded(apkKey)
-      return await fetchMihonImage(apkKey, { sourceId, page })
+      const image = await fetchMihonImage(apkKey, { sourceId, page })
+      await persistJar(apkKey)
+      return image
     })
   )
   if (bytes.byteLength === 0) throw new Error(t("sources.emptyImage"))
   return bytes
+}
+
+export async function clearCookiesFor(apkKey: string, url: string): Promise<number> {
+  deleteCookies(apkKey, url)
+  const packageId = packageIdOf(apkKey)
+  for (const child of installedOf(apkKey).sources ?? []) deleteCookies(sourceKeyOf(packageId, child.id), url)
+  return await attemptWithHealing(apkKey, "cookies", () =>
+    runSourceExclusive(apkKey, async () => {
+      await ensureLoaded(apkKey)
+      const raw = await callMihon(apkKey, "cookies", {})
+      const { jar, removed } = jarWithoutUrl(normalizeJar(raw?.cookies), url)
+      if (removed > 0) await callMihon(apkKey, "cookies", { clear: true, import: jar })
+      saveJar(dirOf(apkKey), jar)
+      return removed
+    })
+  )
 }
 
 export function isLoaded(apkKey: string): boolean {
@@ -629,6 +673,7 @@ export function uninstall(key: string): void {
   }
   clearFailure(packageKey)
   forget(packageKey)
+  forgetJar(dirOf(packageKey))
   log("info", "mihon", `已移除 ${packageIdOf(packageKey)}`)
 }
 

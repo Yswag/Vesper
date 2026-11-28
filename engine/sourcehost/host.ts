@@ -135,6 +135,10 @@ function busyCount(sourceKey: string): number {
   return pendingCounts.get(sourceKey) ?? 0
 }
 
+export function sourceQueuedCalls(sourceKey: string): number {
+  return busyCount(sourceKey)
+}
+
 export function sourcePendingJobs(sourceKey: string): number {
   return pendingJobs.get(sourceKey) ?? 0
 }
